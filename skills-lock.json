@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "claude-code-headless": {
+      "source": "0xdarkmatter/claude-mods",
+      "sourceType": "github",
+      "computedHash": "3cc9cbfb604e747d6e94d3c26a4485dc690118192ceb0e3a7c1f139bae710218"
+    }
+  }
+}
