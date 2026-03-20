@@ -11,8 +11,14 @@
   },
   "app": {
     "withGlobalTauri": true,
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "menuOnLeftClick": false
+    },
     "windows": [
       {
+        "label": "main",
         "title": "小河日历",
         "width": 1200,
         "height": 800,
@@ -28,11 +34,6 @@
     ],
     "security": {
       "csp": null
-    },
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "menuOnLeftClick": false
     }
   },
   "bundle": {
