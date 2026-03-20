@@ -112,9 +112,9 @@ const showAnyBadge = computed(() =>
   showSolarTerm.value
 )
 
-const weekDays = computed(() => getWeekDays(1)) // Monday first
+const weekDays = computed(() => getWeekDays(settings.value.firstDayOfWeek))
 
-const monthDays = computed(() => getMonthDays(currentDate.value, 1))
+const monthDays = computed(() => getMonthDays(currentDate.value, settings.value.firstDayOfWeek))
 
 // 缓存当月农历信息
 const lunarInfoCache = computed(() => {

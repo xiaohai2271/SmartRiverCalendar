@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container" :class="{ 'dark': isDark }">
+  <div class="app-container">
     <!-- Sidebar - Fluent Design -->
     <aside class="sidebar fluent-card">
       <div class="logo">
@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
@@ -61,6 +61,7 @@ const calendarStore = useCalendarStore()
 
 onMounted(() => {
   calendarStore.initialize()
+  applyTheme()
 })
 
 const isDark = computed(() => {
@@ -70,6 +71,22 @@ const isDark = computed(() => {
   }
   return false
 })
+
+// 应用主题到 :root
+function applyTheme() {
+  const root = document.documentElement
+  root.classList.remove('dark', 'light')
+  
+  if (settingsStore.settings.theme === 'dark') {
+    root.classList.add('dark')
+  } else if (settingsStore.settings.theme === 'light') {
+    root.classList.add('light')
+  }
+  // 'auto' 模式依赖 CSS 媒体查询
+}
+
+// 监听主题设置变化
+watch(() => settingsStore.settings.theme, applyTheme)
 </script>
 
 <style scoped>

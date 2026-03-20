@@ -43,17 +43,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
-import { isSameDay, isToday as isTodayFn, startOfWeek } from '../../utils/date'
+import { useSettingsStore } from '../../stores/settings'
+import { isSameDay, isToday as isTodayFn, startOfWeek, getWeekDays } from '../../utils/date'
 import type { CalendarEvent } from '../../types'
 
 const calendarStore = useCalendarStore()
+const settingsStore = useSettingsStore()
 
 const hours = Array.from({ length: 24 }, (_, i) => i)
 
 const weekDays = computed(() => {
-  const start = startOfWeek(calendarStore.currentDate, 1)
+  const firstDay = settingsStore.settings.firstDayOfWeek
+  const start = startOfWeek(calendarStore.currentDate, firstDay)
   const days = []
-  const dayNames = ['周一', '周二', '周三', '周四', '周五', '周六', '周日']
+  const dayNames = getWeekDays(firstDay)
 
   for (let i = 0; i < 7; i++) {
     const date = new Date(start)

@@ -29,19 +29,22 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
-import { getMonthDays, isToday as isTodayFn } from '../../utils/date'
+import { useSettingsStore } from '../../stores/settings'
+import { getMonthDays, isToday as isTodayFn, getWeekDays } from '../../utils/date'
 
 const calendarStore = useCalendarStore()
+const settingsStore = useSettingsStore()
 
 const currentYear = computed(() => calendarStore.currentDate.getFullYear())
 
 const monthNames = ['一月', '二月', '三月', '四月', '五月', '六月', '七月', '八月', '九月', '十月', '十一月', '十二月']
 
-const weekLabels = ['日', '一', '二', '三', '四', '五', '六']
+const weekLabels = computed(() => getWeekDays(settingsStore.settings.firstDayOfWeek))
 
 function getMonthWeeks(month: number) {
   const date = new Date(currentYear.value, month, 1)
-  const days = getMonthDays(date, 0) // Start from Sunday
+  const firstDay = settingsStore.settings.firstDayOfWeek
+  const days = getMonthDays(date, firstDay)
   const weeks: any[][] = []
 
   for (let i = 0; i < days.length; i += 7) {

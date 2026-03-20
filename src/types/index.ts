@@ -63,13 +63,11 @@ export interface TimeBlock {
 // App Settings
 export interface AppSettings {
   theme: 'light' | 'dark' | 'auto'
-  language: 'zh-CN' | 'en-US'
   defaultView: 'day' | 'week' | 'month' | 'year'
   firstDayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6 // 0=Sunday
   defaultReminder: number // minutes
   startMinimized: boolean
   autoStart: boolean
-  minimizeToTray: boolean
   // 日历显示设置
   showLunar: boolean // 显示农历
   showLunarFestival: boolean // 显示农历节日

@@ -4,13 +4,11 @@ import type { AppSettings } from '../types'
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
-  language: 'zh-CN',
   defaultView: 'month',
   firstDayOfWeek: 1, // Monday
   defaultReminder: 15,
   startMinimized: false,
   autoStart: false,
-  minimizeToTray: true,
   // 日历显示设置（默认全部开启）
   showLunar: true,
   showLunarFestival: true,

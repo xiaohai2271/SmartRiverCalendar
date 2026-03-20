@@ -34,9 +34,7 @@
     </div>
 
     <!-- Add Event Button -->
-    <button class="add-event-btn" @click="showEventModal = true">
-      <span>+</span>
-    </button>
+    <button class="add-event-btn" @click="showEventModal = true">+</button>
 
     <!-- Event Modal -->
     <div v-if="showEventModal" class="modal-overlay" @click.self="showEventModal = false">
@@ -252,6 +250,9 @@ function handleCreateEvent() {
   font-size: 28px;
   cursor: pointer;
   box-shadow: 0 4px 12px rgba(74, 144, 217, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .add-event-btn:hover {

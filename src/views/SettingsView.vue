@@ -13,13 +13,6 @@
           <option value="auto">跟随系统</option>
         </select>
       </div>
-      <div class="setting-item">
-        <label>语言</label>
-        <select v-model="settings.language" @change="saveSettings">
-          <option value="zh-CN">简体中文</option>
-          <option value="en-US">English</option>
-        </select>
-      </div>
     </div>
 
     <!-- 日历显示设置 -->
@@ -140,11 +133,7 @@
       </div>
       <div class="setting-item">
         <label>开机自启</label>
-        <input type="checkbox" v-model="settings.autoStart" @change="saveSettings" />
-      </div>
-      <div class="setting-item">
-        <label>关闭时最小化到托盘</label>
-        <input type="checkbox" v-model="settings.minimizeToTray" @change="saveSettings" />
+        <input type="checkbox" v-model="settings.autoStart" @change="handleAutoStartChange" />
       </div>
     </div>
 
@@ -179,7 +168,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, onMounted } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import { useCalendarStore } from '../stores/calendar'
 import {
@@ -190,6 +179,7 @@ import {
   removeHoliday as removeHolidayFn,
   removeMakeupDay as removeMakeupDayFn
 } from '../utils/lunar'
+import { setAutostart, getAutostartEnabled, isTauri } from '../utils/tauri'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
@@ -205,8 +195,28 @@ const holidayTab = ref<'holidays' | 'makeup'>('holidays')
 const newHoliday = reactive({ date: '', name: '' })
 const newMakeup = reactive({ date: '', name: '' })
 
-function saveSettings() {
+// 初始化自启动状态
+onMounted(async () => {
+  if (isTauri()) {
+    const enabled = await getAutostartEnabled()
+    settingsStore.updateSettings({ autoStart: enabled })
+  }
+})
+
+async function saveSettings() {
   settingsStore.saveSettings()
+}
+
+// 处理自启动设置变化
+async function handleAutoStartChange() {
+  if (isTauri()) {
+    const success = await setAutostart(settings.value.autoStart)
+    if (!success) {
+      // 如果设置失败，恢复原状态
+      settingsStore.updateSettings({ autoStart: !settings.value.autoStart })
+    }
+  }
+  saveSettings()
 }
 
 function toggleCalendar(id: string) {

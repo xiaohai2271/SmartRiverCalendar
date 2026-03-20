@@ -25,7 +25,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   ])
 
   const events = ref<CalendarEvent[]>([])
-  const currentView = ref<CalendarView>('month')
+  const currentView = ref<CalendarView>('month') // 默认值，将在 initialize 中从设置读取
   const currentDate = ref(new Date())
   const selectedDate = ref<Date | null>(null)
   const isInitialized = ref(false)
@@ -36,6 +36,19 @@ export const useCalendarStore = defineStore('calendar', () => {
 
     try {
       await initDatabase()
+
+      // 从 localStorage 加载默认视图设置
+      try {
+        const storedSettings = localStorage.getItem('app-settings')
+        if (storedSettings) {
+          const settings = JSON.parse(storedSettings)
+          if (settings.defaultView) {
+            currentView.value = settings.defaultView
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load default view setting:', e)
+      }
 
       // 加载日历
       const loadedCalendars = await getAllCalendars()
@@ -58,7 +71,8 @@ export const useCalendarStore = defineStore('calendar', () => {
       isInitialized.value = true
       console.log('Calendar store initialized:', {
         calendars: calendars.value.length,
-        events: events.value.length
+        events: events.value.length,
+        defaultView: currentView.value
       })
     } catch (error) {
       console.error('Failed to initialize calendar store:', error)

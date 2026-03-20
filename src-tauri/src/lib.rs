@@ -52,6 +52,7 @@ pub fn run() {
                 // 创建托盘图标
                 let _tray = TrayIconBuilder::new()
                     .menu(&menu)
+                    .show_menu_on_left_click(false)
                     .tooltip("小河日历")
                     .icon(app.default_window_icon().unwrap().clone())
                     .on_menu_event(|app, event| match event.id().as_ref() {
@@ -120,11 +121,6 @@ pub fn run() {
                             let _ = window.hide();
                         }
                     }
-                }
-                tauri::WindowEvent::CloseRequested { api, .. } => {
-                    // 拦截关闭请求，改为隐藏到托盘
-                    let _ = window.hide();
-                    api.prevent_close();
                 }
                 _ => {}
             }

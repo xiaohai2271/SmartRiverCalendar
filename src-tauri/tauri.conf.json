@@ -11,11 +11,6 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "menuOnLeftClick": false
-    },
     "windows": [
       {
         "label": "main",
@@ -27,7 +22,7 @@
         "center": true,
         "resizable": true,
         "fullscreen": false,
-        "decorations": true,
+        "decorations": false,
         "transparent": false,
         "visible": true
       }
