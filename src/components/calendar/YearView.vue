@@ -31,6 +31,11 @@ import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
 import { getMonthDays, isToday as isTodayFn, getWeekDays } from '../../utils/date'
+import type { CalendarEvent } from '../../types'
+
+const emit = defineEmits<{
+  'edit-event': [event: CalendarEvent]
+}>()
 
 const calendarStore = useCalendarStore()
 const settingsStore = useSettingsStore()

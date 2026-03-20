@@ -20,16 +20,37 @@
         }"
         @click="selectDay(day)"
       >
+        <!-- 日期头部 -->
         <div class="day-header">
-          <span class="day-number">{{ day.getDate() }}</span>
-          <!-- 农历信息 -->
-          <span
-            v-if="showLunar"
-            class="lunar-date"
-            :class="{ 'other-lunar': !isSameMonth(day, currentDate), 'festival': shouldShowFestival(day) }"
-          >
-            {{ getLunarInfo(day)?.lunarDate }}
-          </span>
+          <div class="day-header-left">
+            <span class="day-number">{{ day.getDate() }}</span>
+            <!-- 农历信息 -->
+            <span
+              v-if="showLunar"
+              class="lunar-date"
+              :class="{ 'other-lunar': !isSameMonth(day, currentDate), 'festival': shouldShowFestival(day) }"
+            >
+              {{ getLunarInfo(day)?.lunarDate }}
+            </span>
+          </div>
+          <!-- 事件指示器（右上角） -->
+          <div v-if="getEventsForDay(day).length > 0" class="events-indicator">
+            <span
+              v-for="event in getEventsForDay(day).slice(0, maxEventDots)"
+              :key="event.id"
+              class="event-dot"
+              :style="{ background: getEventColor(event) }"
+              :title="event.title"
+              @click.stop="emit('edit-event', event)"
+            ></span>
+            <span
+              v-if="getEventsForDay(day).length > maxEventDots"
+              class="more-events"
+              :title="`${getEventsForDay(day).length} 个事件`"
+            >
+              +{{ getEventsForDay(day).length - maxEventDots }}
+            </span>
+          </div>
         </div>
 
         <!-- 节日标识 -->
@@ -67,17 +88,6 @@
             {{ getLunarInfo(day)?.solarTerm }}
           </span>
         </div>
-
-        <!-- 事件点 -->
-        <div class="day-events">
-          <div
-            v-for="event in getEventsForDay(day)"
-            :key="event.id"
-            class="event-dot"
-            :style="{ background: getEventColor(event) }"
-            :title="event.title"
-          ></div>
-        </div>
       </div>
     </div>
   </div>
@@ -91,11 +101,18 @@ import { getMonthDays, getWeekDays, isSameDay, isToday as isTodayFn } from '../.
 import { getLunarInfo as fetchLunarInfo, type LunarInfo } from '../../utils/lunar'
 import type { CalendarEvent } from '../../types'
 
+const emit = defineEmits<{
+  'edit-event': [event: CalendarEvent]
+}>()
+
 const calendarStore = useCalendarStore()
 const settingsStore = useSettingsStore()
 
 const currentDate = computed(() => calendarStore.currentDate)
 const settings = computed(() => settingsStore.settings)
+
+// 最大显示事件点数量
+const maxEventDots = 3
 
 // 显示设置
 const showLunar = computed(() => settings.value.showLunar)
@@ -224,23 +241,36 @@ function selectDay(day: Date) {
   color: var(--text-tertiary);
 }
 
-.day-cell.weekend:not(.holiday) {
-  background: rgba(255, 245, 245, 0.5);
+/* 周末 - 极浅橙色 */
+.day-cell.weekend:not(.holiday):not(.workday) {
+  background: rgba(255, 237, 213, 0.4);
 }
 
+/* 法定节假日 - 极浅绿色，带左侧色条 */
 .day-cell.holiday {
-  background: #fef0ef;
+  background: rgba(220, 252, 231, 0.4);
+  border-left: 3px solid #86efac;
 }
 
+/* 补班日 - 极浅红色，带左侧色条 */
 .day-cell.workday {
-  background: #e8f4fd;
+  background: rgba(254, 226, 226, 0.35);
+  border-left: 3px solid #fca5a5;
 }
 
+/* 今天 - 主题色 */
 .day-cell.today {
   background: var(--accent-light);
+  box-shadow: inset 0 0 0 2px var(--accent-color);
 }
 
 .day-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.day-header-left {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -274,6 +304,39 @@ function selectDay(day: Date) {
   font-weight: 600;
 }
 
+/* 事件指示器（右上角） */
+.events-indicator {
+  display: flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--transition-fast);
+}
+
+.event-dot:hover {
+  transform: scale(1.5);
+}
+
+.more-events {
+  font-size: 10px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.more-events:hover {
+  background: var(--bg-hover);
+}
+
+/* 节日标识 */
 .day-badges {
   display: flex;
   flex-wrap: wrap;
@@ -285,7 +348,6 @@ function selectDay(day: Date) {
   font-size: 10px;
   padding: 1px 4px;
   border-radius: 3px;
-  font-weight: 500;
   white-space: nowrap;
 }
 
@@ -295,8 +357,8 @@ function selectDay(day: Date) {
 }
 
 .badge.holiday {
-  background: #fef2f2;
-  color: #dc2626;
+  background: #dcfce7;
+  color: rgba(40, 7, 255, 0.76);
 }
 
 .badge.makeup {
@@ -309,43 +371,37 @@ function selectDay(day: Date) {
   color: #16a34a;
 }
 
-.day-events {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 6px;
-}
-
-.event-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
 @media (prefers-color-scheme: dark) {
-  .day-cell.weekend:not(.holiday) {
+  /* 周末 - 深色模式极浅 */
+  .day-cell.weekend:not(.holiday):not(.workday) {
     background: rgba(255, 255, 255, 0.03);
   }
 
+  /* 法定节假日 - 深色模式极浅绿色 */
   .day-cell.holiday {
-    background: rgba(220, 38, 38, 0.1);
+    background: rgba(34, 197, 94, 0.1);
+    border-left-color: #86efac;
   }
 
+  /* 补班日 - 深色模式极浅红色 */
   .day-cell.workday {
-    background: rgba(37, 99, 235, 0.1);
+    background: rgba(239, 68, 68, 0.1);
+    border-left-color: #fca5a5;
   }
 
   .badge.festival,
   .badge.holiday {
-    background: rgba(220, 38, 38, 0.2);
+    background: rgba(34, 197, 94, 0.15);
+    color: rgba(40, 7, 255, 0.76);
   }
 
   .badge.makeup {
-    background: rgba(37, 99, 235, 0.2);
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
   }
 
   .badge.solar-term {
-    background: rgba(22, 163, 74, 0.2);
+    background: rgba(22, 163, 74, 0.15);
   }
 }
 </style>

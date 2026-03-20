@@ -3,14 +3,36 @@
     <!-- Week header -->
     <div class="week-header">
       <div class="time-gutter"></div>
-      <div
-        v-for="day in weekDays"
-        :key="day.date.toISOString()"
-        class="day-header"
-        :class="{ today: isToday(day.date) }"
-      >
-        <div class="day-name">{{ day.name }}</div>
-        <div class="day-num">{{ day.date.getDate() }}</div>
+      <div class="days-header">
+        <div
+          v-for="day in weekDays"
+          :key="day.date.toISOString()"
+          class="day-header"
+          :class="{ today: isToday(day.date) }"
+        >
+          <div class="day-name">{{ day.name }}</div>
+          <div class="day-num">{{ day.date.getDate() }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- All day events row -->
+    <div class="all-day-row">
+      <div class="time-gutter">
+        <div class="all-day-label">全天</div>
+      </div>
+      <div class="days-all-day">
+        <div v-for="day in weekDays" :key="day.date.toISOString()" class="day-all-day">
+          <div
+            v-for="event in getAllDayEvents(day.date)"
+            :key="event.id"
+            class="week-event all-day"
+            :style="{ background: getEventColor(event) }"
+            @click.stop="emit('edit-event', event)"
+          >
+            {{ event.title }}
+          </div>
+        </div>
       </div>
     </div>
 
@@ -21,18 +43,24 @@
           {{ hour }}:00
         </div>
       </div>
-      <div class="days-grid">
-        <div v-for="day in weekDays" :key="day.date.toISOString()" class="day-column">
-          <div v-for="hour in hours" :key="hour" class="hour-cell" @click="handleCellClick(day.date, hour)"></div>
-          <!-- Events -->
-          <div
-            v-for="event in getEventsForDay(day.date)"
-            :key="event.id"
-            class="week-event"
-            :style="getEventStyle(event)"
-            :class="{ 'all-day': event.allDay }"
-          >
-            <div class="event-title">{{ event.title }}</div>
+      <div class="days-grid-container">
+        <div class="days-grid">
+          <div v-for="day in weekDays" :key="day.date.toISOString()" class="day-column">
+            <div v-for="hour in hours" :key="hour" class="hour-cell" @click="handleCellClick(day.date, hour)"></div>
+          </div>
+        </div>
+        <div class="events-layer">
+          <div v-for="day in weekDays" :key="'events-' + day.date.toISOString()" class="day-events-column">
+            <div
+              v-for="(layout, index) in getDayEventsLayout(day.date)"
+              :key="layout.event.id"
+              class="week-event timed"
+              :style="layout"
+              @click.stop="emit('edit-event', layout.event)"
+            >
+              <div class="event-time">{{ formatEventTime(layout.event) }}</div>
+              <div class="event-title">{{ layout.event.title }}</div>
+            </div>
           </div>
         </div>
       </div>
@@ -44,8 +72,12 @@
 import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
-import { isSameDay, isToday as isTodayFn, startOfWeek, getWeekDays } from '../../utils/date'
+import { isSameDay, isToday as isTodayFn, startOfWeek, getWeekDays, formatTime } from '../../utils/date'
 import type { CalendarEvent } from '../../types'
+
+const emit = defineEmits<{
+  'edit-event': [event: CalendarEvent]
+}>()
 
 const calendarStore = useCalendarStore()
 const settingsStore = useSettingsStore()
@@ -80,28 +112,115 @@ function getEventsForDay(day: Date): CalendarEvent[] {
   })
 }
 
-function getEventStyle(event: CalendarEvent): any {
-  if (event.allDay) {
-    return {}
-  }
-  const startDate = new Date(event.startTime)
-  const endDate = new Date(event.endTime)
-  const startHour = startDate.getHours() + startDate.getMinutes() / 60
-  const duration = (endDate.getTime() - startDate.getTime()) / 3600000
+function getAllDayEvents(day: Date): CalendarEvent[] {
+  return getEventsForDay(day).filter(event => event.allDay)
+}
 
+function getTimedEvents(day: Date): CalendarEvent[] {
+  return getEventsForDay(day).filter(event => !event.allDay)
+}
+
+function getEventColor(event: CalendarEvent): string {
   const calendar = calendarStore.calendars.find(c => c.id === event.calendarId)
+  return calendar?.color || '#4A90D9'
+}
 
-  return {
-    top: `${startHour * 48}px`,
-    height: `${duration * 48}px`,
-    background: calendar?.color || '#4A90D9'
+// 计算事件布局（处理重叠）
+interface EventLayout {
+  event: CalendarEvent
+  top: number
+  height: number
+  left: string
+  width: string
+  background: string
+}
+
+function calculateEventsLayout(events: CalendarEvent[]): EventLayout[] {
+  if (events.length === 0) return []
+
+  // 按开始时间排序
+  const sorted = [...events].sort((a, b) => a.startTime - b.startTime)
+
+  // 计算每个事件的时间范围（以分钟为单位，从0点开始）
+  const eventRanges = sorted.map(event => {
+    const startDate = new Date(event.startTime)
+    const endDate = new Date(event.endTime)
+    const start = startDate.getHours() * 60 + startDate.getMinutes()
+    const end = endDate.getHours() * 60 + endDate.getMinutes()
+    return {
+      event,
+      start: Math.max(0, start),
+      end: Math.min(24 * 60, Math.max(start + 30, end)), // 最小30分钟
+      column: 0
+    }
+  })
+
+  // 检测重叠并分配列
+  const columns: { end: number }[] = []
+
+  for (const range of eventRanges) {
+    // 找到第一个可以放置该事件的列
+    let placed = false
+    for (let col = 0; col < columns.length; col++) {
+      if (columns[col].end <= range.start) {
+        columns[col].end = range.end
+        range.column = col
+        placed = true
+        break
+      }
+    }
+    if (!placed) {
+      range.column = columns.length
+      columns.push({ end: range.end })
+    }
   }
+
+  // 计算每个事件在其重叠组中的位置
+  const layouts: EventLayout[] = []
+
+  for (const range of eventRanges) {
+    // 找出与当前事件重叠的所有事件
+    const overlapping = eventRanges.filter(r =>
+      r.start < range.end && r.end > range.start
+    )
+    const maxColumn = Math.max(...overlapping.map(r => r.column))
+    const totalColumns = maxColumn + 1
+    const currentColumn = range.column
+
+    const widthPercent = 100 / totalColumns
+    const leftPercent = currentColumn * widthPercent
+
+    const top = (range.start / 60) * 48
+    const height = ((range.end - range.start) / 60) * 48
+
+    layouts.push({
+      event: range.event,
+      top,
+      height: Math.max(height, 24),
+      left: `calc(${leftPercent}% + 2px)`,
+      width: `calc(${widthPercent}% - 4px)`,
+      background: getEventColor(range.event)
+    })
+  }
+
+  return layouts
+}
+
+function getDayEventsLayout(day: Date): EventLayout[] {
+  const timedEvents = getTimedEvents(day)
+  return calculateEventsLayout(timedEvents)
 }
 
 function handleCellClick(date: Date, hour: number) {
   const clickedDate = new Date(date)
   clickedDate.setHours(hour, 0, 0, 0)
   calendarStore.selectDate(clickedDate)
+}
+
+function formatEventTime(event: CalendarEvent): string {
+  const start = formatTime(new Date(event.startTime))
+  const end = formatTime(new Date(event.endTime))
+  return `${start}-${end}`
 }
 </script>
 
@@ -118,17 +237,23 @@ function handleCellClick(date: Date, hour: number) {
 .week-header {
   display: flex;
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .time-gutter {
-  width: 60px;
+  width: 50px;
   flex-shrink: 0;
+}
+
+.days-header {
+  flex: 1;
+  display: flex;
 }
 
 .day-header {
   flex: 1;
   text-align: center;
-  padding: 12px 0;
+  padding: 8px 0;
   border-left: 1px solid var(--border-color);
 }
 
@@ -137,27 +262,73 @@ function handleCellClick(date: Date, hour: number) {
 }
 
 .day-name {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-secondary);
 }
 
 .day-num {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
 }
 
 .day-header.today .day-num {
   background: var(--accent-color);
   color: white;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
+/* All day row */
+.all-day-row {
+  display: flex;
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.all-day-label {
+  height: 32px;
+  padding: 8px 6px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.days-all-day {
+  flex: 1;
+  display: flex;
+}
+
+.day-all-day {
+  flex: 1;
+  border-left: 1px solid var(--border-color);
+  padding: 2px;
+  min-height: 32px;
+}
+
+.week-event.all-day {
+  background: var(--accent-color);
+  color: white;
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-size: 10px;
+  margin-bottom: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity var(--transition-fast);
+}
+
+.week-event.all-day:hover {
+  opacity: 0.9;
+}
+
+/* Week body */
 .week-body {
   flex: 1;
   display: flex;
@@ -166,25 +337,36 @@ function handleCellClick(date: Date, hour: number) {
 
 .time-slot {
   height: 48px;
-  padding: 4px 8px;
-  font-size: 12px;
+  line-height: 48px;
+  padding: 0 6px;
+  font-size: 11px;
   color: var(--text-secondary);
   text-align: right;
+}
+
+.days-grid-container {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .days-grid {
   flex: 1;
   display: flex;
+  min-height: 1152px; /* 24小时 * 48px/小时 */
 }
 
 .day-column {
   flex: 1;
-  position: relative;
   border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
 }
 
 .hour-cell {
   height: 48px;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border-color);
   cursor: pointer;
 }
@@ -193,22 +375,48 @@ function handleCellClick(date: Date, hour: number) {
   background: var(--bg-hover);
 }
 
-.week-event {
+/* Events layer */
+.events-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  pointer-events: none;
+  min-height: 1152px;
+}
+
+.day-events-column {
+  flex: 1;
+  position: relative;
+  pointer-events: auto;
+}
+
+.week-event.timed {
   position: absolute;
   left: 2px;
   right: 2px;
   background: var(--accent-color);
   color: white;
   border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 12px;
+  padding: 4px 6px;
+  font-size: 11px;
   overflow: hidden;
   cursor: pointer;
+  z-index: 1;
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.week-event.all-day {
-  position: relative;
-  margin-bottom: 2px;
+.week-event.timed:hover {
+  transform: scale(1.02);
+  box-shadow: var(--shadow-md);
+  z-index: 10;
+}
+
+.event-time {
+  font-size: 10px;
+  opacity: 0.9;
 }
 
 .event-title {

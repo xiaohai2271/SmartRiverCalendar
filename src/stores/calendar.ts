@@ -62,6 +62,15 @@ export const useCalendarStore = defineStore('calendar', () => {
           visible: c.visible === 1,
           syncEnabled: c.sync_enabled === 1
         }))
+      } else {
+        // 数据库为空，保存默认日历到数据库
+        const now = Date.now()
+        await saveCalendar({
+          ...calendars.value[0],
+          createdAt: now,
+          updatedAt: now
+        })
+        console.log('Default calendar saved to database')
       }
 
       // 加载事件

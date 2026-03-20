@@ -1,4 +1,7 @@
 <template>
+  <!-- 顶部拖动区域 -->
+  <div class="titlebar" data-tauri-drag-region></div>
+  
   <div class="app-container">
     <!-- Sidebar - Fluent Design -->
     <aside class="sidebar fluent-card">
@@ -90,6 +93,28 @@ watch(() => settingsStore.settings.theme, applyTheme)
 </script>
 
 <style scoped>
+/* 顶部拖动区域 - 不影响布局的透明覆盖层 */
+.titlebar {
+  height: 24px;
+  width: 100%;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 9999;
+  background: transparent;
+  cursor: grab;
+  transition: background var(--transition-fast);
+}
+
+.titlebar:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.titlebar:active {
+  cursor: grabbing;
+  background: rgba(0, 0, 0, 0.08);
+}
+
 .app-container {
   display: flex;
   height: 100vh;

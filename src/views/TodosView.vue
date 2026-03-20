@@ -1,110 +1,207 @@
 <template>
   <div class="todos-view">
+    <!-- Header -->
     <div class="todos-header">
-      <h2>待办事项</h2>
-      <button class="add-btn" @click="showAddModal = true">+ 新建待办</button>
+      <div class="header-left">
+        <h2 class="page-title">待办事项</h2>
+        <span class="todo-count">{{ todoStore.pendingTodos.length }} 项待完成</span>
+      </div>
+      <button class="fluent-button primary add-btn" @click="openAddModal">
+        <span class="btn-icon">+</span>
+        <span>新建待办</span>
+      </button>
     </div>
 
+    <!-- Filter Tabs -->
     <div class="filter-tabs">
       <button
-        :class="['tab', { active: filter === 'all' }]"
-        @click="filter = 'all'"
-      >全部</button>
-      <button
-        :class="['tab', { active: filter === 'pending' }]"
-        @click="filter = 'pending'"
-      >待完成</button>
-      <button
-        :class="['tab', { active: filter === 'completed' }]"
-        @click="filter = 'completed'"
-      >已完成</button>
-    </div>
-
-    <div class="todos-list">
-      <div
-        v-for="todo in filteredTodos"
-        :key="todo.id"
-        class="todo-item"
-        :class="{ completed: todo.completed }"
+        v-for="tab in filterTabs"
+        :key="tab.value"
+        :class="['tab', { active: filter === tab.value }]"
+        @click="filter = tab.value"
       >
-        <input
-          type="checkbox"
-          :checked="todo.completed"
-          @change="todoStore.toggleTodo(todo.id)"
-        />
-        <div class="todo-content">
-          <div class="todo-title">{{ todo.title }}</div>
-          <div v-if="todo.dueDate" class="todo-due">
-            截止: {{ formatDueDate(todo.dueDate) }}
-          </div>
-        </div>
-        <div class="todo-priority" :class="todo.priority">
-          {{ priorityLabels[todo.priority] }}
-        </div>
-        <button class="delete-btn" @click="todoStore.deleteTodo(todo.id)">×</button>
-      </div>
+        {{ tab.label }}
+        <span v-if="tab.count !== undefined" class="tab-count">{{ tab.count }}</span>
+      </button>
+    </div>
 
+    <!-- Todos List -->
+    <div class="todos-list">
+      <TransitionGroup name="todo">
+        <div
+          v-for="todo in filteredTodos"
+          :key="todo.id"
+          class="todo-item fluent-card"
+          :class="{ completed: todo.completed }"
+        >
+          <label class="checkbox-wrapper">
+            <input
+              type="checkbox"
+              :checked="todo.completed"
+              @change="todoStore.toggleTodo(todo.id)"
+              class="todo-checkbox"
+            />
+            <span class="checkbox-custom"></span>
+          </label>
+          
+          <div class="todo-content" @click="openEditModal(todo)">
+            <div class="todo-title">{{ todo.title }}</div>
+            <div class="todo-meta">
+              <span v-if="todo.dueDate" class="todo-due" :class="{ overdue: isOverdue(todo.dueDate) && !todo.completed }">
+                <span class="meta-icon">📅</span>
+                {{ formatDueDate(todo.dueDate) }}
+              </span>
+            </div>
+          </div>
+          
+          <div class="todo-priority" :class="todo.priority">
+            {{ priorityLabels[todo.priority] }}
+          </div>
+          
+          <button class="edit-btn" @click="openEditModal(todo)" title="编辑">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          
+          <button class="delete-btn" @click="todoStore.deleteTodo(todo.id)" title="删除">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M4.5 3V1.5C4.5 1.22 4.72 1 5 1H11C11.28 1 11.5 1.22 11.5 1.5V3M2.5 4H13.5M12.5 4V14C12.5 14.28 12.28 14.5 12 14.5H4C3.72 14.5 3.5 14.28 3.5 14V4M6.5 7V11.5M9.5 7V11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </TransitionGroup>
+
+      <!-- Empty State -->
       <div v-if="filteredTodos.length === 0" class="empty-state">
-        暂无待办事项
+        <div class="empty-icon">✓</div>
+        <div class="empty-text">
+          {{ filter === 'completed' ? '还没有完成任何待办' : '暂无待办事项' }}
+        </div>
+        <button v-if="filter !== 'completed'" class="fluent-button" @click="openAddModal">
+          创建第一个待办
+        </button>
       </div>
     </div>
 
-    <!-- Add Modal -->
-    <div v-if="showAddModal" class="modal-overlay" @click.self="showAddModal = false">
-      <div class="add-modal">
-        <h3>新建待办</h3>
-        <form @submit.prevent="handleAddTodo">
-          <div class="form-group">
-            <label>标题</label>
-            <input v-model="newTodo.title" type="text" placeholder="待办标题" required />
+    <!-- Add/Edit Modal -->
+    <Transition name="modal">
+      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+        <div class="add-modal fluent-card" @keydown.escape="closeModal">
+          <div class="modal-header">
+            <h3>{{ isEditing ? '编辑待办' : '新建待办' }}</h3>
+            <button class="close-btn" @click="closeModal">
+              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              </svg>
+            </button>
           </div>
-          <div class="form-group">
-            <label>优先级</label>
-            <select v-model="newTodo.priority">
-              <option value="low">低</option>
-              <option value="medium">中</option>
-              <option value="high">高</option>
-            </select>
-          </div>
-          <div class="form-group">
-            <label>截止日期</label>
-            <input v-model="newTodo.dueDate" type="date" />
-          </div>
-          <div class="form-actions">
-            <button type="button" @click="showAddModal = false">取消</button>
-            <button type="submit" class="submit-btn">添加</button>
-          </div>
-        </form>
+          
+          <form @submit.prevent="handleSubmit" class="modal-body">
+            <!-- Title - Required -->
+            <div class="form-group">
+              <label class="form-label">
+                标题 <span class="required">*</span>
+              </label>
+              <input
+                v-model="formData.title"
+                type="text"
+                class="fluent-input"
+                placeholder="输入待办事项..."
+                required
+                ref="titleInput"
+              />
+            </div>
+
+            <!-- Priority -->
+            <div class="form-group">
+              <label class="form-label">
+                优先级
+                <span class="optional-badge">可选</span>
+              </label>
+              <div class="priority-selector">
+                <button
+                  v-for="p in priorities"
+                  :key="p.value"
+                  type="button"
+                  :class="['priority-option', p.value, { active: formData.priority === p.value }]"
+                  @click="formData.priority = p.value"
+                >
+                  {{ p.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Due Date -->
+            <div class="form-group">
+              <label class="form-label">
+                截止日期
+                <span class="optional-badge">可选</span>
+              </label>
+              <input
+                v-model="formData.dueDate"
+                type="date"
+                class="fluent-input"
+              />
+            </div>
+
+            <!-- Actions -->
+            <div class="modal-actions">
+              <button type="button" class="fluent-button" @click="closeModal">
+                取消
+              </button>
+              <button type="submit" class="fluent-button primary" :disabled="!formData.title.trim()">
+                {{ isEditing ? '保存修改' : '添加待办' }}
+              </button>
+            </div>
+          </form>
+        </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useTodoStore } from '../stores/todo'
 import { formatDate } from '../utils/date'
+import type { Todo } from '../types'
 
 const todoStore = useTodoStore()
+const titleInput = ref<HTMLInputElement | null>(null)
 
 onMounted(() => {
   todoStore.initialize()
 })
 
 const filter = ref<'all' | 'pending' | 'completed'>('all')
-const showAddModal = ref(false)
+const showModal = ref(false)
+const isEditing = ref(false)
+const editingTodoId = ref<string | null>(null)
 
-const newTodo = ref({
+const formData = ref({
   title: '',
   priority: 'medium' as 'low' | 'medium' | 'high',
   dueDate: ''
 })
 
 const priorityLabels = {
-  low: '低',
-  medium: '中',
-  high: '高'
+  low: '低优先级',
+  medium: '中优先级',
+  high: '高优先级'
 }
+
+const priorities = [
+  { value: 'low', label: '低' },
+  { value: 'medium', label: '中' },
+  { value: 'high', label: '高' }
+]
+
+const filterTabs = computed(() => [
+  { value: 'all', label: '全部', count: todoStore.todos.length },
+  { value: 'pending', label: '待完成', count: todoStore.pendingTodos.length },
+  { value: 'completed', label: '已完成', count: todoStore.completedTodos.length }
+])
 
 const filteredTodos = computed(() => {
   switch (filter.value) {
@@ -117,21 +214,89 @@ const filteredTodos = computed(() => {
   }
 })
 
-async function handleAddTodo() {
-  await todoStore.addTodo({
-    title: newTodo.value.title,
-    priority: newTodo.value.priority,
-    dueDate: newTodo.value.dueDate ? new Date(newTodo.value.dueDate).getTime() : undefined,
-    completed: false,
-    calendarId: 'default'
-  })
+// 自动聚焦标题输入框
+watch(showModal, (show) => {
+  if (show) {
+    nextTick(() => {
+      titleInput.value?.focus()
+    })
+  }
+})
 
-  showAddModal.value = false
-  newTodo.value = { title: '', priority: 'medium', dueDate: '' }
+function openAddModal() {
+  isEditing.value = false
+  editingTodoId.value = null
+  formData.value = { title: '', priority: 'medium', dueDate: '' }
+  showModal.value = true
+}
+
+function openEditModal(todo: Todo) {
+  isEditing.value = true
+  editingTodoId.value = todo.id
+  formData.value = {
+    title: todo.title,
+    priority: todo.priority,
+    dueDate: todo.dueDate ? new Date(todo.dueDate).toISOString().split('T')[0] : ''
+  }
+  showModal.value = true
+}
+
+function closeModal() {
+  showModal.value = false
+  isEditing.value = false
+  editingTodoId.value = null
+  formData.value = { title: '', priority: 'medium', dueDate: '' }
+}
+
+async function handleSubmit() {
+  const title = formData.value.title.trim()
+  if (!title) return
+
+  if (isEditing.value && editingTodoId.value) {
+    // 编辑模式
+    await todoStore.updateTodo(editingTodoId.value, {
+      title,
+      priority: formData.value.priority,
+      dueDate: formData.value.dueDate ? new Date(formData.value.dueDate).getTime() : undefined
+    })
+  } else {
+    // 新建模式
+    await todoStore.addTodo({
+      title,
+      priority: formData.value.priority,
+      dueDate: formData.value.dueDate ? new Date(formData.value.dueDate).getTime() : undefined,
+      completed: false,
+      calendarId: 'default'
+    })
+  }
+
+  closeModal()
 }
 
 function formatDueDate(timestamp: number): string {
-  return formatDate(new Date(timestamp))
+  const date = new Date(timestamp)
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  
+  const todoDate = new Date(date)
+  todoDate.setHours(0, 0, 0, 0)
+  
+  if (todoDate.getTime() === today.getTime()) {
+    return '今天'
+  } else if (todoDate.getTime() === tomorrow.getTime()) {
+    return '明天'
+  } else {
+    return formatDate(date)
+  }
+}
+
+function isOverdue(timestamp: number): boolean {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return timestamp < today.getTime()
 }
 </script>
 
@@ -139,8 +304,10 @@ function formatDueDate(timestamp: number): string {
 .todos-view {
   max-width: 800px;
   margin: 0 auto;
+  padding: 24px;
 }
 
+/* Header */
 .todos-header {
   display: flex;
   justify-content: space-between;
@@ -148,51 +315,105 @@ function formatDueDate(timestamp: number): string {
   margin-bottom: 24px;
 }
 
-.add-btn {
-  padding: 10px 20px;
-  background: var(--accent-color);
-  color: white;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
+.header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
 }
 
+.page-title {
+  font-size: 28px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.5px;
+}
+
+.todo-count {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.add-btn {
+  gap: 8px;
+}
+
+.btn-icon {
+  font-size: 18px;
+  font-weight: 300;
+}
+
+/* Filter Tabs */
 .filter-tabs {
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
+  padding: 4px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
 }
 
 .tab {
-  padding: 8px 16px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.tab:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
 .tab.active {
-  background: var(--accent-color);
-  color: white;
-  border-color: var(--accent-color);
-}
-
-.todos-list {
   background: var(--bg-secondary);
-  border-radius: 12px;
-  overflow: hidden;
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
 }
 
+.tab-count {
+  font-size: 12px;
+  padding: 2px 8px;
+  background: var(--bg-hover);
+  border-radius: 10px;
+  color: var(--text-tertiary);
+}
+
+.tab.active .tab-count {
+  background: var(--accent-light);
+  color: var(--accent-color);
+}
+
+/* Todos List */
+.todos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Todo Item */
 .todo-item {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 16px;
-  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  transition: all var(--transition-fast);
 }
 
-.todo-item:last-child {
-  border-bottom: none;
+.todo-item:hover {
+  transform: translateX(4px);
+  box-shadow: var(--shadow-md);
+}
+
+.todo-item.completed {
+  opacity: 0.7;
 }
 
 .todo-item.completed .todo-title {
@@ -200,59 +421,175 @@ function formatDueDate(timestamp: number): string {
   color: var(--text-secondary);
 }
 
+/* Custom Checkbox */
+.checkbox-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.todo-checkbox {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.checkbox-custom {
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--border-strong);
+  border-radius: 6px;
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.checkbox-custom::after {
+  content: '';
+  width: 6px;
+  height: 10px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) scale(0);
+  transition: transform var(--transition-fast);
+}
+
+.todo-checkbox:checked + .checkbox-custom {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.todo-checkbox:checked + .checkbox-custom::after {
+  transform: rotate(45deg) scale(1);
+}
+
+/* Todo Content - Clickable for edit */
 .todo-content {
   flex: 1;
+  min-width: 0;
+  cursor: pointer;
+  padding: 4px 8px;
+  margin: -4px -8px;
+  border-radius: var(--radius-sm);
+  transition: background var(--transition-fast);
+}
+
+.todo-content:hover {
+  background: var(--bg-hover);
 }
 
 .todo-title {
   font-weight: 500;
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+}
+
+.todo-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 6px;
 }
 
 .todo-due {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: 13px;
   color: var(--text-secondary);
-  margin-top: 4px;
 }
 
-.todo-priority {
-  padding: 4px 8px;
-  border-radius: 4px;
+.todo-due.overdue {
+  color: #dc2626;
+}
+
+.meta-icon {
   font-size: 12px;
 }
 
+/* Priority Badge */
+.todo-priority {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+}
+
 .todo-priority.low {
-  background: #E2E8F0;
-  color: #718096;
+  background: #e2e8f0;
+  color: #475569;
 }
 
 .todo-priority.medium {
-  background: #FEF3C7;
-  color: #D97706;
+  background: #fef3c7;
+  color: #d97706;
 }
 
 .todo-priority.high {
-  background: #FEE2E2;
-  color: #DC2626;
+  background: #fee2e2;
+  color: #dc2626;
 }
 
+/* Edit & Delete Buttons */
+.edit-btn,
 .delete-btn {
-  width: 28px;
-  height: 28px;
-  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
   background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
   cursor: pointer;
-  font-size: 20px;
-  color: var(--text-secondary);
+  opacity: 0;
+  transition: all var(--transition-fast);
+}
+
+.todo-item:hover .edit-btn,
+.todo-item:hover .delete-btn {
+  opacity: 1;
+}
+
+.edit-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent-color);
 }
 
 .delete-btn:hover {
-  color: #DC2626;
+  background: #fee2e2;
+  color: #dc2626;
 }
 
+/* Empty State */
 .empty-state {
-  padding: 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 60px 20px;
   text-align: center;
+}
+
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: 50%;
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+
+.empty-text {
+  font-size: 16px;
   color: var(--text-secondary);
+  margin-bottom: 20px;
 }
 
 /* Modal */
@@ -262,7 +599,8 @@ function formatDueDate(timestamp: number): string {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(4px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -270,55 +608,240 @@ function formatDueDate(timestamp: number): string {
 }
 
 .add-modal {
+  width: 440px;
+  max-width: 90vw;
   background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 24px;
-  width: 400px;
 }
 
-.add-modal h3 {
-  margin-bottom: 20px;
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.form-group {
-  margin-bottom: 16px;
+.modal-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
 }
 
-.form-group label {
-  display: block;
-  margin-bottom: 6px;
-  font-size: 14px;
+.close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
-.form-group input,
-.form-group select {
-  width: 100%;
-  padding: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  background: var(--bg-primary);
+.close-btn:hover {
+  background: var(--bg-hover);
   color: var(--text-primary);
 }
 
-.form-actions {
+.modal-body {
+  padding: 24px;
+}
+
+/* Form */
+.form-group {
+  margin-bottom: 20px;
+}
+
+.form-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.required {
+  color: #dc2626;
+}
+
+.optional-badge {
+  font-size: 11px;
+  padding: 2px 6px;
+  background: var(--bg-tertiary);
+  border-radius: 4px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+.fluent-input {
+  width: 100%;
+}
+
+/* Priority Selector */
+.priority-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.priority-option {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--bg-tertiary);
+  border: 2px solid transparent;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.priority-option:hover {
+  background: var(--bg-hover);
+}
+
+.priority-option.active.low {
+  background: #e2e8f0;
+  border-color: #475569;
+  color: #475569;
+}
+
+.priority-option.active.medium {
+  background: #fef3c7;
+  border-color: #d97706;
+  color: #d97706;
+}
+
+.priority-option.active.high {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #dc2626;
+}
+
+/* Modal Actions */
+.modal-actions {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
   margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
 }
 
-.form-actions button {
+/* Transitions */
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.modal-enter-active .add-modal,
+.modal-leave-active .add-modal {
+  transition: transform 0.2s cubic-bezier(0.1, 0.9, 0.2, 1), opacity 0.2s ease;
+}
+
+.modal-enter-from .add-modal {
+  opacity: 0;
+  transform: scale(0.95) translateY(10px);
+}
+
+.modal-leave-to .add-modal {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+/* Todo List Transitions */
+.todo-enter-active,
+.todo-leave-active {
+  transition: all 0.3s ease;
+}
+
+.todo-enter-from {
+  opacity: 0;
+  transform: translateX(-20px);
+}
+
+.todo-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.todo-move {
+  transition: transform 0.3s ease;
+}
+
+/* Fluent Button */
+.fluent-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   padding: 10px 20px;
+  background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-weight: 500;
   cursor: pointer;
+  transition: all var(--transition-fast);
 }
 
-.submit-btn {
-  background: var(--accent-color) !important;
+.fluent-button:hover {
+  background: var(--bg-hover);
+}
+
+.fluent-button:active {
+  transform: scale(0.98);
+}
+
+.fluent-button.primary {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
   color: white;
-  border: none !important;
+}
+
+.fluent-button.primary:hover {
+  background: var(--accent-hover);
+}
+
+.fluent-button.primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Fluent Card */
+.fluent-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Fluent Input */
+.fluent-input {
+  padding: 12px 14px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.fluent-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.fluent-input::placeholder {
+  color: var(--text-tertiary);
 }
 </style>
