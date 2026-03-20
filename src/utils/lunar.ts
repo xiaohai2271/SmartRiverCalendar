@@ -1,17 +1,4 @@
-import lunarCalendar from 'lunar-calendar'
-import {
-  HOLIDAYS,
-  MAKEUP_DAYS,
-  LUNAR_FESTIVALS,
-  addHoliday,
-  addMakeupDay,
-  removeHoliday,
-  removeMakeupDay,
-  getAllHolidays,
-  getAllMakeupDays,
-  exportHolidayData,
-  importHolidayData
-} from './holidayData'
+import { SolarDay, LunarDay, LegalHoliday, SolarTerm } from 'tyme4ts'
 
 export interface LunarInfo {
   lunarDate: string // 农历日期
@@ -40,33 +27,44 @@ function getWeekend(date: Date): boolean {
 
 export function getLunarInfo(date: Date): LunarInfo {
   const dateStr = formatDate(date)
-  const lunar = lunarCalendar.solarToLunar(
+  const solarDay = SolarDay.fromYmd(
     date.getFullYear(),
     date.getMonth() + 1,
     date.getDate()
   )
 
-  const lunarMonthDay = `${lunar.lunarMonthName || ''}${lunar.lunarDayName || ''}`
-  const lunarFestival = LUNAR_FESTIVALS[lunarMonthDay]
+  // 获取农历信息
+  const lunarDay = solarDay.getLunarDay()
+  const lunarMonth = lunarDay.getLunarMonth()
+  const lunarMonthName = lunarMonth.getName()
+  const lunarDayName = lunarDay.getName()
+
+  // 获取农历节日
+  const lunarFestival = lunarDay.getFestival()
+  const lunarFestivalName = lunarFestival ? lunarFestival.getName() : undefined
+
+  // 获取节气
+  const solarTerm = solarDay.getTerm()
+  const solarTermName = solarTerm ? solarTerm.getName() : undefined
+
+  // 获取法定节假日
+  const legalHoliday = solarDay.getLegalHoliday()
+  const holidayName = legalHoliday ? legalHoliday.getName() : undefined
+  const isWorkDay = legalHoliday ? legalHoliday.isWork() : false
 
   const isWeekend = getWeekend(date)
-  const holidayName = HOLIDAYS[dateStr]
-  const workDayName = MAKEUP_DAYS[dateStr]
-
-  const isHoliday = !!holidayName
-  const isWorkDay = !!workDayName
 
   return {
-    lunarDate: `${lunar.lunarMonthName || ''}${lunar.lunarDayName || ''}`,
-    lunarMonth: lunar.lunarMonthName || '',
-    lunarDay: lunar.lunarDayName || '',
-    lunarFestival,
-    solarTerm: lunar.solarTerm || undefined,
+    lunarDate: `${lunarMonthName}${lunarDayName}`,
+    lunarMonth: lunarMonthName,
+    lunarDay: lunarDayName,
+    lunarFestival: lunarFestivalName,
+    solarTerm: solarTermName,
     isWeekend,
-    isHoliday,
+    isHoliday: !!holidayName,
     holidayName,
     isWorkDay,
-    workDayName,
+    workDayName: isWorkDay ? holidayName : undefined,
   }
 }
 
@@ -92,7 +90,7 @@ export function isWorkDay(date: Date): boolean {
   return !lunarInfo.isWeekend
 }
 
-// 导出节假日管理函数
+// 导出节假日管理函数（兼容旧接口）
 export {
   addHoliday,
   addMakeupDay,
@@ -102,4 +100,4 @@ export {
   getAllMakeupDays,
   exportHolidayData,
   importHolidayData
-}
+} from './holidayData'
