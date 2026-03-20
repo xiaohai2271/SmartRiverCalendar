@@ -37,7 +37,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": "all",
     "icon": [],
     "windows": {
       "webviewInstallMode": {
