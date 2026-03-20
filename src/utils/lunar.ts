@@ -1,4 +1,4 @@
-import { SolarDay, LunarDay, LegalHoliday, SolarTerm } from 'tyme4ts'
+import { SolarDay } from 'tyme4ts'
 
 export interface LunarInfo {
   lunarDate: string // 农历日期
@@ -26,7 +26,6 @@ function getWeekend(date: Date): boolean {
 }
 
 export function getLunarInfo(date: Date): LunarInfo {
-  const dateStr = formatDate(date)
   const solarDay = SolarDay.fromYmd(
     date.getFullYear(),
     date.getMonth() + 1,
@@ -75,8 +74,7 @@ export function getMonthLunarInfo(year: number, month: number): Map<string, Luna
 
   for (let day = 1; day <= daysInMonth; day++) {
     const date = new Date(year, month, day)
-    const dateStr = formatDate(date)
-    result.set(dateStr, getLunarInfo(date))
+    result.set(formatDate(date), getLunarInfo(date))
   }
 
   return result

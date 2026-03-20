@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
 import {
   initDatabase,
