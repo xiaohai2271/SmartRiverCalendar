@@ -1,5 +1,17 @@
-# Logs
-logs
+# 依赖目录
+node_modules/
+.pnpm-store/
+
+# 构建产物
+dist/
+dist-ssr/
+src-tauri/target/
+
+# 测试覆盖率
+coverage/
+
+# 日志文件
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,19 +19,78 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
-*.local
-*/target
+# 环境变量文件
+.env
+.env.local
+.env.*.local
 
-# Editor directories and files
+# 编辑器配置
 .vscode/*
 !.vscode/extensions.json
-.idea
-.DS_Store
+.idea/
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.sublime-workspace
+*.sublime-project
+
+# 操作系统文件
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Claude 配置（包含个人设置）
+.claude/
+!.claude/skills/
+
+# 临时文件
+*.tmp
+*.temp
+*.bak
+*.backup
+
+# 调试文件
+*.debug
+
+# Tauri 生成的文件（由 tauri build 自动生成）
+# src-tauri/gen/  # 如果需要忽略生成的文件，取消注释
+
+# Rust 编译产物
+*.exe
+*.dll
+*.so
+*.dylib
+*.rlib
+*.rmeta
+*.d
+*.pdb
+
+# 包管理器锁文件（根据项目需要）
+# pnpm-lock.yaml  # 如果需要忽略包管理器锁文件，取消注释
+
+# 本地配置
+*.local
+local.config.*
+
+# 测试文件（如果有临时测试文件）
+test-results/
+playwright-report/
+
+# 性能分析文件
+*.profraw
+*.profdata
+
+# 代码覆盖率报告
+*.lcov
+*.info
+
+# TypeScript 构建信息
+*.tsbuildinfo
+
+# Vite 缓存
+.vite/
+
+# Tauri 缓存
+.tauri/
