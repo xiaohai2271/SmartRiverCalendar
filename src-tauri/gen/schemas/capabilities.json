@@ -1,1 +1,1 @@
-{}
+{"default":{"identifier":"default","description":"Capability for the main window","local":true,"windows":["main"],"permissions":["core:default","core:window:allow-hide","core:window:allow-show","core:window:allow-set-focus","core:window:allow-is-visible","core:window:allow-set-always-on-top","shell:default","sql:default","notification:default","updater:default","autostart:allow-enable","autostart:allow-disable","autostart:allow-is-enabled","global-shortcut:default"]}}
