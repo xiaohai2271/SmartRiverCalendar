@@ -1,6 +1,15 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
+import {
+  initDatabase,
+  getAllCalendars,
+  saveCalendar,
+  deleteCalendar as dbDeleteCalendar,
+  getAllEvents,
+  saveEvent,
+  deleteEvent as dbDeleteEvent
+} from '../utils/database'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // State
@@ -19,6 +28,42 @@ export const useCalendarStore = defineStore('calendar', () => {
   const currentView = ref<CalendarView>('month')
   const currentDate = ref(new Date())
   const selectedDate = ref<Date | null>(null)
+  const isInitialized = ref(false)
+
+  // 初始化数据库并加载数据
+  async function initialize() {
+    if (isInitialized.value) return
+
+    try {
+      await initDatabase()
+
+      // 加载日历
+      const loadedCalendars = await getAllCalendars()
+      if (loadedCalendars.length > 0) {
+        calendars.value = loadedCalendars.map(c => ({
+          id: c.id,
+          name: c.name,
+          color: c.color,
+          type: c.type,
+          accountId: c.account_id,
+          visible: c.visible === 1,
+          syncEnabled: c.sync_enabled === 1
+        }))
+      }
+
+      // 加载事件
+      const loadedEvents = await getAllEvents()
+      events.value = loadedEvents
+
+      isInitialized.value = true
+      console.log('Calendar store initialized:', {
+        calendars: calendars.value.length,
+        events: events.value.length
+      })
+    } catch (error) {
+      console.error('Failed to initialize calendar store:', error)
+    }
+  }
 
   // Getters
   const visibleCalendars = computed(() => calendars.value.filter(c => c.visible))
@@ -58,24 +103,54 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   // Actions
-  function addCalendar(calendar: Omit<Calendar, 'id'>) {
+  async function addCalendar(calendar: Omit<Calendar, 'id'>) {
     const id = `cal_${Date.now()}`
-    calendars.value.push({ ...calendar, id })
-  }
+    const now = Date.now()
+    const newCalendar: Calendar = { ...calendar, id }
+    calendars.value.push(newCalendar)
 
-  function updateCalendar(id: string, updates: Partial<Calendar>) {
-    const index = calendars.value.findIndex(c => c.id === id)
-    if (index !== -1) {
-      calendars.value[index] = { ...calendars.value[index], ...updates }
+    // 持久化
+    try {
+      await saveCalendar({
+        ...newCalendar,
+        createdAt: now,
+        updatedAt: now
+      })
+    } catch (error) {
+      console.error('Failed to save calendar:', error)
     }
   }
 
-  function deleteCalendar(id: string) {
-    calendars.value = calendars.value.filter(c => c.id !== id)
-    events.value = events.value.filter(e => e.calendarId !== id)
+  async function updateCalendar(id: string, updates: Partial<Calendar>) {
+    const index = calendars.value.findIndex(c => c.id === id)
+    if (index !== -1) {
+      calendars.value[index] = { ...calendars.value[index], ...updates }
+
+      // 持久化
+      try {
+        await saveCalendar({
+          ...calendars.value[index],
+          updatedAt: Date.now()
+        })
+      } catch (error) {
+        console.error('Failed to update calendar:', error)
+      }
+    }
   }
 
-  function addEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) {
+  async function deleteCalendar(id: string) {
+    calendars.value = calendars.value.filter(c => c.id !== id)
+    events.value = events.value.filter(e => e.calendarId !== id)
+
+    // 持久化
+    try {
+      await dbDeleteCalendar(id)
+    } catch (error) {
+      console.error('Failed to delete calendar:', error)
+    }
+  }
+
+  async function addEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) {
     const now = Date.now()
     const newEvent: CalendarEvent = {
       ...event,
@@ -84,9 +159,16 @@ export const useCalendarStore = defineStore('calendar', () => {
       updatedAt: now
     }
     events.value.push(newEvent)
+
+    // 持久化
+    try {
+      await saveEvent(newEvent)
+    } catch (error) {
+      console.error('Failed to save event:', error)
+    }
   }
 
-  function updateEvent(id: string, updates: Partial<CalendarEvent>) {
+  async function updateEvent(id: string, updates: Partial<CalendarEvent>) {
     const index = events.value.findIndex(e => e.id === id)
     if (index !== -1) {
       events.value[index] = {
@@ -94,11 +176,25 @@ export const useCalendarStore = defineStore('calendar', () => {
         ...updates,
         updatedAt: Date.now()
       }
+
+      // 持久化
+      try {
+        await saveEvent(events.value[index])
+      } catch (error) {
+        console.error('Failed to update event:', error)
+      }
     }
   }
 
-  function deleteEvent(id: string) {
+  async function deleteEvent(id: string) {
     events.value = events.value.filter(e => e.id !== id)
+
+    // 持久化
+    try {
+      await dbDeleteEvent(id)
+    } catch (error) {
+      console.error('Failed to delete event:', error)
+    }
   }
 
   function setView(view: CalendarView) {
@@ -163,12 +259,9 @@ export const useCalendarStore = defineStore('calendar', () => {
     currentView,
     currentDate,
     selectedDate,
-    // Getters
-    visibleCalendars,
-    visibleEvents,
-    currentDateRange,
-    eventsForCurrentView,
+    isInitialized,
     // Actions
+    initialize,
     addCalendar,
     updateCalendar,
     deleteCalendar,
@@ -180,6 +273,11 @@ export const useCalendarStore = defineStore('calendar', () => {
     goToToday,
     next,
     prev,
-    selectDate
+    selectDate,
+    // Getters
+    visibleCalendars,
+    visibleEvents,
+    currentDateRange,
+    eventsForCurrentView
   }
 })

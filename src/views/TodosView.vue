@@ -30,7 +30,7 @@
         <input
           type="checkbox"
           :checked="todo.completed"
-          @change="toggleTodo(todo.id)"
+          @change="todoStore.toggleTodo(todo.id)"
         />
         <div class="todo-content">
           <div class="todo-title">{{ todo.title }}</div>
@@ -39,9 +39,9 @@
           </div>
         </div>
         <div class="todo-priority" :class="todo.priority">
-          {{ priorityLabels[todo.priority as keyof typeof priorityLabels] }}
+          {{ priorityLabels[todo.priority] }}
         </div>
-        <button class="delete-btn" @click="deleteTodo(todo.id)">×</button>
+        <button class="delete-btn" @click="todoStore.deleteTodo(todo.id)">×</button>
       </div>
 
       <div v-if="filteredTodos.length === 0" class="empty-state">
@@ -81,13 +81,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
+import { useTodoStore } from '../stores/todo'
 import { formatDate } from '../utils/date'
+
+const todoStore = useTodoStore()
+
+onMounted(() => {
+  todoStore.initialize()
+})
 
 const filter = ref<'all' | 'pending' | 'completed'>('all')
 const showAddModal = ref(false)
 
-const todos = ref<any[]>([])
 const newTodo = ref({
   title: '',
   priority: 'medium' as 'low' | 'medium' | 'high',
@@ -103,36 +109,21 @@ const priorityLabels = {
 const filteredTodos = computed(() => {
   switch (filter.value) {
     case 'pending':
-      return todos.value.filter(t => !t.completed)
+      return todoStore.pendingTodos
     case 'completed':
-      return todos.value.filter(t => t.completed)
+      return todoStore.completedTodos
     default:
-      return todos.value
+      return todoStore.todos
   }
 })
 
-function toggleTodo(id: string) {
-  const todo = todos.value.find(t => t.id === id)
-  if (todo) {
-    todo.completed = !todo.completed
-  }
-}
-
-function deleteTodo(id: string) {
-  todos.value = todos.value.filter(t => t.id !== id)
-}
-
-function handleAddTodo() {
-  const now = Date.now()
-  todos.value.push({
-    id: `todo_${now}`,
+async function handleAddTodo() {
+  await todoStore.addTodo({
     title: newTodo.value.title,
     priority: newTodo.value.priority,
     dueDate: newTodo.value.dueDate ? new Date(newTodo.value.dueDate).getTime() : undefined,
     completed: false,
-    calendarId: 'default',
-    createdAt: now,
-    updatedAt: now
+    calendarId: 'default'
   })
 
   showAddModal.value = false

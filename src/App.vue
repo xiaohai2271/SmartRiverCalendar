@@ -51,11 +51,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import { useSettingsStore } from './stores/settings'
+import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
 
 const settingsStore = useSettingsStore()
+const calendarStore = useCalendarStore()
+
+onMounted(() => {
+  calendarStore.initialize()
+})
 
 const isDark = computed(() => {
   if (settingsStore.settings.theme === 'dark') return true
