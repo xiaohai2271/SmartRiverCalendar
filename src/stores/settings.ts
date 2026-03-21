@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultReminder: 15,
   startMinimized: false,
   autoStart: false,
+  autoUpdate: true, // 默认开启自动更新
   // 日历显示设置（默认全部开启）
   showLunar: true,
   showLunarFestival: true,

@@ -135,6 +135,10 @@
         <label>开机自启</label>
         <input type="checkbox" v-model="settings.autoStart" @change="handleAutoStartChange" />
       </div>
+      <div class="setting-item">
+        <label>自动更新</label>
+        <input type="checkbox" v-model="settings.autoUpdate" @change="saveSettings" />
+      </div>
     </div>
 
     <!-- 日历账户管理 -->

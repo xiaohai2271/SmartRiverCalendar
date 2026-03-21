@@ -58,6 +58,7 @@ import { onMounted, watch } from 'vue'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
+import { checkAndInstallUpdate, isTauri } from './services/updater'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
@@ -65,6 +66,7 @@ const calendarStore = useCalendarStore()
 onMounted(() => {
   calendarStore.initialize()
   applyTheme()
+  checkForUpdatesOnStartup()
 })
 
 // 应用主题到 :root
@@ -82,6 +84,17 @@ function applyTheme() {
 
 // 监听主题设置变化
 watch(() => settingsStore.settings.theme, applyTheme)
+
+// 启动时检查更新
+async function checkForUpdatesOnStartup() {
+  if (isTauri() && settingsStore.settings.autoUpdate) {
+    try {
+      await checkAndInstallUpdate(true)
+    } catch (error) {
+      console.error('自动更新检查失败:', error)
+    }
+  }
+}
 </script>
 
 <style scoped>

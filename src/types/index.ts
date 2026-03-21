@@ -68,6 +68,7 @@ export interface AppSettings {
   defaultReminder: number // minutes
   startMinimized: boolean
   autoStart: boolean
+  autoUpdate: boolean // 自动更新
   // 日历显示设置
   showLunar: boolean // 显示农历
   showLunarFestival: boolean // 显示农历节日
