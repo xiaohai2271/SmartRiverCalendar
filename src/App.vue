@@ -58,7 +58,8 @@ import { onMounted, watch } from 'vue'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
-import { checkAndInstallUpdate, isTauri } from './services/updater'
+import { checkAndInstallUpdate } from './services/updater'
+import { isTauri } from './utils/tauri'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
