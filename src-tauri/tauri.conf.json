@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "小河日历",
+  "productName": "SmartRiverCalendar",
   "version": "0.1.0",
   "identifier": "com.xiaohe.calendar",
   "build": {
