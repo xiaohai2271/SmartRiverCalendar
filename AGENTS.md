@@ -24,6 +24,11 @@ pnpm test                 # 运行测试 (监听模式)
 pnpm test:run             # 运行测试 (单次运行)
 pnpm test:coverage        # 运行测试并生成覆盖率报告
 
+# 运行单个测试文件
+pnpm vitest run src/__tests__/date.test.ts
+# 运行单个测试用例
+pnpm vitest run -t "test case name"
+
 # Rust 测试 (在 src-tauri/ 目录下)
 cargo test                # 运行所有 Rust 测试
 cargo test --lib          # 仅运行库单元测试
