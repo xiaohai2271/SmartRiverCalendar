@@ -35,7 +35,7 @@
             v-for="layout in dayEventsLayout"
             :key="layout.event.id"
             class="day-event timed"
-            :style="layout"
+            :style="{ top: layout.top, height: layout.height, left: layout.left, width: layout.width, background: layout.background }"
             @click.stop="emit('edit-event', layout.event)"
           >
             <div class="event-time">{{ formatEventTime(layout.event) }}</div>

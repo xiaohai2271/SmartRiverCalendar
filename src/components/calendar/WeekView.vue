@@ -52,10 +52,10 @@
         <div class="events-layer">
           <div v-for="day in weekDays" :key="'events-' + day.date.toISOString()" class="day-events-column">
             <div
-              v-for="(layout, index) in getDayEventsLayout(day.date)"
+              v-for="layout in getDayEventsLayout(day.date)"
               :key="layout.event.id"
               class="week-event timed"
-              :style="layout"
+              :style="{ top: `${layout.top}px`, height: `${layout.height}px`, left: layout.left, width: layout.width, background: layout.background }"
               @click.stop="emit('edit-event', layout.event)"
             >
               <div class="event-time">{{ formatEventTime(layout.event) }}</div>

@@ -54,7 +54,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
@@ -65,14 +65,6 @@ const calendarStore = useCalendarStore()
 onMounted(() => {
   calendarStore.initialize()
   applyTheme()
-})
-
-const isDark = computed(() => {
-  if (settingsStore.settings.theme === 'dark') return true
-  if (settingsStore.settings.theme === 'auto') {
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
-  }
-  return false
 })
 
 // 应用主题到 :root

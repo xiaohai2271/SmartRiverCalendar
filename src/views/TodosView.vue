@@ -191,16 +191,16 @@ const priorityLabels = {
   high: '高优先级'
 }
 
-const priorities = [
+const priorities: { value: 'low' | 'medium' | 'high'; label: string }[] = [
   { value: 'low', label: '低' },
   { value: 'medium', label: '中' },
   { value: 'high', label: '高' }
 ]
 
 const filterTabs = computed(() => [
-  { value: 'all', label: '全部', count: todoStore.todos.length },
-  { value: 'pending', label: '待完成', count: todoStore.pendingTodos.length },
-  { value: 'completed', label: '已完成', count: todoStore.completedTodos.length }
+  { value: 'all' as const, label: '全部', count: todoStore.todos.length },
+  { value: 'pending' as const, label: '待完成', count: todoStore.pendingTodos.length },
+  { value: 'completed' as const, label: '已完成', count: todoStore.completedTodos.length }
 ])
 
 const filteredTodos = computed(() => {
