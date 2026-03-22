@@ -46,7 +46,15 @@
       <div class="days-grid-container">
         <div class="days-grid">
           <div v-for="day in weekDays" :key="day.date.toISOString()" class="day-column">
-            <div v-for="hour in hours" :key="hour" class="hour-cell" @click="handleCellClick(day.date, hour)"></div>
+            <div
+              v-for="hour in hours"
+              :key="hour"
+              class="hour-cell"
+              :class="{ 'dragging': isDragging && dragStartDay && isSameDay(dragStartDay, day.date) && hour >= Math.min(dragStartHour, dragEndHour) && hour <= Math.max(dragStartHour, dragEndHour) }"
+              @mousedown="handleMouseDown(day.date, hour, $event)"
+              @mousemove="handleMouseMove(day.date, hour, $event)"
+              @mouseup="handleMouseUp(day.date, hour, $event)"
+            ></div>
           </div>
         </div>
         <div class="events-layer">
@@ -69,7 +77,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
 import { isSameDay, isToday as isTodayFn, startOfWeek, getWeekDays, formatTime } from '../../utils/date'
@@ -77,10 +85,17 @@ import type { CalendarEvent } from '../../types'
 
 const emit = defineEmits<{
   'edit-event': [event: CalendarEvent]
+  'create-event': [date: Date, startHour: number, endHour: number]
 }>()
 
 const calendarStore = useCalendarStore()
 const settingsStore = useSettingsStore()
+
+// 拖拽选择状态
+const isDragging = ref(false)
+const dragStartDay = ref<Date | null>(null)
+const dragStartHour = ref(0)
+const dragEndHour = ref(0)
 
 const hours = Array.from({ length: 24 }, (_, i) => i)
 
@@ -211,10 +226,42 @@ function getDayEventsLayout(day: Date): EventLayout[] {
   return calculateEventsLayout(timedEvents)
 }
 
-function handleCellClick(date: Date, hour: number) {
-  const clickedDate = new Date(date)
-  clickedDate.setHours(hour, 0, 0, 0)
-  calendarStore.selectDate(clickedDate)
+// 拖拽创建日程处理函数
+function handleMouseDown(date: Date, hour: number, event: MouseEvent) {
+  event.preventDefault()
+  isDragging.value = true
+  dragStartDay.value = new Date(date)
+  dragStartHour.value = hour
+  dragEndHour.value = hour
+}
+
+function handleMouseMove(date: Date, hour: number, event: MouseEvent) {
+  if (!isDragging.value) return
+  event.preventDefault()
+  // 只在同一天内拖拽
+  if (dragStartDay.value && isSameDay(dragStartDay.value, date)) {
+    dragEndHour.value = hour
+  }
+}
+
+function handleMouseUp(_date: Date, _hour: number, event: MouseEvent) {
+  if (!isDragging.value) return
+  event.preventDefault()
+
+  // 计算选中的时间范围
+  const startHour = Math.min(dragStartHour.value, dragEndHour.value)
+  const endHour = Math.max(dragStartHour.value, dragEndHour.value) + 1
+
+  // 触发创建事件
+  if (dragStartDay.value) {
+    emit('create-event', dragStartDay.value, startHour, endHour)
+  }
+
+  // 重置拖拽状态
+  isDragging.value = false
+  dragStartDay.value = null
+  dragStartHour.value = 0
+  dragEndHour.value = 0
 }
 
 function formatEventTime(event: CalendarEvent): string {
@@ -393,6 +440,11 @@ function formatEventTime(event: CalendarEvent): string {
 
 .hour-cell:hover {
   background: var(--bg-hover);
+}
+
+.hour-cell.dragging {
+  background: rgba(74, 144, 217, 0.2);
+  border-color: var(--accent-color);
 }
 
 /* Events layer */

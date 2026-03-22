@@ -28,7 +28,15 @@
       </div>
       <div class="events-container">
         <div class="hours-grid">
-          <div v-for="hour in hours" :key="hour" class="hour-cell" @click="handleCellClick(hour)"></div>
+          <div
+            v-for="hour in hours"
+            :key="hour"
+            class="hour-cell"
+            :class="{ 'dragging': isDragging && hour >= Math.min(dragStartHour, dragEndHour) && hour <= Math.max(dragStartHour, dragEndHour) }"
+            @mousedown="handleMouseDown(hour, $event)"
+            @mousemove="handleMouseMove(hour, $event)"
+            @mouseup="handleMouseUp(hour, $event)"
+          ></div>
         </div>
         <div class="events-layer">
           <div
@@ -48,16 +56,22 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { formatDateLocale, formatTime, isSameDay } from '../../utils/date'
 import type { CalendarEvent } from '../../types'
 
 const emit = defineEmits<{
   'edit-event': [event: CalendarEvent]
+  'create-event': [startHour: number, endHour: number]
 }>()
 
 const calendarStore = useCalendarStore()
+
+// 拖拽选择状态
+const isDragging = ref(false)
+const dragStartHour = ref(0)
+const dragEndHour = ref(0)
 
 const hours = Array.from({ length: 24 }, (_, i) => i)
 
@@ -175,10 +189,35 @@ function formatEventTime(event: CalendarEvent): string {
   return `${start} - ${end}`
 }
 
-function handleCellClick(hour: number) {
-  const clickedDate = new Date(calendarStore.currentDate)
-  clickedDate.setHours(hour, 0, 0, 0)
-  calendarStore.selectDate(clickedDate)
+// 拖拽创建日程处理函数
+function handleMouseDown(hour: number, event: MouseEvent) {
+  event.preventDefault()
+  isDragging.value = true
+  dragStartHour.value = hour
+  dragEndHour.value = hour
+}
+
+function handleMouseMove(hour: number, event: MouseEvent) {
+  if (!isDragging.value) return
+  event.preventDefault()
+  dragEndHour.value = hour
+}
+
+function handleMouseUp(_hour: number, event: MouseEvent) {
+  if (!isDragging.value) return
+  event.preventDefault()
+
+  // 计算选中的时间范围
+  const startHour = Math.min(dragStartHour.value, dragEndHour.value)
+  const endHour = Math.max(dragStartHour.value, dragEndHour.value) + 1
+
+  // 触发创建事件
+  emit('create-event', startHour, endHour)
+
+  // 重置拖拽状态
+  isDragging.value = false
+  dragStartHour.value = 0
+  dragEndHour.value = 0
 }
 </script>
 
@@ -281,6 +320,11 @@ function handleCellClick(hour: number) {
 
 .hour-cell:hover {
   background: var(--bg-hover);
+}
+
+.hour-cell.dragging {
+  background: rgba(74, 144, 217, 0.2);
+  border-color: var(--accent-color);
 }
 
 .events-layer {

@@ -30,6 +30,10 @@
           <span class="nav-icon">✅</span>
           <span>待办</span>
         </router-link>
+        <router-link to="/schedules" class="nav-item" :class="{ active: $route.path === '/schedules' }">
+          <span class="nav-icon">📅</span>
+          <span>日程</span>
+        </router-link>
         <router-link to="/settings" class="nav-item" :class="{ active: $route.path === '/settings' }">
           <span class="nav-icon">⚙️</span>
           <span>设置</span>

@@ -28,8 +28,8 @@
     <!-- Calendar Content -->
     <div class="calendar-content">
       <MonthView v-if="calendarStore.currentView === 'month'" @edit-event="openEditEventModal" />
-      <WeekView v-else-if="calendarStore.currentView === 'week'" @edit-event="openEditEventModal" />
-      <DayView v-else-if="calendarStore.currentView === 'day'" @edit-event="openEditEventModal" />
+      <WeekView v-else-if="calendarStore.currentView === 'week'" @edit-event="openEditEventModal" @create-event="openAddEventModalWithDateAndTime" />
+      <DayView v-else-if="calendarStore.currentView === 'day'" @edit-event="openEditEventModal" @create-event="openAddEventModalWithTime" />
       <YearView v-else-if="calendarStore.currentView === 'year'" @edit-event="openEditEventModal" />
     </div>
 
@@ -356,6 +356,31 @@ function openAddEventModal() {
     description: ''
   }
   showEventModal.value = true
+}
+
+// 打开新建事件弹窗（带日期和时间 - WeekView）
+function openAddEventModalWithDateAndTime(date: Date, startHour: number, endHour: number) {
+  isEditingEvent.value = false
+  editingEventId.value = null
+  const dateString = getDateString(date)
+  const startTime = `${String(startHour).padStart(2, '0')}:00`
+  const endTime = `${String(endHour).padStart(2, '0')}:00`
+  eventFormData.value = {
+    title: '',
+    allDay: false,
+    startDate: dateString,
+    startTime,
+    endDate: dateString,
+    endTime,
+    calendarId: 'default',
+    description: ''
+  }
+  showEventModal.value = true
+}
+
+// 打开新建事件弹窗（带时间 - DayView）
+function openAddEventModalWithTime(startHour: number, endHour: number) {
+  openAddEventModalWithDateAndTime(calendarStore.currentDate, startHour, endHour)
 }
 
 // 打开编辑事件弹窗
