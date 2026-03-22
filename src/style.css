@@ -20,6 +20,14 @@
   --accent-hover: #006cbd;
   --accent-active: #005a9e;
 
+  /* Semantic colors */
+  --warning-color: #ffc107;
+  --warning-light: rgba(255, 193, 7, 0.1);
+  --warning-text: #d39e00;
+  --success-color: #28a745;
+  --success-light: rgba(40, 167, 69, 0.1);
+  --success-text: #1e7e34;
+
   /* Shadows - Fluent Design */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.06), 0 4px 8px rgba(0, 0, 0, 0.04);
@@ -66,6 +74,14 @@
     --accent-hover: #4dc3ff;
     --accent-active: #7dd4ff;
 
+    /* 语义颜色 - 深色模式 */
+    --warning-color: #ffc107;
+    --warning-light: rgba(255, 193, 7, 0.15);
+    --warning-text: #ffd54f;
+    --success-color: #28a745;
+    --success-light: rgba(40, 167, 69, 0.15);
+    --success-text: #66bb6a;
+
     --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
     --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2);
     --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.3), 0 16px 32px rgba(0, 0, 0, 0.2);
@@ -92,6 +108,14 @@
   --accent-light: rgba(96, 205, 255, 0.15);
   --accent-hover: #4dc3ff;
   --accent-active: #7dd4ff;
+
+  /* 语义颜色 - 深色模式 */
+  --warning-color: #ffc107;
+  --warning-light: rgba(255, 193, 7, 0.15);
+  --warning-text: #ffd54f;
+  --success-color: #28a745;
+  --success-light: rgba(40, 167, 69, 0.15);
+  --success-text: #66bb6a;
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2);
