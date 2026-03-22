@@ -16,6 +16,18 @@ const REMINDER_SENT_PREFIX = 'reminder_sent_'
 // 稍后提醒的存储前缀
 const SNOOZE_PREFIX = 'reminder_snooze_'
 
+// 查看详情的存储前缀
+const REMINDER_VIEWED_PREFIX = 'reminder_viewed_'
+
+// 查看详情后的有效时间（1小时）
+const VIEWED_VALID_DURATION = 60 * 60 * 1000
+
+// 上次清理时间的存储键
+const LAST_CLEANUP_KEY = 'reminder_last_cleanup_time'
+
+// 清理间隔（24小时）
+const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000
+
 // 提醒弹窗事件总线类型
 type ReminderPopupCallback = (data: {
   id: string
@@ -144,6 +156,56 @@ function clearSnoozeTime(id: string): void {
 }
 
 /**
+ * 生成查看详情的唯一标识
+ * @param id 事件或待办的 ID
+ * @returns 唯一标识
+ */
+function generateViewedKey(id: string): string {
+  return `${REMINDER_VIEWED_PREFIX}${id}`
+}
+
+/**
+ * 标记事件或待办已查看详情（防止在有效期内重复提醒）
+ * @param id 事件或待办的 ID
+ */
+export function markReminderAsViewed(id: string): void {
+  const key = generateViewedKey(id)
+  const viewedTime = Date.now()
+  localStorage.setItem(key, viewedTime.toString())
+}
+
+/**
+ * 检查事件或待办是否已查看详情
+ * @param id 事件或待办的 ID
+ * @returns 是否已查看详情（在有效期内）
+ */
+function isReminderViewed(id: string): boolean {
+  const key = generateViewedKey(id)
+  const value = localStorage.getItem(key)
+  if (value) {
+    const viewedTime = parseInt(value, 10)
+    if (!isNaN(viewedTime)) {
+      // 检查是否在有效期内
+      return Date.now() - viewedTime < VIEWED_VALID_DURATION
+    }
+  }
+  return false
+}
+
+/**
+ * 检查是否需要执行清理
+ * @returns 是否需要清理
+ */
+function shouldCleanupReminders(): boolean {
+  const lastCleanup = localStorage.getItem(LAST_CLEANUP_KEY)
+  if (!lastCleanup) {
+    return true
+  }
+  const lastCleanupTime = parseInt(lastCleanup, 10)
+  return Date.now() - lastCleanupTime >= CLEANUP_INTERVAL
+}
+
+/**
  * 清理过期的提醒记录（保留最近 7 天）
  */
 function cleanupOldReminders(): void {
@@ -159,10 +221,23 @@ function cleanupOldReminders(): void {
       if (!isNaN(timestamp) && timestamp < sevenDaysAgo) {
         keysToRemove.push(key)
       }
+    } else if (key && key.startsWith(REMINDER_VIEWED_PREFIX)) {
+      // 清理过期的查看记录
+      const value = localStorage.getItem(key)
+      if (value) {
+        const viewedTime = parseInt(value, 10)
+        if (!isNaN(viewedTime) && Date.now() - viewedTime >= VIEWED_VALID_DURATION) {
+          keysToRemove.push(key)
+        }
+      }
     }
   }
 
   keysToRemove.forEach(key => localStorage.removeItem(key))
+  
+  // 记录清理时间
+  localStorage.setItem(LAST_CLEANUP_KEY, Date.now().toString())
+  console.log(`清理了 ${keysToRemove.length} 条过期提醒记录`)
 }
 
 /**
@@ -311,6 +386,11 @@ function stopTitleBlink(): void {
  * @returns 是否需要提醒
  */
 function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSettings): boolean {
+  // 检查是否已查看详情（在有效期内不重复提醒）
+  if (isReminderViewed(event.id)) {
+    return false
+  }
+
   // 检查是否有稍后提醒
   const snoozeTime = getSnoozeTime(event.id)
   if (snoozeTime !== null) {
@@ -368,6 +448,11 @@ function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSetti
  */
 function shouldRemindTodo(todo: Todo, now: number, settings: AppSettings): boolean {
   if (!todo.dueDate || todo.completed) return false
+
+  // 检查是否已查看详情（在有效期内不重复提醒）
+  if (isReminderViewed(todo.id)) {
+    return false
+  }
 
   // 检查是否有稍后提醒
   const snoozeTime = getSnoozeTime(todo.id)
@@ -455,11 +540,6 @@ async function checkAndSendReminders(): Promise<void> {
         }
       }
     }
-
-    // 定期清理过期的提醒记录
-    if (Math.random() < 0.01) { // 1% 的概率触发清理
-      cleanupOldReminders()
-    }
   } catch (error) {
     console.error('检查提醒失败:', error)
   }
@@ -475,6 +555,11 @@ export function startReminderService(): void {
   }
 
   console.log('启动提醒服务')
+
+  // 启动时检查是否需要清理过期提醒记录
+  if (shouldCleanupReminders()) {
+    cleanupOldReminders()
+  }
 
   // 立即执行一次检查
   checkAndSendReminders()

@@ -71,6 +71,7 @@
 import { ref, onMounted, onUnmounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTodoStore } from '../../stores/todo'
+import { markReminderAsViewed } from '../../services/reminder'
 import type { CalendarEvent, Todo } from '../../types'
 
 // 提醒数据接口
@@ -236,6 +237,9 @@ async function completeTodo(reminder: ReminderPopupData) {
 
 // 查看详情
 function viewDetails(reminder: ReminderPopupData) {
+  // 标记为已查看，防止在有效期内重复提醒
+  markReminderAsViewed(reminder.itemId)
+
   if (reminder.type === 'event') {
     // 导航到日历视图，显示事件详情
     router.push({
