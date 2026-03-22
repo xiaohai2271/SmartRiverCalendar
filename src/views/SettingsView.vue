@@ -124,6 +124,40 @@
       </div>
     </div>
 
+    <!-- 提醒设置 -->
+    <div class="settings-section">
+      <h3>提醒设置</h3>
+      <div class="setting-item">
+        <label>全天事件提醒时间</label>
+        <select v-model="settings.allDayReminderTime" @change="saveSettings">
+          <option value="evening_before">前一天晚上</option>
+          <option value="morning">当天早上</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label>全天事件提醒小时</label>
+        <select v-model="settings.allDayReminderHour" @change="saveSettings">
+          <option v-for="h in 24" :key="h-1" :value="h-1">{{ h-1 }}:00</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label>提醒强度</label>
+        <select v-model="settings.reminderMode" @change="saveSettings">
+          <option value="standard">标准</option>
+          <option value="strong">强提醒</option>
+          <option value="silent">静默</option>
+        </select>
+      </div>
+      <div class="setting-item">
+        <label>自定义通知标题模板</label>
+        <input type="text" v-model="settings.customReminderTitle" @change="saveSettings" placeholder="例如：{title} - 提醒" />
+      </div>
+      <div class="setting-item">
+        <label>自定义通知正文模板</label>
+        <input type="text" v-model="settings.customReminderBody" @change="saveSettings" placeholder="例如：您有一个事件即将开始：{title}" />
+      </div>
+    </div>
+
     <!-- 系统设置 -->
     <div class="settings-section">
       <h3>系统</h3>
@@ -321,6 +355,16 @@ h2 {
   width: 20px;
   height: 20px;
   cursor: pointer;
+}
+
+.setting-item input[type="text"] {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-width: 200px;
+  font-size: 13px;
 }
 
 /* 节假日管理样式 */

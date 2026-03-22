@@ -76,6 +76,12 @@ export interface AppSettings {
   showHoliday: boolean // 显示法定节假日
   showMakeupDay: boolean // 显示补休/调休
   showWeekend: boolean // 周末标识
+  // 提醒设置
+  allDayReminderTime: 'evening_before' | 'morning' // 全天事件提醒时间
+  allDayReminderHour: number // 全天事件提醒小时（默认9）
+  reminderMode: 'standard' | 'strong' | 'silent' // 提醒强度
+  customReminderTitle: string // 自定义通知标题模板
+  customReminderBody: string // 自定义通知正文模板
 }
 
 // View types

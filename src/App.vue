@@ -58,11 +58,12 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch } from 'vue'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
 import { checkAndInstallUpdate } from './services/updater'
+import { startReminderService, stopReminderService } from './services/reminder'
 import { isTauri } from './utils/tauri'
 
 const settingsStore = useSettingsStore()
@@ -72,6 +73,13 @@ onMounted(() => {
   calendarStore.initialize()
   applyTheme()
   checkForUpdatesOnStartup()
+  // 启动提醒服务
+  startReminderService()
+})
+
+// 应用关闭时清理定时器
+onUnmounted(() => {
+  stopReminderService()
 })
 
 // 应用主题到 :root
