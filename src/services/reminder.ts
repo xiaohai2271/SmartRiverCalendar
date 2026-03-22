@@ -7,11 +7,69 @@ import type { CalendarEvent, Todo, AppSettings } from '../types'
 // 定时器句柄
 let reminderInterval: ReturnType<typeof setInterval> | null = null
 
-// 提醒检查间隔（1分钟）
-const CHECK_INTERVAL = 60 * 1000
+// 提醒检查间隔（10秒，减少延迟）
+const CHECK_INTERVAL = 10 * 1000
 
 // localStorage 中已发送提醒的前缀
 const REMINDER_SENT_PREFIX = 'reminder_sent_'
+
+// 稍后提醒的存储前缀
+const SNOOZE_PREFIX = 'reminder_snooze_'
+
+// 提醒弹窗事件总线类型
+type ReminderPopupCallback = (data: {
+  id: string
+  type: 'event' | 'todo'
+  title: string
+  body: string
+  triggerTime: number
+  itemId: string
+  itemData: CalendarEvent | Todo
+}) => void
+
+// 提醒弹窗事件总线
+const reminderPopupCallbacks: ReminderPopupCallback[] = []
+
+/**
+ * 注册提醒弹窗回调
+ * @param callback 回调函数
+ */
+export function onReminderPopup(callback: ReminderPopupCallback): void {
+  reminderPopupCallbacks.push(callback)
+}
+
+/**
+ * 取消注册提醒弹窗回调
+ * @param callback 回调函数
+ */
+export function offReminderPopup(callback: ReminderPopupCallback): void {
+  const index = reminderPopupCallbacks.indexOf(callback)
+  if (index !== -1) {
+    reminderPopupCallbacks.splice(index, 1)
+  }
+}
+
+/**
+ * 触发提醒弹窗
+ * @param data 弹窗数据
+ */
+function triggerReminderPopup(data: {
+  id: string
+  type: 'event' | 'todo'
+  title: string
+  body: string
+  triggerTime: number
+  itemId: string
+  itemData: CalendarEvent | Todo
+}): void {
+  reminderPopupCallbacks.forEach(callback => {
+    try {
+      callback(data)
+    } catch (error) {
+      console.error('提醒弹窗回调执行失败:', error)
+    }
+  })
+}
 
 /**
  * 生成提醒的唯一标识
@@ -21,6 +79,15 @@ const REMINDER_SENT_PREFIX = 'reminder_sent_'
  */
 function generateReminderKey(id: string, timestamp: number): string {
   return `${REMINDER_SENT_PREFIX}${id}_${timestamp}`
+}
+
+/**
+ * 生成稍后提醒的唯一标识
+ * @param id 事件或待办的 ID
+ * @returns 唯一标识
+ */
+function generateSnoozeKey(id: string): string {
+  return `${SNOOZE_PREFIX}${id}`
 }
 
 /**
@@ -38,6 +105,42 @@ function isReminderSent(key: string): boolean {
  */
 function markReminderSent(key: string): void {
   localStorage.setItem(key, '1')
+}
+
+/**
+ * 检查是否有稍后提醒
+ * @param id 事件或待办的 ID
+ * @returns 稍后提醒的时间戳，如果没有则返回 null
+ */
+function getSnoozeTime(id: string): number | null {
+  const key = generateSnoozeKey(id)
+  const value = localStorage.getItem(key)
+  if (value) {
+    const timestamp = parseInt(value, 10)
+    if (!isNaN(timestamp)) {
+      return timestamp
+    }
+  }
+  return null
+}
+
+/**
+ * 设置稍后提醒
+ * @param id 事件或待办的 ID
+ * @param timestamp 稍后提醒的时间戳
+ */
+function setSnoozeTime(id: string, timestamp: number): void {
+  const key = generateSnoozeKey(id)
+  localStorage.setItem(key, timestamp.toString())
+}
+
+/**
+ * 清除稍后提醒
+ * @param id 事件或待办的 ID
+ */
+function clearSnoozeTime(id: string): void {
+  const key = generateSnoozeKey(id)
+  localStorage.removeItem(key)
 }
 
 /**
@@ -122,15 +225,35 @@ function formatNotificationBody(
  * @param title 通知标题
  * @param body 通知正文
  * @param mode 提醒强度
+ * @param itemId 事件或待办的 ID
+ * @param type 类型：'event' | 'todo'
+ * @param itemData 事件或待办数据
+ * @param triggerTime 提醒触发时间
  */
 async function sendReminderNotification(
   title: string,
   body: string,
-  mode: AppSettings['reminderMode']
+  mode: AppSettings['reminderMode'],
+  itemId: string,
+  type: 'event' | 'todo',
+  itemData: CalendarEvent | Todo,
+  triggerTime: number
 ): Promise<void> {
   try {
     // 发送系统通知
     await sendNotification({ title, body })
+
+    // 触发应用内弹窗
+    const popupId = `popup_${itemId}_${triggerTime}`
+    triggerReminderPopup({
+      id: popupId,
+      type,
+      title,
+      body,
+      triggerTime,
+      itemId,
+      itemData
+    })
 
     // 根据提醒强度处理
     if (mode === 'strong') {
@@ -187,6 +310,14 @@ function stopTitleBlink(): void {
  * @returns 是否需要提醒
  */
 function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSettings): boolean {
+  // 检查是否有稍后提醒
+  const snoozeTime = getSnoozeTime(event.id)
+  if (snoozeTime !== null && now >= snoozeTime) {
+    // 稍后提醒时间已到，清除稍后提醒并返回 true
+    clearSnoozeTime(event.id)
+    return true
+  }
+
   // 获取提醒提前时间（分钟）
   const reminderMinutes = event.reminder ?? settings.defaultReminder
   const reminderTime = reminderMinutes * 60 * 1000
@@ -234,6 +365,14 @@ function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSetti
 function shouldRemindTodo(todo: Todo, now: number, settings: AppSettings): boolean {
   if (!todo.dueDate || todo.completed) return false
 
+  // 检查是否有稍后提醒
+  const snoozeTime = getSnoozeTime(todo.id)
+  if (snoozeTime !== null && now >= snoozeTime) {
+    // 稍后提醒时间已到，清除稍后提醒并返回 true
+    clearSnoozeTime(todo.id)
+    return true
+  }
+
   // dueDate - defaultReminder <= now < dueDate
   const reminderTime = settings.defaultReminder * 60 * 1000
   const reminderStart = todo.dueDate - reminderTime
@@ -268,7 +407,7 @@ async function checkAndSendReminders(): Promise<void> {
           const title = formatNotificationTitle(event.title, settings)
           const body = formatNotificationBody(event, 'event', settings)
 
-          await sendReminderNotification(title, body, settings.reminderMode)
+          await sendReminderNotification(title, body, settings.reminderMode, event.id, 'event', event, now)
           markReminderSent(reminderKey)
 
           console.log('事件提醒已发送:', event.title)
@@ -286,7 +425,7 @@ async function checkAndSendReminders(): Promise<void> {
           const title = formatNotificationTitle(todo.title, settings)
           const body = formatNotificationBody(todo, 'todo', settings)
 
-          await sendReminderNotification(title, body, settings.reminderMode)
+          await sendReminderNotification(title, body, settings.reminderMode, todo.id, 'todo', todo, now)
           markReminderSent(reminderKey)
 
           console.log('待办提醒已发送:', todo.title)
@@ -350,4 +489,17 @@ export function isReminderServiceRunning(): boolean {
  */
 export async function triggerReminderCheck(): Promise<void> {
   await checkAndSendReminders()
+}
+
+/**
+ * 处理稍后提醒
+ * @param itemId 事件或待办的 ID
+ * @param snoozeTime 稍后提醒的时间戳
+ */
+export function handleSnoozeReminder(
+  itemId: string,
+  snoozeTime: number
+): void {
+  setSnoozeTime(itemId, snoozeTime)
+  console.log(`已设置稍后提醒: ${itemId}, 时间: ${new Date(snoozeTime).toLocaleString()}`)
 }

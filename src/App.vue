@@ -55,19 +55,59 @@
       </router-view>
     </main>
   </div>
+
+  <!-- 提醒弹窗组件 -->
+  <ReminderPopup />
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { onMounted, onUnmounted, watch, provide } from 'vue'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
+import ReminderPopup from './components/reminder/ReminderPopup.vue'
 import { checkAndInstallUpdate } from './services/updater'
-import { startReminderService, stopReminderService } from './services/reminder'
+import { startReminderService, stopReminderService, onReminderPopup, offReminderPopup, handleSnoozeReminder } from './services/reminder'
 import { isTauri } from './utils/tauri'
+import type { CalendarEvent, Todo } from './types'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
+
+// 提醒事件总线
+const reminderBus = {
+  on: (callback: (data: {
+    id: string
+    type: 'event' | 'todo'
+    title: string
+    body: string
+    triggerTime: number
+    itemId: string
+    itemData: CalendarEvent | Todo
+  }) => void) => {
+    onReminderPopup(callback)
+  },
+  off: (callback: (data: {
+    id: string
+    type: 'event' | 'todo'
+    title: string
+    body: string
+    triggerTime: number
+    itemId: string
+    itemData: CalendarEvent | Todo
+  }) => void) => {
+    offReminderPopup(callback)
+  }
+}
+
+// 提供事件总线给子组件
+provide('reminderBus', reminderBus)
+
+// 处理稍后提醒事件
+function handleSnoozeEvent(event: CustomEvent) {
+  const { itemId, snoozeTime } = event.detail
+  handleSnoozeReminder(itemId, snoozeTime)
+}
 
 onMounted(() => {
   calendarStore.initialize()
@@ -75,11 +115,16 @@ onMounted(() => {
   checkForUpdatesOnStartup()
   // 启动提醒服务
   startReminderService()
+
+  // 监听稍后提醒事件
+  window.addEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
 })
 
 // 应用关闭时清理定时器
 onUnmounted(() => {
   stopReminderService()
+  // 移除事件监听
+  window.removeEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
 })
 
 // 应用主题到 :root
