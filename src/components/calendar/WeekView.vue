@@ -243,6 +243,8 @@ function formatEventTime(event: CalendarEvent): string {
 .time-gutter {
   width: 50px;
   flex-shrink: 0;
+  border-right: 1px solid var(--border-color);
+  background: var(--bg-secondary);
 }
 
 .days-header {
@@ -332,7 +334,22 @@ function formatEventTime(event: CalendarEvent): string {
 .week-body {
   flex: 1;
   display: flex;
-  overflow-y: auto;
+  overflow-x: hidden;
+  overflow-y: overlay;
+}
+
+/* 滚动条不挤占内容位置 */
+.week-body::-webkit-scrollbar {
+  width: 0;
+}
+
+.week-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.week-body::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
 }
 
 .time-slot {
@@ -342,6 +359,8 @@ function formatEventTime(event: CalendarEvent): string {
   font-size: 11px;
   color: var(--text-secondary);
   text-align: right;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
 }
 
 .days-grid-container {
@@ -362,6 +381,7 @@ function formatEventTime(event: CalendarEvent): string {
   border-left: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
+  background: var(--bg-primary);
 }
 
 .hour-cell {
@@ -391,6 +411,7 @@ function formatEventTime(event: CalendarEvent): string {
   flex: 1;
   position: relative;
   pointer-events: auto;
+  border-left: 1px solid var(--border-color);
 }
 
 .week-event.timed {
