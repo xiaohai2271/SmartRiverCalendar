@@ -240,10 +240,13 @@ async function sendReminderNotification(
   triggerTime: number
 ): Promise<void> {
   try {
-    // 发送系统通知
-    await sendNotification({ title, body })
+    // 根据提醒强度决定是否发送系统通知
+    // standard 和 strong 模式发送系统通知，silent 模式不发送
+    if (mode !== 'silent') {
+      await sendNotification({ title, body })
+    }
 
-    // 触发应用内弹窗
+    // 触发应用内弹窗（所有模式都弹窗）
     const popupId = `popup_${itemId}_${triggerTime}`
     triggerReminderPopup({
       id: popupId,
@@ -255,12 +258,10 @@ async function sendReminderNotification(
       itemData
     })
 
-    // 根据提醒强度处理
+    // strong 模式额外闪烁任务栏标题
     if (mode === 'strong') {
-      // 强提醒：闪烁任务栏标题
       startBlinkTitle(title)
     }
-    // silent 模式暂不支持静默通知，Tauri 统一发送
   } catch (error) {
     console.error('发送提醒通知失败:', error)
   }

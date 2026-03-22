@@ -58,6 +58,12 @@
         </div>
       </div>
     </TransitionGroup>
+    <!-- 提示消息 -->
+    <Transition name="toast">
+      <div v-if="toastVisible" class="reminder-toast">
+        {{ toastMessage }}
+      </div>
+    </Transition>
   </Teleport>
 </template>
 
@@ -87,6 +93,10 @@ const SNOOZE_DURATION = 5 * 60 * 1000
 
 // 活跃的提醒列表
 const activeReminders = ref<ReminderPopupData[]>([])
+
+// 提示消息状态
+const toastMessage = ref('')
+const toastVisible = ref(false)
 
 // 进度条定时器
 const progressIntervals = new Map<string, ReturnType<typeof setInterval>>()
@@ -182,10 +192,16 @@ function snoozeReminder(reminder: ReminderPopupData) {
   })
   window.dispatchEvent(snoozeEvent)
 
-  // 关闭当前弹窗
-  dismissReminder(reminder.id)
+  // 显示提示消息
+  const snoozeMinutes = SNOOZE_DURATION / 60000
+  toastMessage.value = `${snoozeMinutes}分钟后再提醒`
+  toastVisible.value = true
 
-  console.log(`提醒已设置为 ${SNOOZE_DURATION / 60000} 分钟后再次提醒`)
+  // 延迟关闭弹窗，让用户看到提示
+  setTimeout(() => {
+    toastVisible.value = false
+    dismissReminder(reminder.id)
+  }, 2000)
 }
 
 // 标记待办完成
@@ -399,21 +415,21 @@ defineExpose({
 
 /* 稍后提醒按钮 */
 .btn-snooze:hover {
-  background: rgba(255, 193, 7, 0.1);
-  border-color: #ffc107;
-  color: #d39e00;
+  background: var(--warning-light);
+  border-color: var(--warning-color);
+  color: var(--warning-text);
 }
 
 /* 标记完成按钮 */
 .btn-complete:hover {
-  background: rgba(40, 167, 69, 0.1);
-  border-color: #28a745;
-  color: #1e7e34;
+  background: var(--success-light);
+  border-color: var(--success-color);
+  color: var(--success-text);
 }
 
 /* 查看详情按钮 */
 .btn-view:hover {
-  background: rgba(0, 120, 212, 0.1);
+  background: var(--accent-light);
   border-color: var(--accent-color);
   color: var(--accent-color);
 }
@@ -470,37 +486,52 @@ defineExpose({
   }
 }
 
-/* 深色模式适配 */
-@media (prefers-color-scheme: dark) {
-  .reminder-popup {
-    background: rgba(30, 30, 30, 0.95);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
+/* 提示消息 */
+.reminder-toast {
+  position: fixed;
+  bottom: 100px;
+  right: 20px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  padding: 12px 20px;
+  box-shadow: var(--shadow-lg);
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 500;
+  z-index: 10001;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
 
-  .popup-actions {
-    background: rgba(20, 20, 20, 0.8);
-    border-top-color: rgba(255, 255, 255, 0.08);
-  }
+/* 提示消息动画 */
+.toast-enter-active {
+  animation: toast-enter 0.3s ease-out;
+}
 
-  .popup-btn {
-    background: rgba(40, 40, 40, 0.9);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
+.toast-leave-active {
+  animation: toast-leave 0.2s ease-in;
+}
 
-  .popup-btn:hover {
-    background: rgba(60, 60, 60, 0.9);
+@keyframes toast-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
   }
-
-  .btn-snooze:hover {
-    background: rgba(255, 193, 7, 0.15);
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
+}
 
-  .btn-complete:hover {
-    background: rgba(40, 167, 69, 0.15);
+@keyframes toast-leave {
+  from {
+    opacity: 1;
+    transform: translateY(0);
   }
-
-  .btn-view:hover {
-    background: rgba(0, 120, 212, 0.15);
+  to {
+    opacity: 0;
+    transform: translateY(10px);
   }
 }
 

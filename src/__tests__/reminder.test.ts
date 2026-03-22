@@ -644,8 +644,8 @@ describe('提醒服务', () => {
       vi.setSystemTime(now)
       await reminderService.triggerReminderCheck()
 
-      // Tauri暂不支持静默通知，仍然发送
-      expect(mockSendNotification).toHaveBeenCalledTimes(1)
+      // 静默模式不发送系统通知
+      expect(mockSendNotification).not.toHaveBeenCalled()
     })
   })
 
