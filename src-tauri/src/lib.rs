@@ -4,6 +4,7 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod commands;
+mod updater;
 
 pub fn run() {
     env_logger::init();
@@ -37,6 +38,9 @@ pub fn run() {
                     .id("auto_hide")
                     .checked(false)
                     .build(app)?;
+                let check_update = MenuItemBuilder::new("检查更新")
+                    .id("check_update")
+                    .build(app)?;
                 let quit = MenuItemBuilder::new("退出").id("quit").build(app)?;
 
                 // 构建菜单
@@ -45,6 +49,8 @@ pub fn run() {
                     .separator()
                     .item(&always_on_top)
                     .item(&auto_hide)
+                    .separator()
+                    .item(&check_update)
                     .separator()
                     .item(&quit)
                     .build()?;
@@ -76,6 +82,15 @@ pub fn run() {
                             let state = app.state::<Mutex<commands::AppState>>();
                             let is_auto_hide = commands::toggle_auto_hide(state);
                             println!("自动隐藏: {}", is_auto_hide);
+                        }
+                        "check_update" => {
+                            // 用户点击"检查更新"菜单项
+                            // 调用 updater 模块检查并处理更新
+                            let app_handle = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let result = updater::check_for_updates(app_handle).await;
+                                updater::handle_update_result(result).await;
+                            });
                         }
                         _ => {}
                     })

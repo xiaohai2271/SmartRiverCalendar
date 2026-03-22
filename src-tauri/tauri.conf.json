@@ -50,7 +50,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDNTA0OTRDRjY2Q0QzNjEKUldSaDAyejJURWxRbkQyWUYzM3ZFUFowNzFabHBTWktkUEsyOVNMZ1ZhVE5WbzhMRE5weU5WcHYK",
       "endpoints": [
-        "https://api.upgrade.toolsetlink.com/v1/tauri/upgrade?tauriKey=YOUR_TAURI_KEY&versionName={{current_version}}&appointVersionName=&devModelKey=&devKey=&target={{target}}&arch={{arch}}"
+        "https://api.upgrade.toolsetlink.com/v1/tauri/upgrade?tauriKey=VsD99h2Y0AHwh_gGf2iiJw&versionName={{current_version}}&appointVersionName=&devModelKey=&devKey=&target={{target}}&arch={{arch}}"
       ],
       "windows": {
         "installMode": "passive"
