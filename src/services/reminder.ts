@@ -401,8 +401,11 @@ async function checkAndSendReminders(): Promise<void> {
     // 检查事件提醒
     for (const event of calendarStore.visibleEvents) {
       if (shouldRemindEvent(event, now, settings)) {
-        // 生成提醒 key（使用事件开始时间作为标识）
-        const reminderKey = generateReminderKey(event.id, event.startTime)
+        // 检查是否有稍后提醒，如果有则使用稍后提醒时间作为 key
+        const snoozeTime = getSnoozeTime(event.id)
+        const reminderKey = snoozeTime !== null
+          ? generateReminderKey(event.id, snoozeTime)
+          : generateReminderKey(event.id, event.startTime)
 
         if (!isReminderSent(reminderKey)) {
           const title = formatNotificationTitle(event.title, settings)
@@ -419,8 +422,11 @@ async function checkAndSendReminders(): Promise<void> {
     // 检查待办提醒
     for (const todo of todoStore.pendingTodos) {
       if (shouldRemindTodo(todo, now, settings)) {
-        // 生成提醒 key（使用截止时间作为标识）
-        const reminderKey = generateReminderKey(todo.id, todo.dueDate!)
+        // 检查是否有稍后提醒，如果有则使用稍后提醒时间作为 key
+        const snoozeTime = getSnoozeTime(todo.id)
+        const reminderKey = snoozeTime !== null
+          ? generateReminderKey(todo.id, snoozeTime)
+          : generateReminderKey(todo.id, todo.dueDate!)
 
         if (!isReminderSent(reminderKey)) {
           const title = formatNotificationTitle(todo.title, settings)

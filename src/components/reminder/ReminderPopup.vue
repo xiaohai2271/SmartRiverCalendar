@@ -192,16 +192,8 @@ function snoozeReminder(reminder: ReminderPopupData) {
   })
   window.dispatchEvent(snoozeEvent)
 
-  // 显示提示消息
-  const snoozeMinutes = SNOOZE_DURATION / 60000
-  toastMessage.value = `${snoozeMinutes}分钟后再提醒`
-  toastVisible.value = true
-
-  // 延迟关闭弹窗，让用户看到提示
-  setTimeout(() => {
-    toastVisible.value = false
-    dismissReminder(reminder.id)
-  }, 2000)
+  // 立即关闭弹窗，避免与新弹窗重叠
+  dismissReminder(reminder.id)
 }
 
 // 标记待办完成
