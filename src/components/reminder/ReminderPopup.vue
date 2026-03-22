@@ -180,6 +180,17 @@ function dismissReminder(id: string) {
   }
 }
 
+// 显示提示消息
+function showToast(message: string, duration: number = 2000) {
+  toastMessage.value = message
+  toastVisible.value = true
+
+  // 自动隐藏提示
+  setTimeout(() => {
+    toastVisible.value = false
+  }, duration)
+}
+
 // 稍后提醒
 function snoozeReminder(reminder: ReminderPopupData) {
   // 发出自定义事件，通知 reminder.ts 稍后提醒
@@ -191,6 +202,9 @@ function snoozeReminder(reminder: ReminderPopupData) {
     }
   })
   window.dispatchEvent(snoozeEvent)
+
+  // 显示提示消息
+  showToast('5分钟后再提醒')
 
   // 立即关闭弹窗，避免与新弹窗重叠
   dismissReminder(reminder.id)

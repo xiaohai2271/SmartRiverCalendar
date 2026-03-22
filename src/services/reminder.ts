@@ -313,10 +313,14 @@ function stopTitleBlink(): void {
 function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSettings): boolean {
   // 检查是否有稍后提醒
   const snoozeTime = getSnoozeTime(event.id)
-  if (snoozeTime !== null && now >= snoozeTime) {
-    // 稍后提醒时间已到，清除稍后提醒并返回 true
-    clearSnoozeTime(event.id)
-    return true
+  if (snoozeTime !== null) {
+    if (now >= snoozeTime) {
+      // 稍后提醒时间已到，清除稍后提醒并返回 true
+      clearSnoozeTime(event.id)
+      return true
+    }
+    // 稍后提醒时间未到，不触发提醒
+    return false
   }
 
   // 获取提醒提前时间（分钟）
@@ -368,10 +372,14 @@ function shouldRemindTodo(todo: Todo, now: number, settings: AppSettings): boole
 
   // 检查是否有稍后提醒
   const snoozeTime = getSnoozeTime(todo.id)
-  if (snoozeTime !== null && now >= snoozeTime) {
-    // 稍后提醒时间已到，清除稍后提醒并返回 true
-    clearSnoozeTime(todo.id)
-    return true
+  if (snoozeTime !== null) {
+    if (now >= snoozeTime) {
+      // 稍后提醒时间已到，清除稍后提醒并返回 true
+      clearSnoozeTime(todo.id)
+      return true
+    }
+    // 稍后提醒时间未到，不触发提醒
+    return false
   }
 
   // dueDate - defaultReminder <= now < dueDate
