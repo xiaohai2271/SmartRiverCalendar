@@ -45,6 +45,9 @@ Desktop.ini
 .claude/
 !.claude/skills/
 
+# Sisyphus 工作状态
+.sisyphus/
+
 # 临时文件
 *.tmp
 *.temp
