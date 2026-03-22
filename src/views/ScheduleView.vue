@@ -72,11 +72,14 @@
             <div
               v-for="event in group.events"
               :key="event.id"
-              class="event-item fluent-card"
+              :class="['event-item', 'fluent-card', { 'all-day': event.allDay }]"
             >
               <div class="event-color-bar" :style="{ background: getEventColor(event) }"></div>
               <div class="event-content" @click="openEditModal(event)">
-                <div class="event-title">{{ event.title }}</div>
+                <div class="event-title-row">
+                  <div class="event-title">{{ event.title }}</div>
+                  <div v-if="event.allDay" class="all-day-badge">全天</div>
+                </div>
                 <div class="event-time">
                   <span v-if="event.allDay">全天</span>
                   <span v-else>{{ formatEventTime(event) }}</span>
@@ -241,10 +244,12 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { useCalendarStore } from '../stores/calendar'
 import { formatDate, formatTime } from '../utils/date'
 import type { CalendarEvent } from '../types'
 
+const route = useRoute()
 const calendarStore = useCalendarStore()
 
 // 筛选状态
@@ -276,6 +281,14 @@ watch(() => calendarStore.calendars, (cals) => {
   }
 }, { immediate: true })
 
+// 从路由查询参数中获取日期并填充筛选
+watch(() => route.query.date, (dateParam) => {
+  if (dateParam && typeof dateParam === 'string') {
+    startDate.value = dateParam
+    endDate.value = dateParam
+  }
+}, { immediate: true })
+
 // 筛选后的事件
 const filteredEvents = computed(() => {
   let events = calendarStore.events
@@ -304,8 +317,8 @@ const filteredEvents = computed(() => {
     )
   }
 
-  // 按开始时间排序
-  return [...events].sort((a, b) => a.startTime - b.startTime)
+  // 按结束时间倒序排序（最新的在前）
+  return [...events].sort((a, b) => b.endTime - a.endTime)
 })
 
 // 按日期分组的事件
@@ -656,6 +669,27 @@ function handleDeleteEvent(id: string) {
 
 .event-item:hover {
   box-shadow: var(--shadow-md);
+}
+
+.event-item.all-day {
+  background: var(--accent-light);
+  border-left: 3px solid var(--accent-color);
+}
+
+.event-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.all-day-badge {
+  background: var(--accent-color);
+  color: white;
+  font-size: 10px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+  flex-shrink: 0;
 }
 
 .event-color-bar {

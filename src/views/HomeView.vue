@@ -10,7 +10,7 @@
         <div class="stat-icon">📅</div>
         <div class="stat-info">
           <div class="stat-value">{{ todayEvents.length }}</div>
-          <div class="stat-label">今日事件</div>
+          <div class="stat-label">今日日程</div>
         </div>
       </div>
       <div class="stat-card">
@@ -24,14 +24,14 @@
         <div class="stat-icon">⏰</div>
         <div class="stat-info">
           <div class="stat-value">{{ weekEvents }}</div>
-          <div class="stat-label">本周事件</div>
+          <div class="stat-label">本周日程</div>
         </div>
       </div>
       <div class="stat-card">
         <div class="stat-icon">📆</div>
         <div class="stat-info">
           <div class="stat-value">{{ monthEvents }}</div>
-          <div class="stat-label">本月事件</div>
+          <div class="stat-label">本月日程</div>
         </div>
       </div>
     </div>
@@ -76,7 +76,7 @@
         </div>
       </div>
 
-      <!-- 即将到来的事件 -->
+      <!-- 即将到来的日程 -->
       <div class="events-section">
         <div class="section-header">
           <h2>即将到来</h2>
@@ -91,7 +91,7 @@
             </div>
           </div>
           <div v-if="upcomingEvents.length === 0" class="empty-state">
-            暂无即将到来的事件
+            暂无即将到来的日程
           </div>
         </div>
       </div>

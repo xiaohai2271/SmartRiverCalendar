@@ -462,7 +462,7 @@ function formatEventTime(event: CalendarEvent): string {
 .day-events-column {
   flex: 1;
   position: relative;
-  pointer-events: auto;
+  pointer-events: none;
   border-left: 1px solid var(--border-color);
 }
 
@@ -478,6 +478,7 @@ function formatEventTime(event: CalendarEvent): string {
   overflow: hidden;
   cursor: pointer;
   z-index: 1;
+  pointer-events: auto;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast);
 }
 

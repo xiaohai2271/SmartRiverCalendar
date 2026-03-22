@@ -27,7 +27,7 @@
 
     <!-- Calendar Content -->
     <div class="calendar-content">
-      <MonthView v-if="calendarStore.currentView === 'month'" @edit-event="openEditEventModal" />
+      <MonthView v-if="calendarStore.currentView === 'month'" @edit-event="openEditEventModal" @view-day-schedules="viewDaySchedules" />
       <WeekView v-else-if="calendarStore.currentView === 'week'" @edit-event="openEditEventModal" @create-event="openAddEventModalWithDateAndTime" />
       <DayView v-else-if="calendarStore.currentView === 'day'" @edit-event="openEditEventModal" @create-event="openAddEventModalWithTime" />
       <YearView v-else-if="calendarStore.currentView === 'year'" @edit-event="openEditEventModal" />
@@ -179,6 +179,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useCalendarStore } from '../stores/calendar'
 import MonthView from '../components/calendar/MonthView.vue'
 import WeekView from '../components/calendar/WeekView.vue'
@@ -188,6 +189,7 @@ import { formatDateLocale } from '../utils/date'
 import type { CalendarView, CalendarEvent } from '../types'
 
 const calendarStore = useCalendarStore()
+const router = useRouter()
 const eventTitleInput = ref<HTMLInputElement | null>(null)
 
 const views: { value: CalendarView; label: string }[] = [
@@ -224,7 +226,10 @@ function getTodayString(): string {
 
 // 获取指定日期的字符串
 function getDateString(date: Date): string {
-  return date.toISOString().split('T')[0]
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 // 获取本周五的日期
@@ -460,6 +465,15 @@ function handleDeleteEvent() {
     calendarStore.deleteEvent(editingEventId.value)
     closeEventModal()
   }
+}
+
+// 查看某天的日程列表
+function viewDaySchedules(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  const dateString = `${year}-${month}-${day}`
+  router.push({ path: '/schedules', query: { date: dateString } })
 }
 </script>
 

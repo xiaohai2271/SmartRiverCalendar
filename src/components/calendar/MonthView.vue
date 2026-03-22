@@ -46,7 +46,8 @@
             <span
               v-if="getEventsForDay(day).length > maxEventDots"
               class="more-events"
-              :title="`${getEventsForDay(day).length} 个事件`"
+              :title="`${getEventsForDay(day).length} 个日程`"
+              @click.stop="emit('view-day-schedules', day)"
             >
               +{{ getEventsForDay(day).length - maxEventDots }}
             </span>
@@ -103,6 +104,7 @@ import type { CalendarEvent } from '../../types'
 
 const emit = defineEmits<{
   'edit-event': [event: CalendarEvent]
+  'view-day-schedules': [date: Date]
 }>()
 
 const calendarStore = useCalendarStore()
