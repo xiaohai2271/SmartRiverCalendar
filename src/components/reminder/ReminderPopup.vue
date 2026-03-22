@@ -89,7 +89,8 @@ export interface ReminderPopupData {
 const AUTO_DISMISS_TIMEOUT = 10000
 
 // 稍后提醒时间（毫秒）
-const SNOOZE_DURATION = 5 * 60 * 1000
+// 开发模式：30秒，生产模式：5分钟
+const SNOOZE_DURATION = import.meta.env.DEV ? 30 * 1000 : 5 * 60 * 1000
 
 // 活跃的提醒列表
 const activeReminders = ref<ReminderPopupData[]>([])
@@ -203,8 +204,16 @@ function snoozeReminder(reminder: ReminderPopupData) {
   })
   window.dispatchEvent(snoozeEvent)
 
+  // 动态生成提示消息
+  // 开发模式显示秒数，生产模式显示分钟数
+  const snoozeMinutes = Math.floor(SNOOZE_DURATION / 60000)
+  const snoozeSeconds = Math.floor(SNOOZE_DURATION / 1000)
+  const toastMsg = import.meta.env.DEV
+    ? `${snoozeSeconds}秒后再提醒`
+    : `${snoozeMinutes}分钟后再提醒`
+
   // 显示提示消息
-  showToast('5分钟后再提醒')
+  showToast(toastMsg)
 
   // 立即关闭弹窗，避免与新弹窗重叠
   dismissReminder(reminder.id)

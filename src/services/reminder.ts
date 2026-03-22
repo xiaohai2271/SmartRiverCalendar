@@ -315,8 +315,7 @@ function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSetti
   const snoozeTime = getSnoozeTime(event.id)
   if (snoozeTime !== null) {
     if (now >= snoozeTime) {
-      // 稍后提醒时间已到，清除稍后提醒并返回 true
-      clearSnoozeTime(event.id)
+      // 稍后提醒时间已到，返回 true（稍后提醒将在 checkAndSendReminders 中清除）
       return true
     }
     // 稍后提醒时间未到，不触发提醒
@@ -374,8 +373,7 @@ function shouldRemindTodo(todo: Todo, now: number, settings: AppSettings): boole
   const snoozeTime = getSnoozeTime(todo.id)
   if (snoozeTime !== null) {
     if (now >= snoozeTime) {
-      // 稍后提醒时间已到，清除稍后提醒并返回 true
-      clearSnoozeTime(todo.id)
+      // 稍后提醒时间已到，返回 true（稍后提醒将在 checkAndSendReminders 中清除）
       return true
     }
     // 稍后提醒时间未到，不触发提醒
@@ -422,6 +420,11 @@ async function checkAndSendReminders(): Promise<void> {
           await sendReminderNotification(title, body, settings.reminderMode, event.id, 'event', event, now)
           markReminderSent(reminderKey)
 
+          // 如果是稍后提醒，清除稍后提醒时间
+          if (snoozeTime !== null) {
+            clearSnoozeTime(event.id)
+          }
+
           console.log('事件提醒已发送:', event.title)
         }
       }
@@ -442,6 +445,11 @@ async function checkAndSendReminders(): Promise<void> {
 
           await sendReminderNotification(title, body, settings.reminderMode, todo.id, 'todo', todo, now)
           markReminderSent(reminderKey)
+
+          // 如果是稍后提醒，清除稍后提醒时间
+          if (snoozeTime !== null) {
+            clearSnoozeTime(todo.id)
+          }
 
           console.log('待办提醒已发送:', todo.title)
         }
