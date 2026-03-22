@@ -55,17 +55,23 @@ jobs:
         id: finder
         run: |
           $exe = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.exe" | Select-Object -First 1
-          Write-Output "file=$($exe.Name)" >> $env:GITHUB_OUTPUT
-          $sig = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.sig" | Select-Object -First 1
-          Write-Output "sig=$($sig.Name)" >> $env:GITHUB_OUTPUT
+          Write-Output "exe=$($exe.Name)" >> $env:GITHUB_OUTPUT
+          $exeSig = Get-ChildItem "src-tauri/target/release/bundle/nsis" -Filter "*.sig" | Select-Object -First 1
+          Write-Output "exeSig=$($exeSig.Name)" >> $env:GITHUB_OUTPUT
+          $msi = Get-ChildItem "src-tauri/target/release/bundle/msi" -Filter "*.msi" | Select-Object -First 1
+          Write-Output "msi=$($msi.Name)" >> $env:GITHUB_OUTPUT
+          $msiSig = Get-ChildItem "src-tauri/target/release/bundle/msi" -Filter "*.sig" | Select-Object -First 1
+          Write-Output "msiSig=$($msiSig.Name)" >> $env:GITHUB_OUTPUT
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: windows-installer
           path: |
-            src-tauri/target/release/bundle/nsis/${{ steps.finder.outputs.file }}
-            src-tauri/target/release/bundle/nsis/${{ steps.finder.outputs.sig }}
+            src-tauri/target/release/bundle/nsis/${{ steps.finder.outputs.exe }}
+            src-tauri/target/release/bundle/nsis/${{ steps.finder.outputs.exeSig }}
+            src-tauri/target/release/bundle/msi/${{ steps.finder.outputs.msi }}
+            src-tauri/target/release/bundle/msi/${{ steps.finder.outputs.msiSig }}
 
   build-linux:
     if: (github.event_name == 'workflow_dispatch' && (inputs.platform == 'all' || inputs.platform == 'linux')) || github.event_name == 'release'
