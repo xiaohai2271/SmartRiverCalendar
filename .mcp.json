@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "tauri-mcp-server": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@hypothesi/tauri-mcp-server"]
+    }
+  }
+}

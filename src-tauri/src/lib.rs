@@ -15,7 +15,7 @@ pub fn run() {
 
     let app_state = Mutex::new(commands::AppState::default());
 
-    tauri::Builder::default()
+    let mut app_builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
@@ -25,7 +25,15 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(app_state)
+        .manage(app_state);
+
+    // 仅在调试模式下启用 MCP Bridge 插件
+    #[cfg(debug_assertions)]
+    {
+        app_builder = app_builder.plugin(tauri_plugin_mcp_bridge::init());
+    }
+
+    app_builder
         .setup(|app| {
             #[cfg(desktop)]
             {
