@@ -151,3 +151,34 @@ SmartRiverCalender/
 - **@fluentui/web-components**: UI 组件库。
 - **tyme4ts**: 农历/节假日处理库。
 - **tauri-plugin-***: 一系列 Tauri 插件用于系统集成功能。
+
+## Fluent Design 规范
+
+本项目严格遵循 **Microsoft Fluent Design System**，为用户提供现代化、一致且美观的界面体验。
+
+### 核心原则
+- **光影 (Light)**: 使用微妙的阴影和高光表达层次关系
+- **深度 (Depth)**: 通过 z-index 和阴影创建视觉层次
+- **动效 (Motion)**: 所有交互都有平滑的过渡动画
+- **材质 (Material)**: 使用亚克力 (Acrylic) 和云母 (Mica) 效果
+- **缩放 (Scale)**: 响应式设计，适配不同屏幕尺寸
+
+### 关键实现
+- **颜色系统**: 使用 CSS 变量定义浅色/深色主题颜色
+- **阴影系统**: 多层级阴影表达元素深度
+- **圆角规范**: 统一的圆角半径 (4px, 8px, 12px, 16px)
+- **动画规范**: 快速 100ms，正常 200ms，平滑 250ms
+- **亚克力效果**: `backdrop-filter: blur(20px) saturate(180%)`
+
+### 组件规范
+- **卡片**: `.fluent-card` - 轻微阴影，悬停时增强
+- **按钮**: `.fluent-button` - 支持主要/次要/危险状态
+- **输入框**: `.fluent-input` - 聚焦时显示强调色边框
+- **滚动条**: 自定义 Fluent 风格滚动条
+
+### 主题支持
+- 浅色模式 (`.light`)
+- 深色模式 (`.dark`)
+- 自动模式 (跟随系统 `prefers-color-scheme`)
+
+**详细规范请参考**: [SPEC.md - 4.4 Fluent Design 规范](SPEC.md#44-fluent-design-规范)
