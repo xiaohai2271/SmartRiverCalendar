@@ -10,6 +10,11 @@ import {
   saveEvent,
   deleteEvent as dbDeleteEvent
 } from '../utils/database'
+import {
+  invokeGetAllAccounts,
+  invokeGetExternalCalendars,
+  safeInvoke
+} from '../utils/tauri'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // State
@@ -50,7 +55,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         console.error('Failed to load default view setting:', e)
       }
 
-      // 加载日历
+      // 加载本地日历
       const loadedCalendars = await getAllCalendars()
       if (loadedCalendars.length > 0) {
         calendars.value = loadedCalendars.map(c => ({
@@ -73,9 +78,15 @@ export const useCalendarStore = defineStore('calendar', () => {
         console.log('Default calendar saved to database')
       }
 
+      // 加载外部账号和日历
+      await loadExternalCalendars()
+
       // 加载事件
       const loadedEvents = await getAllEvents()
       events.value = loadedEvents
+
+      // 加载外部事件
+      await loadExternalEvents()
 
       isInitialized.value = true
       console.log('Calendar store initialized:', {
@@ -85,6 +96,63 @@ export const useCalendarStore = defineStore('calendar', () => {
       })
     } catch (error) {
       console.error('Failed to initialize calendar store:', error)
+    }
+  }
+
+  // 加载外部日历
+  async function loadExternalCalendars() {
+    try {
+      const accounts = await invokeGetAllAccounts()
+      if (!accounts || accounts.length === 0) return
+
+      for (const account of accounts) {
+        const externalCalendars = await invokeGetExternalCalendars(account.id)
+        if (!externalCalendars) continue
+
+        for (const cal of externalCalendars) {
+          const calendarId = `ext_${account.id}_${cal.externalId}`
+          const existingIndex = calendars.value.findIndex(c => c.id === calendarId)
+
+          if (existingIndex === -1) {
+            // 添加新的外部日历
+            calendars.value.push({
+              id: calendarId,
+              name: cal.name,
+              color: cal.color || '#6B7280',
+              type: account.type,
+              accountId: account.id,
+              visible: true,
+              syncEnabled: true
+            })
+          }
+        }
+      }
+    } catch (error) {
+      console.error('加载外部日历失败:', error)
+    }
+  }
+
+  // 加载外部事件
+  async function loadExternalEvents() {
+    try {
+      const externalCalendars = calendars.value.filter(c => c.type !== 'local')
+      for (const calendar of externalCalendars) {
+        if (!calendar.accountId) continue
+
+        const externalEvents = await safeInvoke<CalendarEvent[]>('get_external_events', {
+          accountId: calendar.accountId,
+          calendarId: calendar.id
+        })
+
+        if (externalEvents && externalEvents.length > 0) {
+          // 移除该外部日历的旧事件
+          events.value = events.value.filter(e => e.calendarId !== calendar.id)
+          // 添加新事件
+          events.value.push(...externalEvents)
+        }
+      }
+    } catch (error) {
+      console.error('加载外部事件失败:', error)
     }
   }
 
@@ -181,42 +249,99 @@ export const useCalendarStore = defineStore('calendar', () => {
       createdAt: now,
       updatedAt: now
     }
-    events.value.push(newEvent)
 
-    // 持久化
-    try {
-      await saveEvent(newEvent)
-    } catch (error) {
-      console.error('Failed to save event:', error)
+    // 检测目标日历类型
+    const targetCalendar = calendars.value.find(c => c.id === event.calendarId)
+    if (targetCalendar && targetCalendar.type !== 'local') {
+      // 外部日历：调用 Rust 命令
+      try {
+        const result = await safeInvoke<CalendarEvent>('create_external_event', {
+          accountId: targetCalendar.accountId,
+          calendarId: event.calendarId,
+          event: newEvent
+        })
+        if (result) {
+          events.value.push(result)
+        } else {
+          console.error('创建外部事件失败：无法获取结果')
+        }
+      } catch (error) {
+        console.error('创建外部事件失败:', error)
+      }
+    } else {
+      // 本地日历：保存到数据库
+      events.value.push(newEvent)
+      try {
+        await saveEvent(newEvent)
+      } catch (error) {
+        console.error('Failed to save event:', error)
+      }
     }
   }
 
   async function updateEvent(id: string, updates: Partial<CalendarEvent>) {
     const index = events.value.findIndex(e => e.id === id)
     if (index !== -1) {
-      events.value[index] = {
-        ...events.value[index],
-        ...updates,
-        updatedAt: Date.now()
-      }
+      const event = events.value[index]
+      const calendar = calendars.value.find(c => c.id === event.calendarId)
 
-      // 持久化
-      try {
-        await saveEvent(events.value[index])
-      } catch (error) {
-        console.error('Failed to update event:', error)
+      if (calendar && calendar.type !== 'local') {
+        // 外部日历事件：调用 Rust 命令
+        try {
+          const result = await safeInvoke<CalendarEvent>('update_external_event', {
+            accountId: calendar.accountId,
+            calendarId: event.calendarId,
+            eventId: id,
+            updates
+          })
+          if (result) {
+            events.value[index] = result
+          }
+        } catch (error) {
+          console.error('更新外部事件失败:', error)
+        }
+      } else {
+        // 本地日历事件：更新数据库
+        events.value[index] = {
+          ...event,
+          ...updates,
+          updatedAt: Date.now()
+        }
+        try {
+          await saveEvent(events.value[index])
+        } catch (error) {
+          console.error('Failed to update event:', error)
+        }
       }
     }
   }
 
   async function deleteEvent(id: string) {
-    events.value = events.value.filter(e => e.id !== id)
+    const event = events.value.find(e => e.id === id)
+    if (!event) return
 
-    // 持久化
-    try {
-      await dbDeleteEvent(id)
-    } catch (error) {
-      console.error('Failed to delete event:', error)
+    const calendar = calendars.value.find(c => c.id === event.calendarId)
+
+    if (calendar && calendar.type !== 'local') {
+      // 外部日历事件：调用 Rust 命令
+      try {
+        await safeInvoke('delete_external_event', {
+          accountId: calendar.accountId,
+          calendarId: event.calendarId,
+          eventId: id
+        })
+        events.value = events.value.filter(e => e.id !== id)
+      } catch (error) {
+        console.error('删除外部事件失败:', error)
+      }
+    } else {
+      // 本地日历事件：从数据库删除
+      events.value = events.value.filter(e => e.id !== id)
+      try {
+        await dbDeleteEvent(id)
+      } catch (error) {
+        console.error('Failed to delete event:', error)
+      }
     }
   }
 
@@ -297,6 +422,8 @@ export const useCalendarStore = defineStore('calendar', () => {
     next,
     prev,
     selectDate,
+    loadExternalCalendars,
+    loadExternalEvents,
     // Getters
     visibleCalendars,
     visibleEvents,

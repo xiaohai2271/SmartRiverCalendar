@@ -95,3 +95,53 @@ export async function getAutoHide(): Promise<boolean> {
   const result = await safeInvoke<boolean>('get_auto_hide')
   return result ?? false
 }
+
+// ==================== 外部日历相关 ====================
+
+// 同步相关常量
+export const SYNC_DEFAULT_INTERVAL_MINUTES = 15
+export const SYNC_WINDOW_PAST_DAYS = 30
+export const SYNC_WINDOW_FUTURE_DAYS = 90
+
+// 外部日历连接
+export async function invokeConnectExchange(serverUrl: string, username: string, password: string) {
+  return safeInvoke<any>('connect_exchange', { serverUrl, username, password })
+}
+
+export async function invokeConnectCalDAV(serverUrl: string, username: string, password: string) {
+  return safeInvoke<any>('connect_caldav', { serverUrl, username, password })
+}
+
+// 外部日历同步
+export async function invokeSyncCalendar(accountId: string) {
+  return safeInvoke<any>('sync_now', { accountId })
+}
+
+export async function invokeSyncAllCalendars() {
+  return safeInvoke<any>('sync_all')
+}
+
+// 获取外部日历列表
+export async function invokeGetExternalCalendars(accountId: string) {
+  return safeInvoke<any[]>('get_external_calendars', { accountId })
+}
+
+// 获取所有外部账号
+export async function invokeGetAllAccounts() {
+  return safeInvoke<any[]>('get_all_accounts')
+}
+
+// 删除外部账号
+export async function invokeDeleteAccount(accountId: string) {
+  return safeInvoke<void>('delete_account', { accountId })
+}
+
+// 获取同步状态
+export async function invokeGetSyncStatus(accountId: string) {
+  return safeInvoke<any>('get_sync_status', { accountId })
+}
+
+// 设置同步间隔
+export async function invokeSetSyncInterval(minutes: number) {
+  return safeInvoke<void>('set_sync_interval', { minutes })
+}

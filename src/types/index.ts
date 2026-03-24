@@ -7,6 +7,7 @@ export interface CalendarEvent {
   endTime: number
   allDay: boolean
   calendarId: string
+  externalId?: string
   color?: string
   reminder?: number // minutes before
   repeatRule?: RepeatRule
@@ -29,10 +30,12 @@ export interface Calendar {
   id: string
   name: string
   color: string
-  type: 'local' | 'google' | 'outlook'
+  type: 'local' | 'exchange' | 'caldav'
   accountId?: string
   visible: boolean
   syncEnabled: boolean
+  syncStatus?: 'idle' | 'syncing' | 'error' | 'success'
+  lastSync?: number
 }
 
 // Todo
@@ -92,3 +95,37 @@ export interface DateRange {
   start: Date
   end: Date
 }
+
+// 外部日历账户
+export interface ExternalAccount {
+  id: string
+  type: 'exchange' | 'caldav'
+  serverUrl: string
+  username: string
+  displayName?: string
+  enabled: boolean
+  lastSyncAt?: number
+  createdAt: number
+  updatedAt: number
+}
+
+// 同步状态
+export interface SyncState {
+  accountId: string
+  calendarId: string
+  syncToken?: string
+  lastSyncAt?: number
+  syncWindowStart?: number
+  syncWindowEnd?: number
+}
+
+// 外部日历信息
+export interface ExternalCalendarInfo {
+  externalId: string
+  name: string
+  color?: string
+  accountId: string
+}
+
+// 同步状态类型
+export type SyncStatus = 'idle' | 'syncing' | 'error' | 'success'

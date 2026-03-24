@@ -4,6 +4,10 @@ use std::sync::Mutex;
 use tauri::Manager;
 
 mod commands;
+mod crypto;
+mod ews;
+mod caldav;
+mod sync;
 mod updater;
 
 pub fn run() {
@@ -150,6 +154,15 @@ pub fn run() {
             commands::show_main_window,
             commands::hide_main_window,
             commands::is_window_visible,
+            commands::connect_exchange,
+            commands::connect_caldav,
+            commands::get_all_accounts,
+            commands::delete_account,
+            commands::get_external_calendars,
+            commands::sync_now,
+            commands::sync_all,
+            commands::get_sync_status,
+            commands::set_sync_interval,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

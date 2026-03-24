@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS events (
   reminder INTEGER,
   repeat_rule TEXT,
   location TEXT,
+  external_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
@@ -49,10 +50,36 @@ CREATE TABLE IF NOT EXISTS todos (
   FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
 );
 
+-- 外部账户表
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,
+  type TEXT NOT NULL,
+  server_url TEXT NOT NULL,
+  username TEXT NOT NULL,
+  encrypted_password TEXT NOT NULL,
+  display_name TEXT,
+  enabled INTEGER NOT NULL DEFAULT 1,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+
+-- 同步状态表
+CREATE TABLE IF NOT EXISTS sync_state (
+  account_id TEXT NOT NULL,
+  calendar_id TEXT NOT NULL,
+  sync_token TEXT,
+  last_sync_at INTEGER,
+  sync_window_start INTEGER,
+  sync_window_end INTEGER,
+  PRIMARY KEY(account_id, calendar_id)
+);
+
 -- 索引
 CREATE INDEX IF NOT EXISTS idx_events_calendar_id ON events(calendar_id);
 CREATE INDEX IF NOT EXISTS idx_events_start_time ON events(start_time);
+CREATE INDEX IF NOT EXISTS idx_events_external_id ON events(external_id);
 CREATE INDEX IF NOT EXISTS idx_todos_calendar_id ON todos(calendar_id);
+CREATE INDEX IF NOT EXISTS idx_sync_state_account_id ON sync_state(account_id);
 `
 
 export async function initDatabase(): Promise<Database> {
@@ -128,15 +155,16 @@ export async function getAllEvents() {
     updatedAt: row.updated_at,
     accountId: row.account_id,
     syncEnabled: row.sync_enabled === 1,
-    repeatRule: row.repeat_rule ? JSON.parse(row.repeat_rule) : undefined
+    repeatRule: row.repeat_rule ? JSON.parse(row.repeat_rule) : undefined,
+    externalId: row.external_id
   }))
 }
 
 export async function saveEvent(event: any) {
   const database = await getDatabase()
   await database.execute(
-    `INSERT OR REPLACE INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, repeat_rule, location, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, repeat_rule, location, external_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       event.id,
       event.title,
@@ -149,6 +177,7 @@ export async function saveEvent(event: any) {
       event.reminder || null,
       event.repeatRule ? JSON.stringify(event.repeatRule) : null,
       event.location || null,
+      event.externalId || null,
       event.createdAt,
       Date.now()
     ]
@@ -196,4 +225,86 @@ export async function saveTodo(todo: any) {
 export async function deleteTodo(id: string) {
   const database = await getDatabase()
   await database.execute('DELETE FROM todos WHERE id = ?', [id])
+}
+
+// External Account CRUD
+export async function getAllExternalAccounts() {
+  const database = await getDatabase()
+  const rows = await database.select<any[]>('SELECT * FROM accounts ORDER BY created_at DESC')
+  return rows.map(row => ({
+    ...row,
+    serverUrl: row.server_url,
+    encryptedPassword: row.encrypted_password,
+    displayName: row.display_name,
+    enabled: row.enabled === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }))
+}
+
+export async function saveExternalAccount(account: any) {
+  const database = await getDatabase()
+  await database.execute(
+    `INSERT OR REPLACE INTO accounts (id, type, server_url, username, encrypted_password, display_name, enabled, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      account.id,
+      account.type,
+      account.serverUrl,
+      account.username,
+      account.encryptedPassword,
+      account.displayName || null,
+      account.enabled ? 1 : 0,
+      account.createdAt || Date.now(),
+      Date.now()
+    ]
+  )
+}
+
+export async function deleteExternalAccount(id: string) {
+  const database = await getDatabase()
+  await database.execute('DELETE FROM accounts WHERE id = ?', [id])
+}
+
+// Sync State CRUD
+export async function getSyncState(accountId: string, calendarId: string) {
+  const database = await getDatabase()
+  const rows = await database.select<any[]>(
+    'SELECT * FROM sync_state WHERE account_id = ? AND calendar_id = ?',
+    [accountId, calendarId]
+  )
+  if (rows.length === 0) return null
+  const row = rows[0]
+  return {
+    accountId: row.account_id,
+    calendarId: row.calendar_id,
+    syncToken: row.sync_token,
+    lastSyncAt: row.last_sync_at,
+    syncWindowStart: row.sync_window_start,
+    syncWindowEnd: row.sync_window_end
+  }
+}
+
+export async function saveSyncState(syncState: any) {
+  const database = await getDatabase()
+  await database.execute(
+    `INSERT OR REPLACE INTO sync_state (account_id, calendar_id, sync_token, last_sync_at, sync_window_start, sync_window_end)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [
+      syncState.accountId,
+      syncState.calendarId,
+      syncState.syncToken || null,
+      syncState.lastSyncAt || null,
+      syncState.syncWindowStart || null,
+      syncState.syncWindowEnd || null
+    ]
+  )
+}
+
+export async function updateSyncToken(accountId: string, calendarId: string, syncToken: string) {
+  const database = await getDatabase()
+  await database.execute(
+    `UPDATE sync_state SET sync_token = ?, last_sync_at = ? WHERE account_id = ? AND calendar_id = ?`,
+    [syncToken, Date.now(), accountId, calendarId]
+  )
 }

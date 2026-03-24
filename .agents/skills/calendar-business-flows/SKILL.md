@@ -41,6 +41,13 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **涉及组件**: Pinia store、SQLite数据库
 - **详细文档**: 参考 [references/todo-management.md](references/todo-management.md)
 
+### 7. 外部日历集成
+- **功能**: Exchange EWS + CalDAV 日历接入、双向同步、凭证加密
+- **涉及组件**: EWS/CalDAV 客户端、同步引擎、加密模块、Tauri 命令、前端同步服务
+- **详细文档**: 
+  - 设计文档: [references/external-calendar-design.md](references/external-calendar-design.md)
+  - 业务流程: [references/external-calendar-integration.md](references/external-calendar-integration.md)
+
 ## 快速参考
 
 ### 关键文件路径
@@ -48,6 +55,11 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - 更新逻辑: `src-tauri/src/updater.rs`
 - 托盘逻辑: `src-tauri/src/lib.rs`
 - 前端状态: `src/stores/`
+- EWS 客户端: `src-tauri/src/ews.rs`
+- CalDAV 客户端: `src-tauri/src/caldav.rs`
+- 同步引擎: `src-tauri/src/sync.rs`
+- 凭证加密: `src-tauri/src/crypto.rs`
+- 前端同步服务: `src/services/sync.ts`
 
 ### 开发流程
 1. 修改业务逻辑前，先阅读相关业务流程文档
