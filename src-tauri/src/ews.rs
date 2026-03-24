@@ -37,6 +37,129 @@ pub struct EwsClient {
 }
 
 impl EwsClient {
+    /// 通过 Autodiscover 自动发现 EWS 服务器地址
+    ///
+    /// # 参数
+    /// * `email` - 用户邮箱地址
+    /// * `password` - 密码
+    ///
+    /// # 返回
+    /// * `Ok(EwsClient)` - 发现成功，返回配置好的客户端
+    /// * `Err(String)` - 发现失败，包含错误信息
+    pub async fn discover(email: String, password: String) -> Result<Self, String> {
+        // 从邮箱提取域名
+        let domain = email.split('@').last()
+            .ok_or_else(|| "无效的邮箱地址格式".to_string())?;
+
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .map_err(|e| format!("创建 HTTP 客户端失败: {}", e))?;
+
+        // 对于微软邮箱，直接使用已知的 Office 365 EWS 地址
+        let domain_lower = domain.to_lowercase();
+        if domain_lower == "outlook.com" || domain_lower == "hotmail.com" 
+            || domain_lower == "live.com" || domain_lower == "outlook.cn" {
+            return Ok(Self {
+                server_url: "https://outlook.office365.com/EWS/Exchange.asmx".to_string(),
+                username: email,
+                password,
+                client,
+            });
+        }
+
+        // 对于其他邮箱，尝试 Autodiscover
+        let autodiscover_urls = vec![
+            format!("https://autodiscover.{}/autodiscover/autodiscover.xml", domain),
+            format!("http://autodiscover.{}/autodiscover/autodiscover.xml", domain),
+        ];
+
+        // 构建 Autodiscover 请求体
+        let request_body = format!(r#"<?xml version="1.0" encoding="utf-8"?>
+<Autodiscover xmlns="http://schemas.microsoft.com/exchange/autodiscover/outlook/requestschema/2006">
+  <Request>
+    <EMailAddress>{}</EMailAddress>
+    <AcceptableResponseSchema>http://schemas.microsoft.com/exchange/autodiscover/outlook/responseschema/2006a</AcceptableResponseSchema>
+  </Request>
+</Autodiscover>"#, email);
+
+        // 尝试每个 Autodiscover URL
+        for url in &autodiscover_urls {
+            let credentials = base64::Engine::encode(
+                &base64::engine::general_purpose::STANDARD,
+                format!("{}:{}", email, password),
+            );
+
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                HeaderValue::from_str(&format!("Basic {}", credentials))
+                    .map_err(|e| format!("创建认证头失败: {}", e))?,
+            );
+            headers.insert(
+                CONTENT_TYPE,
+                HeaderValue::from_static("text/xml"),
+            );
+
+            match client.post(url).headers(headers).body(request_body.clone()).send().await {
+                Ok(response) => {
+                    if response.status().is_success() {
+                        if let Ok(body) = response.text().await {
+                            if let Some(ews_url) = Self::parse_autodiscover_response(&body) {
+                                return Ok(Self {
+                                    server_url: ews_url,
+                                    username: email,
+                                    password,
+                                    client,
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(_) => continue, // 尝试下一个 URL
+            }
+        }
+
+        Err("无法通过 Autodiscover 发现 Exchange 服务器地址".to_string())
+    }
+
+    /// 解析 Autodiscover 响应，提取 EWS URL
+    fn parse_autodiscover_response(xml: &str) -> Option<String> {
+        let mut reader = quick_xml::Reader::from_str(xml);
+        let mut in_ews_url = false;
+        let mut ews_url = String::new();
+
+        loop {
+            match reader.read_event() {
+                Ok(quick_xml::events::Event::Start(ref e)) => {
+                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    if name.ends_with("EwsUrl") {
+                        in_ews_url = true;
+                    }
+                }
+                Ok(quick_xml::events::Event::Text(ref e)) => {
+                    if in_ews_url {
+                        ews_url = e.unescape().unwrap_or_default().to_string();
+                    }
+                }
+                Ok(quick_xml::events::Event::End(ref e)) => {
+                    let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    if name.ends_with("EwsUrl") {
+                        in_ews_url = false;
+                        if !ews_url.is_empty() {
+                            return Some(ews_url);
+                        }
+                    }
+                }
+                Ok(quick_xml::events::Event::Eof) => break,
+                Err(_) => break,
+                _ => {}
+            }
+        }
+
+        None
+    }
+
     /// 创建新的 EWS 客户端实例
     ///
     /// # 参数

@@ -5,6 +5,8 @@
 //! - SyncTimer: 后台定时器，支持定时和手动触发同步
 //! - 通过 Tauri 事件系统通知前端同步状态
 
+#![allow(dead_code)]
+
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};

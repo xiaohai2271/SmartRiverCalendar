@@ -220,12 +220,19 @@
             </select>
           </div>
           <div class="form-group">
-            <label>服务器地址</label>
-            <input type="text" v-model="addCalendarForm.serverUrl" placeholder="例如: https://mail.example.com/EWS/Exchange.asmx" />
+            <label>服务器地址 <span v-if="addCalendarForm.type === 'exchange'" class="optional-label">(可选)</span></label>
+            <input 
+              type="text" 
+              v-model="addCalendarForm.serverUrl" 
+              :placeholder="addCalendarForm.type === 'exchange' ? '留空自动发现（适用于 Office 365）' : '例如: https://caldav.example.com'"
+            />
+            <p v-if="addCalendarForm.type === 'exchange'" class="help-text">
+              对于 Office 365 / Outlook 邮箱，服务器地址会自动发现，无需填写
+            </p>
           </div>
           <div class="form-group">
-            <label>用户名</label>
-            <input type="text" v-model="addCalendarForm.username" placeholder="用户名或邮箱" />
+            <label>{{ addCalendarForm.type === 'exchange' ? '邮箱地址' : '用户名' }}</label>
+            <input type="text" v-model="addCalendarForm.username" :placeholder="addCalendarForm.type === 'exchange' ? '例如: user@outlook.com' : '用户名'" />
           </div>
           <div class="form-group">
             <label>密码</label>
@@ -388,9 +395,17 @@ function closeAddCalendarDialog() {
 
 // 测试连接
 async function testConnection() {
-  if (!addCalendarForm.serverUrl || !addCalendarForm.username || !addCalendarForm.password) {
-    connectionError.value = '请填写所有必填字段'
-    return
+  // 对于 Exchange，服务器地址是可选的
+  if (addCalendarForm.type === 'exchange') {
+    if (!addCalendarForm.username || !addCalendarForm.password) {
+      connectionError.value = '请填写邮箱地址和密码'
+      return
+    }
+  } else {
+    if (!addCalendarForm.serverUrl || !addCalendarForm.username || !addCalendarForm.password) {
+      connectionError.value = '请填写所有必填字段'
+      return
+    }
   }
 
   connecting.value = true
@@ -401,7 +416,7 @@ async function testConnection() {
     let result
     if (addCalendarForm.type === 'exchange') {
       result = await invokeConnectExchange(
-        addCalendarForm.serverUrl,
+        addCalendarForm.serverUrl || null,  // 允许为空，将自动发现
         addCalendarForm.username,
         addCalendarForm.password
       )
@@ -932,6 +947,20 @@ h2 {
 .form-group select:focus {
   outline: none;
   border-color: var(--accent-color);
+}
+
+.optional-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: normal;
+  margin-left: 4px;
+}
+
+.help-text {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 6px;
+  line-height: 1.5;
 }
 
 .error-message {

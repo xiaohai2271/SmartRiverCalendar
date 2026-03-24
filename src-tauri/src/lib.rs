@@ -5,7 +5,7 @@ use tauri::Manager;
 
 mod commands;
 mod crypto;
-mod ews;
+pub mod ews;
 mod caldav;
 mod sync;
 mod updater;

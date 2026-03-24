@@ -5,6 +5,8 @@
 //! - 用户主路径发现
 //! - 日历列表获取
 
+#![allow(dead_code)]
+
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use quick_xml::events::Event;
 use quick_xml::Reader;

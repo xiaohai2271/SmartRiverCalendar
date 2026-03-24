@@ -60,6 +60,7 @@ pub fn encrypt_password(plaintext: &str) -> Result<String, String> {
 
 /// 解密密码
 /// 从 base64 编码的 (nonce + ciphertext) 解密并返回明文
+#[allow(dead_code)]
 pub fn decrypt_password(ciphertext: &str) -> Result<String, String> {
     // 派生密钥
     let key = derive_key();

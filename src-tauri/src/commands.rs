@@ -149,9 +149,11 @@ pub fn is_window_visible(window: tauri::Window) -> bool {
 }
 
 /// 连接 Exchange 服务器
+///
+/// 使用 Autodiscover 自动发现 EWS 服务器地址
 #[tauri::command]
 pub async fn connect_exchange(
-    server_url: String,
+    server_url: Option<String>,
     username: String,
     password: String,
 ) -> Result<AccountInfo, String> {
@@ -159,8 +161,17 @@ pub async fn connect_exchange(
     let _encrypted_password = crypto::encrypt_password(&password)
         .map_err(|e| format!("密码加密失败: {}", e))?;
 
-    // 创建 EWS 客户端并验证连接
-    let client = ews::EwsClient::new(server_url.clone(), username.clone(), password);
+    // 创建 EWS 客户端
+    let client = if let Some(url) = server_url {
+        // 如果提供了服务器地址，直接使用
+        ews::EwsClient::new(url, username.clone(), password)
+    } else {
+        // 否则使用 Autodiscover 自动发现
+        ews::EwsClient::discover(username.clone(), password).await
+            .map_err(|e| format!("Autodiscover 失败: {}", e))?
+    };
+
+    // 验证连接
     client.connect().await?;
 
     // 生成账号 ID
@@ -169,7 +180,7 @@ pub async fn connect_exchange(
     Ok(AccountInfo {
         id: account_id,
         account_type: AccountType::Exchange,
-        server_url,
+        server_url: username.clone(), // 存储邮箱地址，服务器地址由 Autodiscover 动态获取
         username: username.clone(),
         display_name: username,
         enabled: true,

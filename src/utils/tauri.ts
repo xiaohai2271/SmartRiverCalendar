@@ -104,8 +104,9 @@ export const SYNC_WINDOW_PAST_DAYS = 30
 export const SYNC_WINDOW_FUTURE_DAYS = 90
 
 // 外部日历连接
-export async function invokeConnectExchange(serverUrl: string, username: string, password: string) {
-  return safeInvoke<any>('connect_exchange', { serverUrl, username, password })
+// 对于 Exchange，serverUrl 可以为空（将自动使用 Autodiscover 发现）
+export async function invokeConnectExchange(serverUrl: string | null, username: string, password: string) {
+  return safeInvoke<any>('connect_exchange', { server_url: serverUrl, username, password })
 }
 
 export async function invokeConnectCalDAV(serverUrl: string, username: string, password: string) {
