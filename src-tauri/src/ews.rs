@@ -58,10 +58,20 @@ impl EwsClient {
 
         // 对于微软邮箱，直接使用已知的 Office 365 EWS 地址
         let domain_lower = domain.to_lowercase();
-        if domain_lower == "outlook.com" || domain_lower == "hotmail.com" 
+        if domain_lower == "outlook.com" || domain_lower == "hotmail.com"
             || domain_lower == "live.com" || domain_lower == "outlook.cn" {
             return Ok(Self {
                 server_url: "https://outlook.office365.com/EWS/Exchange.asmx".to_string(),
+                username: email,
+                password,
+                client,
+            });
+        }
+
+        // 腾讯企业邮箱 (exmail.qq.com)
+        if domain_lower == "qq.com" || domain_lower == "exmail.qq.com" {
+            return Ok(Self {
+                server_url: "https://ex.exmail.qq.com/exchange.ewd".to_string(),
                 username: email,
                 password,
                 client,

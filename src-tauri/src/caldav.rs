@@ -65,11 +65,16 @@ impl CalDavClient {
     /// * `username` - 用户名
     /// * `password` - 密码
     pub fn new(server_url: String, username: String, password: String) -> Self {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap_or_default();
+
         Self {
             server_url,
             username,
             password,
-            client: reqwest::Client::new(),
+            client,
         }
     }
 
@@ -179,7 +184,9 @@ impl CalDavClient {
                 Ok(Event::Text(ref e)) => {
                     if in_href {
                         let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
-                        if text.contains("/principals/") || text.contains("/principal") {
+                        // 匹配多种格式：/principals/、/principal/ 或 /username/
+                        if text.contains("/principals/") || text.contains("/principal")
+                            || (text.starts_with('/') && !text.starts_with("//")) {
                             principal_url = text.to_string();
                         }
                     }
