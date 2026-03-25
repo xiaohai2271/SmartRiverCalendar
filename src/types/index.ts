@@ -129,3 +129,11 @@ export interface ExternalCalendarInfo {
 
 // 同步状态类型
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'success'
+
+// 连接结果类型（用于外部日历连接）
+export interface ConnectResult {
+  success: boolean
+  error?: string
+  data?: any
+  calendars?: Array<{ id: string; name: string }>
+}

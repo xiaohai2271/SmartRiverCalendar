@@ -309,10 +309,10 @@ import {
   invokeConnectExchange,
   invokeConnectCalDAV,
   invokeSyncCalendar,
-  invokeGetExternalCalendars,
   invokeDeleteAccount,
   invokeGetSyncStatus
 } from '../utils/tauri'
+import { saveExternalAccount } from '../utils/database'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
@@ -430,8 +430,22 @@ async function testConnection() {
 
     if (result && result.success) {
       connectionSuccess.value = true
-      discoveredCalendars.value = result.calendars || []
+      discoveredCalendars.value = result.data?.calendars || []
       selectedCalendars.value = discoveredCalendars.value.map(c => c.id)
+      
+      // 保存账号到数据库
+      if (result.data) {
+        await saveExternalAccount({
+          id: result.data.id,
+          type: result.data.account_type,
+          serverUrl: result.data.server_url,
+          username: result.data.username,
+          encryptedPassword: result.data.encrypted_password,
+          displayName: result.data.display_name,
+          enabled: result.data.enabled,
+          createdAt: Date.now()
+        })
+      }
     } else {
       connectionError.value = result?.error || '连接失败，请检查服务器地址和凭据'
     }
@@ -446,26 +460,24 @@ async function testConnection() {
 async function addExternalCalendars() {
   if (selectedCalendars.value.length === 0) return
 
-  // 这里应该调用后端命令来添加选中的日历
-  // 暂时直接刷新日历列表
-  await loadExternalCalendars()
-  closeAddCalendarDialog()
-}
-
-// 加载外部日历
-async function loadExternalCalendars() {
-  if (!isTauri()) return
-
-  try {
-    const accounts = await invokeGetExternalCalendars('')
-    if (accounts) {
-      // 这里应该将外部日历添加到 calendarStore
-      // 暂时只是打印日志
-      console.log('External calendars:', accounts)
+  // 将选中的日历添加到 calendarStore
+  for (const calId of selectedCalendars.value) {
+    const cal = discoveredCalendars.value.find(c => c.id === calId)
+    if (cal) {
+      calendarStore.addCalendar({
+        name: cal.name,
+        color: '#6B7280',
+        type: addCalendarForm.type,
+        accountId: calId, // 使用日历 ID 作为账号 ID
+        visible: true,
+        syncEnabled: true
+      })
     }
-  } catch (error) {
-    console.error('Failed to load external calendars:', error)
   }
+
+  // 刷新日历列表
+  await calendarStore.loadExternalCalendars()
+  closeAddCalendarDialog()
 }
 
 // 同步单个日历

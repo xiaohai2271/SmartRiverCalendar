@@ -106,11 +106,11 @@ export const useCalendarStore = defineStore('calendar', () => {
       if (!accounts || accounts.length === 0) return
 
       for (const account of accounts) {
-        const externalCalendars = await invokeGetExternalCalendars(account.id)
+        const externalCalendars = await invokeGetExternalCalendars(account)
         if (!externalCalendars) continue
 
         for (const cal of externalCalendars) {
-          const calendarId = `ext_${account.id}_${cal.externalId}`
+          const calendarId = `ext_${account.id}_${cal.id}`
           const existingIndex = calendars.value.findIndex(c => c.id === calendarId)
 
           if (existingIndex === -1) {

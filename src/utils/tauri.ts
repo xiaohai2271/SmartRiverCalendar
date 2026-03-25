@@ -1,5 +1,6 @@
 // Tauri API 工具函数
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
+import type { ConnectResult } from '../types'
 
 // 检测是否在 Tauri 环境中
 export function isTauri(): boolean {
@@ -19,6 +20,24 @@ export async function safeInvoke<T>(command: string, args?: Record<string, any>)
   } catch (error) {
     console.error(`Failed to invoke ${command}:`, error)
     return null
+  }
+}
+
+// 带错误信息的 Tauri invoke（用于连接命令）
+export async function safeInvokeWithResult(command: string, args?: Record<string, any>): Promise<ConnectResult> {
+  if (!isTauri()) {
+    console.log(`Tauri not available, skipping invoke: ${command}`)
+    return { success: false, error: 'Tauri 环境不可用' }
+  }
+  
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const result = await invoke<ConnectResult>(command, args)
+    return result
+  } catch (error) {
+    console.error(`Failed to invoke ${command}:`, error)
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return { success: false, error: errorMessage }
   }
 }
 
@@ -106,11 +125,11 @@ export const SYNC_WINDOW_FUTURE_DAYS = 90
 // 外部日历连接
 // 对于 Exchange，serverUrl 可以为空（将自动使用 Autodiscover 发现）
 export async function invokeConnectExchange(serverUrl: string | null, username: string, password: string) {
-  return safeInvoke<any>('connect_exchange', { server_url: serverUrl, username, password })
+  return safeInvokeWithResult('connect_exchange', { server_url: serverUrl, username, password })
 }
 
 export async function invokeConnectCalDAV(serverUrl: string, username: string, password: string) {
-  return safeInvoke<any>('connect_caldav', { serverUrl, username, password })
+  return safeInvokeWithResult('connect_caldav', { serverUrl, username, password })
 }
 
 // 外部日历同步
@@ -123,13 +142,21 @@ export async function invokeSyncAllCalendars() {
 }
 
 // 获取外部日历列表
-export async function invokeGetExternalCalendars(accountId: string) {
-  return safeInvoke<any[]>('get_external_calendars', { accountId })
+export async function invokeGetExternalCalendars(account: any) {
+  return safeInvoke<any[]>('get_external_calendars', {
+    accountId: account.id,
+    accountType: account.type,
+    serverUrl: account.serverUrl,
+    username: account.username,
+    encryptedPassword: account.encryptedPassword
+  })
 }
 
 // 获取所有外部账号
 export async function invokeGetAllAccounts() {
-  return safeInvoke<any[]>('get_all_accounts')
+  // 直接从数据库读取账号
+  const { getAllExternalAccounts } = await import('./database')
+  return getAllExternalAccounts()
 }
 
 // 删除外部账号

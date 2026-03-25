@@ -36,6 +36,8 @@ pub struct AccountInfo {
     pub server_url: String,
     /// 用户名
     pub username: String,
+    /// 加密后的密码
+    pub encrypted_password: String,
     /// 显示名称
     pub display_name: String,
     /// 是否启用
@@ -158,7 +160,7 @@ pub async fn connect_exchange(
     password: String,
 ) -> Result<AccountInfo, String> {
     // 加密密码
-    let _encrypted_password = crypto::encrypt_password(&password)
+    let encrypted_password = crypto::encrypt_password(&password)
         .map_err(|e| format!("密码加密失败: {}", e))?;
 
     // 创建 EWS 客户端
@@ -182,6 +184,7 @@ pub async fn connect_exchange(
         account_type: AccountType::Exchange,
         server_url: username.clone(), // 存储邮箱地址，服务器地址由 Autodiscover 动态获取
         username: username.clone(),
+        encrypted_password,
         display_name: username,
         enabled: true,
         last_sync: None,
@@ -196,7 +199,7 @@ pub async fn connect_caldav(
     password: String,
 ) -> Result<AccountInfo, String> {
     // 加密密码
-    let _encrypted_password = crypto::encrypt_password(&password)
+    let encrypted_password = crypto::encrypt_password(&password)
         .map_err(|e| format!("密码加密失败: {}", e))?;
 
     // 创建 CalDAV 客户端并验证连接
@@ -211,6 +214,7 @@ pub async fn connect_caldav(
         account_type: AccountType::CalDav,
         server_url,
         username: username.clone(),
+        encrypted_password,
         display_name: username,
         enabled: true,
         last_sync: None,
@@ -238,14 +242,61 @@ pub async fn delete_account(account_id: String) -> Result<(), String> {
 
 /// 获取外部日历列表
 #[tauri::command]
-pub async fn get_external_calendars(account_id: String) -> Result<Vec<CalendarInfo>, String> {
+pub async fn get_external_calendars(
+    account_id: String,
+    account_type: String,
+    server_url: String,
+    username: String,
+    encrypted_password: String,
+) -> Result<Vec<CalendarInfo>, String> {
     if account_id.is_empty() {
         return Err("账号 ID 不能为空".to_string());
     }
 
-    // TODO: 根据账号类型获取日历列表
-    // 目前返回空列表，等待数据库模块实现
-    Ok(Vec::new())
+    // 解密密码
+    let password = crypto::decrypt_password(&encrypted_password)
+        .map_err(|e| format!("密码解密失败: {}", e))?;
+
+    // 根据账号类型获取日历列表
+    let calendars = match account_type.as_str() {
+        "exchange" => {
+            let client = ews::EwsClient::new(server_url, username, password);
+            let ews_calendars = client.list_calendars().await
+                .map_err(|e| format!("获取 Exchange 日历列表失败: {}", e))?;
+            
+            // 转换为 CalendarInfo
+            ews_calendars
+                .into_iter()
+                .map(|cal| CalendarInfo {
+                    id: cal.id,
+                    name: cal.name,
+                    color: cal.color,
+                    account_id: account_id.clone(),
+                    enabled: true,
+                })
+                .collect()
+        }
+        "caldav" => {
+            let client = caldav::CalDavClient::new(server_url, username, password);
+            let caldav_calendars = client.list_calendars().await
+                .map_err(|e| format!("获取 CalDAV 日历列表失败: {}", e))?;
+            
+            // 转换为 CalendarInfo
+            caldav_calendars
+                .into_iter()
+                .map(|cal| CalendarInfo {
+                    id: cal.id,
+                    name: cal.name,
+                    color: cal.color,
+                    account_id: account_id.clone(),
+                    enabled: true,
+                })
+                .collect()
+        }
+        _ => return Err(format!("不支持的账号类型: {}", account_type)),
+    };
+
+    Ok(calendars)
 }
 
 /// 手动触发同步
@@ -341,6 +392,7 @@ mod tests {
             account_type: AccountType::Exchange,
             server_url: "https://mail.example.com/EWS/Exchange.asmx".to_string(),
             username: "user@example.com".to_string(),
+            encrypted_password: "encrypted_password_123".to_string(),
             display_name: "测试用户".to_string(),
             enabled: true,
             last_sync: Some(1700000000),
