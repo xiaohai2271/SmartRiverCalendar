@@ -1,3 +1,4 @@
+use log::{info, error};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::State;
@@ -55,6 +56,8 @@ pub struct CalendarInfo {
     pub name: String,
     /// 日历颜色
     pub color: Option<String>,
+    /// 日历 URL（用于 CalDAV 创建事件）
+    pub url: Option<String>,
     /// 所属账号 ID
     pub account_id: String,
     /// 是否启用同步
@@ -89,6 +92,28 @@ pub struct SyncStatus {
     pub next_sync: Option<i64>,
     /// 同步间隔（分钟）
     pub sync_interval: u32,
+}
+
+/// CalDAV/Exchange 连接结果，包含账号信息和日历列表
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConnectResult {
+    /// 账号信息
+    pub account: AccountInfo,
+    /// 日历列表
+    pub calendars: Vec<CalDavCalendarInfo>,
+}
+
+/// CalDAV 日历信息（用于连接结果）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalDavCalendarInfo {
+    /// 日历唯一标识符
+    pub id: String,
+    /// 日历显示名称
+    pub name: String,
+    /// 日历颜色
+    pub color: Option<String>,
+    /// 日历 URL
+    pub url: String,
 }
 
 #[tauri::command]
@@ -197,19 +222,53 @@ pub async fn connect_caldav(
     server_url: String,
     username: String,
     password: String,
-) -> Result<AccountInfo, String> {
+) -> Result<ConnectResult, String> {
+    info!("[CalDAV] 开始连接, server_url: {}, username: {}", server_url, username);
+
     // 加密密码
     let encrypted_password = crypto::encrypt_password(&password)
-        .map_err(|e| format!("密码加密失败: {}", e))?;
+        .map_err(|e| {
+            error!("[CalDAV] 密码加密失败: {}", e);
+            format!("密码加密失败: {}", e)
+        })?;
 
     // 创建 CalDAV 客户端并验证连接
-    let client = caldav::CalDavClient::new(server_url.clone(), username.clone(), password);
-    client.connect().await?;
+    let client = caldav::CalDavClient::new(server_url.clone(), username.clone(), password.clone());
+
+    match client.connect().await {
+        Ok(_) => info!("[CalDAV] 连接成功"),
+        Err(e) => {
+            error!("[CalDAV] 连接失败: {}", e);
+            return Err(format!("连接失败: {}", e));
+        }
+    }
+
+    // 获取日历列表
+    let calendars = match client.list_calendars().await {
+        Ok(cals) => {
+            info!("[CalDAV] 获取到 {} 个日历", cals.len());
+            cals
+        }
+        Err(e) => {
+            error!("[CalDAV] 获取日历列表失败: {}", e);
+            return Err(format!("获取日历列表失败: {}", e));
+        }
+    };
+
+    // 转换为 CalDavCalendarInfo
+    let cal_dav_calendars: Vec<CalDavCalendarInfo> = calendars.into_iter().map(|c| {
+        CalDavCalendarInfo {
+            id: c.id,
+            name: c.name,
+            color: c.color,
+            url: c.url,
+        }
+    }).collect();
 
     // 生成账号 ID
     let account_id = format!("caldav_{}", uuid::Uuid::new_v4());
 
-    Ok(AccountInfo {
+    let account = AccountInfo {
         id: account_id,
         account_type: AccountType::CalDav,
         server_url,
@@ -218,6 +277,11 @@ pub async fn connect_caldav(
         display_name: username,
         enabled: true,
         last_sync: None,
+    };
+
+    Ok(ConnectResult {
+        account,
+        calendars: cal_dav_calendars,
     })
 }
 
@@ -243,27 +307,30 @@ pub async fn delete_account(account_id: String) -> Result<(), String> {
 /// 获取外部日历列表
 #[tauri::command]
 pub async fn get_external_calendars(
-    account_id: String,
-    account_type: String,
-    server_url: String,
+    accountId: String,
+    accountType: String,
+    serverUrl: String,
     username: String,
-    encrypted_password: String,
+    encryptedPassword: String,
 ) -> Result<Vec<CalendarInfo>, String> {
-    if account_id.is_empty() {
+    info!("[get_external_calendars] accountId: {}, accountType: {}, serverUrl: {}", accountId, accountType, serverUrl);
+
+    if accountId.is_empty() {
         return Err("账号 ID 不能为空".to_string());
     }
 
     // 解密密码
-    let password = crypto::decrypt_password(&encrypted_password)
+    let password = crypto::decrypt_password(&encryptedPassword)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     // 根据账号类型获取日历列表
-    let calendars = match account_type.as_str() {
+    let account_type_lower = accountType.to_lowercase();
+    let calendars = match account_type_lower.as_str() {
         "exchange" => {
-            let client = ews::EwsClient::new(server_url, username, password);
+            let client = ews::EwsClient::new(serverUrl, username, password);
             let ews_calendars = client.list_calendars().await
                 .map_err(|e| format!("获取 Exchange 日历列表失败: {}", e))?;
-            
+
             // 转换为 CalendarInfo
             ews_calendars
                 .into_iter()
@@ -271,16 +338,17 @@ pub async fn get_external_calendars(
                     id: cal.id,
                     name: cal.name,
                     color: cal.color,
-                    account_id: account_id.clone(),
+                    url: None, // Exchange 不需要 URL
+                    account_id: accountId.clone(),
                     enabled: true,
                 })
                 .collect()
         }
         "caldav" => {
-            let client = caldav::CalDavClient::new(server_url, username, password);
+            let client = caldav::CalDavClient::new(serverUrl, username, password);
             let caldav_calendars = client.list_calendars().await
                 .map_err(|e| format!("获取 CalDAV 日历列表失败: {}", e))?;
-            
+
             // 转换为 CalendarInfo
             caldav_calendars
                 .into_iter()
@@ -288,12 +356,13 @@ pub async fn get_external_calendars(
                     id: cal.id,
                     name: cal.name,
                     color: cal.color,
-                    account_id: account_id.clone(),
+                    url: Some(cal.url),
+                    account_id: accountId.clone(),
                     enabled: true,
                 })
                 .collect()
         }
-        _ => return Err(format!("不支持的账号类型: {}", account_type)),
+        _ => return Err(format!("不支持的账号类型: {}", accountType)),
     };
 
     Ok(calendars)
@@ -354,6 +423,85 @@ pub async fn set_sync_interval(minutes: u32) -> Result<(), String> {
 
     // TODO: 保存同步间隔到数据库
     Ok(())
+}
+
+/// 外部日历创建事件
+#[tauri::command]
+pub async fn create_external_event(
+    accountId: String,
+    accountType: String,
+    serverUrl: String,
+    username: String,
+    encryptedPassword: String,
+    calendarUrl: String,
+    event: ExternalEventInput,
+) -> Result<ExternalEventResult, String> {
+    info!("[create_external_event] 账号: {}, 日历: {}, 类型: {}", accountId, calendarUrl, accountType);
+
+    // 解密密码
+    let password = crypto::decrypt_password(&encryptedPassword)
+        .map_err(|e| format!("密码解密失败: {}", e))?;
+
+    let account_type_lower = accountType.to_lowercase();
+
+    match account_type_lower.as_str() {
+        "caldav" => {
+            let client = caldav::CalDavClient::new(
+                serverUrl,
+                username,
+                password
+            );
+
+            // 连接验证
+            client.connect().await?;
+
+            let event_info = caldav::EventInfo {
+                id: event.id.clone(),
+                title: event.title,
+                description: event.description,
+                start_time: event.start_time / 1000, // 毫秒转秒
+                end_time: event.end_time / 1000,
+                all_day: event.all_day,
+                location: event.location,
+            };
+
+            let event_url = client.create_event(&calendarUrl, &event_info).await?;
+
+            info!("[create_external_event] CalDAV 事件创建成功: {}", event_url);
+
+            Ok(ExternalEventResult {
+                success: true,
+                external_id: event_url,
+                error: None,
+            })
+        }
+        "exchange" => {
+            // Exchange 创建事件 - TODO: 实现
+            error!("[create_external_event] Exchange 暂不支持创建事件");
+            Err("Exchange 暂不支持创建事件".to_string())
+        }
+        _ => Err(format!("不支持的账号类型: {}", accountType))
+    }
+}
+
+/// 外部事件输入
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalEventInput {
+    pub id: String,
+    pub title: String,
+    pub description: Option<String>,
+    pub start_time: i64,
+    pub end_time: i64,
+    pub all_day: bool,
+    pub location: Option<String>,
+}
+
+/// 外部事件结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalEventResult {
+    pub success: bool,
+    pub external_id: String,
+    pub error: Option<String>,
 }
 
 #[cfg(test)]

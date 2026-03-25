@@ -8,7 +8,8 @@ import {
   deleteCalendar as dbDeleteCalendar,
   getAllEvents,
   saveEvent,
-  deleteEvent as dbDeleteEvent
+  deleteEvent as dbDeleteEvent,
+  cleanupDuplicateAccounts
 } from '../utils/database'
 import {
   invokeGetAllAccounts,
@@ -41,6 +42,9 @@ export const useCalendarStore = defineStore('calendar', () => {
 
     try {
       await initDatabase()
+
+      // 清理重复账号
+      await cleanupDuplicateAccounts()
 
       // 从 localStorage 加载默认视图设置
       try {
@@ -114,13 +118,18 @@ export const useCalendarStore = defineStore('calendar', () => {
           const existingIndex = calendars.value.findIndex(c => c.id === calendarId)
 
           if (existingIndex === -1) {
-            // 添加新的外部日历
+            // 添加新的外部日历，保存账号信息用于后续创建事件
             calendars.value.push({
               id: calendarId,
               name: cal.name,
               color: cal.color || '#6B7280',
               type: account.type,
               accountId: account.id,
+              accountType: account.type,
+              serverUrl: account.serverUrl,
+              username: account.username,
+              encryptedPassword: account.encryptedPassword,
+              calendarUrl: cal.url, // CalDAV 日历的 URL
               visible: true,
               syncEnabled: true
             })
@@ -255,9 +264,14 @@ export const useCalendarStore = defineStore('calendar', () => {
     if (targetCalendar && targetCalendar.type !== 'local') {
       // 外部日历：调用 Rust 命令
       try {
+        // 传递完整的账号信息和日历 URL
         const result = await safeInvoke<CalendarEvent>('create_external_event', {
           accountId: targetCalendar.accountId,
-          calendarId: event.calendarId,
+          accountType: targetCalendar.accountType,
+          serverUrl: targetCalendar.serverUrl,
+          username: targetCalendar.username,
+          encryptedPassword: targetCalendar.encryptedPassword,
+          calendarUrl: targetCalendar.calendarUrl,
           event: newEvent
         })
         if (result) {

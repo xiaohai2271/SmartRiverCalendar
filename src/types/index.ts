@@ -32,6 +32,13 @@ export interface Calendar {
   color: string
   type: 'local' | 'exchange' | 'caldav'
   accountId?: string
+  // 外部日历的账号信息
+  accountType?: string
+  serverUrl?: string
+  username?: string
+  encryptedPassword?: string
+  // 日历的 URL（用于 CalDAV 创建事件）
+  calendarUrl?: string
   visible: boolean
   syncEnabled: boolean
   syncStatus?: 'idle' | 'syncing' | 'error' | 'success'

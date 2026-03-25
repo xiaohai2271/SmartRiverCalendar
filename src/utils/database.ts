@@ -231,8 +231,10 @@ export async function deleteTodo(id: string) {
 export async function getAllExternalAccounts() {
   const database = await getDatabase()
   const rows = await database.select<any[]>('SELECT * FROM accounts ORDER BY created_at DESC')
+  console.log('[Database] getAllExternalAccounts rows:', rows)
   return rows.map(row => ({
     ...row,
+    id: row.id,  // 确保 id 字段存在
     serverUrl: row.server_url,
     encryptedPassword: row.encrypted_password,
     displayName: row.display_name,
@@ -240,6 +242,47 @@ export async function getAllExternalAccounts() {
     createdAt: row.created_at,
     updatedAt: row.updated_at
   }))
+}
+
+// 检查账号是否已存在（按服务器地址和用户名）
+export async function getAccountByServerUrl(serverUrl: string, username: string) {
+  const database = await getDatabase()
+  const rows = await database.select<any[]>(
+    'SELECT * FROM accounts WHERE server_url = ? AND username = ?',
+    [serverUrl, username]
+  )
+  if (rows.length === 0) return null
+  const row = rows[0]
+  return {
+    ...row,
+    serverUrl: row.server_url,
+    encryptedPassword: row.encrypted_password,
+    displayName: row.display_name,
+    enabled: row.enabled === 1,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  }
+}
+
+// 清理重复账号（保留最早创建的）
+export async function cleanupDuplicateAccounts() {
+  const database = await getDatabase()
+  // 查找重复的账号（相同 server_url 和 username）
+  const duplicates = await database.select<any[]>(`
+    SELECT server_url, username, COUNT(*) as cnt, MIN(id) as keep_id
+    FROM accounts
+    GROUP BY server_url, username
+    HAVING cnt > 1
+  `)
+
+  for (const dup of duplicates) {
+    // 删除重复的账号（保留最早创建的）
+    await database.execute(
+      'DELETE FROM accounts WHERE server_url = ? AND username = ? AND id != ?',
+      [dup.server_url, dup.username, dup.keep_id]
+    )
+    console.log('[Database] 清理重复账号:', dup.server_url, dup.username)
+  }
 }
 
 export async function saveExternalAccount(account: any) {

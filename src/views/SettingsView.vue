@@ -312,7 +312,7 @@ import {
   invokeDeleteAccount,
   invokeGetSyncStatus
 } from '../utils/tauri'
-import { saveExternalAccount } from '../utils/database'
+import { saveExternalAccount, getAccountByServerUrl } from '../utils/database'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
@@ -420,31 +420,71 @@ async function testConnection() {
         addCalendarForm.username,
         addCalendarForm.password
       )
+      // Exchange 返回 AccountInfo，包装为 ConnectResult 格式
+      result = {
+        success: true,
+        data: {
+          ...result,
+          calendars: []
+        }
+      }
     } else {
-      result = await invokeConnectCalDAV(
+      console.log('[CalDAV] 开始连接:', {
+        serverUrl: addCalendarForm.serverUrl,
+        username: addCalendarForm.username
+      })
+
+      const caldavResult = await invokeConnectCalDAV(
         addCalendarForm.serverUrl,
         addCalendarForm.username,
         addCalendarForm.password
       )
+
+      console.log('[CalDAV] 连接结果:', caldavResult)
+
+      // 检查 CalDAV 返回的数据（后端直接返回 account + calendars，没有 success 字段）
+      if (!caldavResult.account) {
+        console.error('[CalDAV] 连接失败，无 account 数据:', caldavResult.error)
+        result = { success: false, error: caldavResult.error || 'CalDAV 连接失败' }
+      } else {
+        console.log('[CalDAV] 连接成功, account:', caldavResult.account, 'calendars:', caldavResult.calendars)
+        // CalDAV 返回 ConnectResult 结构
+        result = {
+          success: true,
+          data: {
+            id: caldavResult.account.id,
+            account_type: caldavResult.account.account_type,
+            server_url: caldavResult.account.server_url,
+            username: caldavResult.account.username,
+            encrypted_password: caldavResult.account.encrypted_password,
+            display_name: caldavResult.account.display_name,
+            enabled: caldavResult.account.enabled,
+            calendars: caldavResult.calendars
+          }
+        }
+      }
     }
 
     if (result && result.success) {
       connectionSuccess.value = true
       discoveredCalendars.value = result.data?.calendars || []
       selectedCalendars.value = discoveredCalendars.value.map(c => c.id)
-      
-      // 保存账号到数据库
+
+      // 保存账号到数据库（只有不存在时才保存）
       if (result.data) {
-        await saveExternalAccount({
-          id: result.data.id,
-          type: result.data.account_type,
-          serverUrl: result.data.server_url,
-          username: result.data.username,
-          encryptedPassword: result.data.encrypted_password,
-          displayName: result.data.display_name,
-          enabled: result.data.enabled,
-          createdAt: Date.now()
-        })
+        const existing = await getAccountByServerUrl(result.data.server_url, result.data.username)
+        if (!existing) {
+          await saveExternalAccount({
+            id: result.data.id,
+            type: result.data.account_type,
+            serverUrl: result.data.server_url,
+            username: result.data.username,
+            encryptedPassword: result.data.encrypted_password,
+            displayName: result.data.display_name,
+            enabled: result.data.enabled,
+            createdAt: Date.now()
+          })
+        }
       }
     } else {
       connectionError.value = result?.error || '连接失败，请检查服务器地址和凭据'
@@ -456,26 +496,11 @@ async function testConnection() {
   }
 }
 
-// 添加外部日历
+// 添加外部日历（只需要刷新日历列表，账号已在连接时保存）
 async function addExternalCalendars() {
   if (selectedCalendars.value.length === 0) return
 
-  // 将选中的日历添加到 calendarStore
-  for (const calId of selectedCalendars.value) {
-    const cal = discoveredCalendars.value.find(c => c.id === calId)
-    if (cal) {
-      calendarStore.addCalendar({
-        name: cal.name,
-        color: '#6B7280',
-        type: addCalendarForm.type,
-        accountId: calId, // 使用日历 ID 作为账号 ID
-        visible: true,
-        syncEnabled: true
-      })
-    }
-  }
-
-  // 刷新日历列表
+  // 刷新日历列表（从账号表读取账号，获取远程日历并添加）
   await calendarStore.loadExternalCalendars()
   closeAddCalendarDialog()
 }

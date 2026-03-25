@@ -171,6 +171,7 @@ pub fn run() {
             commands::sync_all,
             commands::get_sync_status,
             commands::set_sync_interval,
+            commands::create_external_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

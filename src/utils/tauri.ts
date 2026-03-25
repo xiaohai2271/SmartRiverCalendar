@@ -143,6 +143,7 @@ export async function invokeSyncAllCalendars() {
 
 // 获取外部日历列表
 export async function invokeGetExternalCalendars(account: any) {
+  console.log('[invokeGetExternalCalendars] account:', account)
   return safeInvoke<any[]>('get_external_calendars', {
     accountId: account.id,
     accountType: account.type,

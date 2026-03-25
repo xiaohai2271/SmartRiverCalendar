@@ -7,6 +7,7 @@
 
 #![allow(dead_code)]
 
+use log::{info, error};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -92,10 +93,14 @@ impl CalDavClient {
     ///
     /// 发送 OPTIONS 请求检查服务器的 DAV 支持
     pub async fn connect(&self) -> Result<(), String> {
+        info!("[CalDAV Client] 尝试连接到: {}", self.server_url);
+
         let auth_header = self.get_auth_header()?;
 
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, auth_header);
+
+        info!("[CalDAV Client] 发送 OPTIONS 请求");
 
         let response = self
             .client
@@ -103,9 +108,15 @@ impl CalDavClient {
             .headers(headers)
             .send()
             .await
-            .map_err(|e| format!("连接服务器失败: {}", e))?;
+            .map_err(|e| {
+                error!("[CalDAV Client] 请求失败: {}", e);
+                format!("连接服务器失败: {}", e)
+            })?;
+
+        info!("[CalDAV Client] 收到响应, status: {}", response.status());
 
         if !response.status().is_success() {
+            error!("[CalDAV Client] 服务器返回错误状态: {}", response.status());
             return Err(format!("服务器返回错误状态: {}", response.status()));
         }
 
@@ -113,13 +124,19 @@ impl CalDavClient {
         match dav_header {
             Some(value) => {
                 let dav_value = value.to_str().unwrap_or("");
+                info!("[CalDAV Client] DAV 头: {}", dav_value);
                 if !dav_value.contains("1") && !dav_value.contains("2") {
+                    error!("[CalDAV Client] 服务器不支持 DAV 协议");
                     return Err("服务器不支持 DAV 协议".to_string());
                 }
             }
-            None => return Err("服务器未返回 DAV 头部".to_string()),
+            None => {
+                error!("[CalDAV Client] 服务器未返回 DAV 头部");
+                return Err("服务器未返回 DAV 头部".to_string());
+            }
         }
 
+        info!("[CalDAV Client] 连接验证成功");
         Ok(())
     }
 
@@ -301,9 +318,13 @@ impl CalDavClient {
     ///
     /// 发送 PROPFIND 请求获取日历列表
     pub async fn list_calendars(&self) -> Result<Vec<CalendarInfo>, String> {
+        info!("[CalDAV Client] 开始列出日历");
+
         let principal_url = self.discover_principal().await?;
+        info!("[CalDAV Client] principal_url: {}", principal_url);
 
         let calendar_home = self.get_calendar_home_set(&principal_url).await?;
+        info!("[CalDAV Client] calendar_home: {}", calendar_home);
 
         let auth_header = self.get_auth_header()?;
 
@@ -322,6 +343,8 @@ impl CalDavClient {
     </D:prop>
 </D:propfind>"#;
 
+        info!("[CalDAV Client] 发送 PROPFIND 请求到: {}", calendar_home);
+
         let response = self
             .client
             .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &calendar_home)
@@ -329,9 +352,15 @@ impl CalDavClient {
             .body(body)
             .send()
             .await
-            .map_err(|e| format!("获取日历列表失败: {}", e))?;
+            .map_err(|e| {
+                error!("[CalDAV Client] PROPFIND 请求失败: {}", e);
+                format!("获取日历列表失败: {}", e)
+            })?;
+
+        info!("[CalDAV Client] PROPFIND 响应状态: {}", response.status());
 
         if !response.status().is_success() {
+            error!("[CalDAV Client] 获取日历列表失败, status: {}", response.status());
             return Err(format!("获取日历列表失败: {}", response.status()));
         }
 
