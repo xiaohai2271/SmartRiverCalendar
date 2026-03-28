@@ -190,13 +190,26 @@ export const useCalendarStore = defineStore('calendar', () => {
   // 加载外部事件并与本地数据库进行协调同步
   async function loadExternalEvents(startTime: number, endTime: number) {
     try {
-      const externalCalendars = calendars.value.filter(c => c.type !== 'local')
-      for (const calendar of externalCalendars) {
-        if (!calendar.accountId) continue
+      // [DIAGNOSTIC] 函数被调用
+      console.log('[DIAGNOSTIC][loadExternalEvents] 开始加载外部事件', {
+        startTime: new Date(startTime).toISOString(),
+        endTime: new Date(endTime).toISOString(),
+        totalCalendars: calendars.value.length
+      })
 
-        // 调试：打印外部日历对象的关键字段
-        console.log('[loadExternalEvents] 日历对象:', {
+      const externalCalendars = calendars.value.filter(c => c.type !== 'local')
+      console.log('[DIAGNOSTIC][loadExternalEvents] 外部日历数量:', externalCalendars.length)
+
+      for (const calendar of externalCalendars) {
+        if (!calendar.accountId) {
+          console.log('[DIAGNOSTIC][loadExternalEvents] 跳过日历（无 accountId）:', calendar.name)
+          continue
+        }
+
+        // [DIAGNOSTIC] 打印外部日历对象的关键字段
+        console.log('[DIAGNOSTIC][loadExternalEvents] 日历对象:', {
           id: calendar.id,
+          name: calendar.name,
           type: calendar.type,
           accountId: calendar.accountId,
           accountType: calendar.accountType,
@@ -217,18 +230,45 @@ export const useCalendarStore = defineStore('calendar', () => {
           startTime: startTime,
           endTime: endTime
         }
-        console.log('[loadExternalEvents] invoke 参数:', JSON.stringify(invokeArgs))
+        console.log('[DIAGNOSTIC][loadExternalEvents] safeInvoke 调用前 - 参数:', JSON.stringify(invokeArgs))
 
+        // [DIAGNOSTIC] 调用 safeInvoke 获取事件
         const fetchedEvents = await safeInvoke<CalendarEvent[]>('get_external_events', invokeArgs)
 
+        // [DIAGNOSTIC] safeInvoke 调用后
+        console.log('[DIAGNOSTIC][loadExternalEvents] safeInvoke 调用后 - 返回值:', fetchedEvents === null ? 'null' : `获取到 ${fetchedEvents.length} 个事件`)
+
         if (fetchedEvents) {
+          // [DIAGNOSTIC] fetchedEvents 的内容和格式
+          console.log('[DIAGNOSTIC][loadExternalEvents] fetchedEvents 详情:', {
+            count: fetchedEvents.length,
+            sample: fetchedEvents.slice(0, 2).map(e => ({
+              id: e.id,
+              title: e.title,
+              startTime: e.startTime,
+              endTime: e.endTime,
+              calendarId: e.calendarId,
+              externalId: e.externalId
+            }))
+          })
+
           console.log(`[loadExternalEvents] 从日历 ${calendar.name} 获取到 ${fetchedEvents.length} 个事件`)
+
+          // [DIAGNOSTIC] calendarId 匹配情况
+          console.log('[DIAGNOSTIC][loadExternalEvents] calendarId 匹配检查:', {
+            calendarId: calendar.id,
+            matchedEvents: fetchedEvents.filter(e => e.calendarId === calendar.id).length,
+            mismatchedEvents: fetchedEvents.filter(e => e.calendarId !== calendar.id).length
+          })
+
           // 查出本地 store 里，当前日历下且在本次查询时间段内的旧事件
           const oldEvents = events.value.filter(e =>
             e.calendarId === calendar.id &&
             e.startTime >= startTime &&
             e.startTime <= endTime
           )
+          console.log('[DIAGNOSTIC][loadExternalEvents] 本地旧事件数量:', oldEvents.length)
+
           const fetchedIds = new Set(fetchedEvents.map(e => e.id))
 
           // 找出当前范围内，本地有但服务器没有的事件（可能在其他端被删除），清理掉
@@ -237,6 +277,9 @@ export const useCalendarStore = defineStore('calendar', () => {
               await dbDeleteEvent(old.id)
             }
           }
+
+          // [DIAGNOSTIC] 事件保存到数据库的状态
+          console.log('[DIAGNOSTIC][loadExternalEvents] 开始保存事件到数据库, 数量:', fetchedEvents.length)
 
           // 将服务器传来的最新事件全都覆盖保存到数据库，确保断网可用
           for (const newEv of fetchedEvents) {
@@ -248,13 +291,25 @@ export const useCalendarStore = defineStore('calendar', () => {
             await saveEvent(evToSave)
           }
 
+          console.log('[DIAGNOSTIC][loadExternalEvents] 事件保存到数据库完成')
+
           // 更新前端状态库：剔除原来区间内的事件，将得到的新事件注入
           events.value = events.value.filter(e => !(e.calendarId === calendar.id && e.startTime >= startTime && e.startTime <= endTime))
           events.value.push(...fetchedEvents)
+
+          // [DIAGNOSTIC] 保存后的状态
+          console.log('[DIAGNOSTIC][loadExternalEvents] 保存后事件状态:', {
+            totalEvents: events.value.length,
+            calendarEvents: events.value.filter(e => e.calendarId === calendar.id).length
+          })
+        } else {
+          console.log('[DIAGNOSTIC][loadExternalEvents] fetchedEvents 为 null 或 undefined')
         }
       }
+
+      console.log('[DIAGNOSTIC][loadExternalEvents] 加载外部事件完成')
     } catch (error) {
-      console.error('加载外部事件失败:', error)
+      console.error('[DIAGNOSTIC][loadExternalEvents] 加载外部事件失败:', error)
     }
   }
 
