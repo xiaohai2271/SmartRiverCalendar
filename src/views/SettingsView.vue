@@ -195,10 +195,14 @@
           </div>
           <div class="cal-actions">
             <input type="checkbox" :checked="cal.visible" @change="toggleCalendar(cal.id)" />
-            <button v-if="cal.type !== 'local'" class="sync-btn" @click="syncCalendar(cal.id)" :disabled="syncingIds.includes(cal.id)">
-              {{ syncingIds.includes(cal.id) ? '同步中...' : '立即同步' }}
+            <button v-if="cal.type !== 'local'" class="delete-btn" @click="confirmDeleteAccount(cal.id, cal.name)" aria-label="删除账号">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
             </button>
-            <button v-if="cal.type !== 'local'" class="delete-btn" @click="confirmDeleteAccount(cal.id, cal.name)">删除账号</button>
           </div>
         </div>
       </div>
@@ -479,7 +483,8 @@ async function addExternalCalendars() {
   closeAddCalendarDialog()
 }
 
-// 同步单个日历
+// 同步单个日历（保留供未来使用）
+// @ts-ignore: 保留供未来使用
 async function syncCalendar(accountId: string) {
   if (syncingIds.value.includes(accountId)) return
 
@@ -802,37 +807,24 @@ h2 {
   gap: 8px;
 }
 
-.sync-btn {
-  padding: 6px 12px;
-  background: var(--accent-color);
-  color: white;
+.delete-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  color: var(--text-secondary);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 12px;
-}
-
-.sync-btn:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.sync-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.delete-btn {
-  padding: 6px 12px;
-  background: transparent;
-  color: #dc2626;
-  border: 1px solid #dc2626;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
 }
 
 .delete-btn:hover {
   background: #fee2e2;
+  color: #dc2626;
 }
 
 /* 外部日历类型标识 */
