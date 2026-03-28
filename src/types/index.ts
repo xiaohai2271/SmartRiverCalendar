@@ -39,6 +39,8 @@ export interface Calendar {
   encryptedPassword?: string
   // 日历的 URL（用于 CalDAV 创建事件）
   calendarUrl?: string
+  // 是否为只读日历（如共享/订阅日历，不允许写入）
+  readOnly?: boolean
   visible: boolean
   syncEnabled: boolean
   syncStatus?: 'idle' | 'syncing' | 'error' | 'success'
@@ -137,10 +139,30 @@ export interface ExternalCalendarInfo {
 // 同步状态类型
 export type SyncStatus = 'idle' | 'syncing' | 'error' | 'success'
 
+// CalDAV 日历信息（用于连接结果）
+export interface CalDavCalendarInfo {
+  id: string
+  name: string
+  color?: string
+  url: string
+}
+
+// 账号信息（用于连接结果）
+export interface AccountInfo {
+  id: string
+  account_type: 'exchange' | 'caldav'
+  server_url: string
+  username: string
+  encrypted_password: string
+  display_name: string
+  enabled: boolean
+  last_sync?: number
+}
+
 // 连接结果类型（用于外部日历连接）
 export interface ConnectResult {
   success: boolean
   error?: string
-  data?: any
-  calendars?: Array<{ id: string; name: string }>
+  account?: AccountInfo
+  calendars?: CalDavCalendarInfo[]
 }

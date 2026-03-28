@@ -161,9 +161,55 @@ Tauri 事件: emit('sync-status-changed', result)
 
 ---
 
-## 3. 事件操作流程
+## 3. 离线先行与实时加载 (Offline-First 架构)
 
-### 3.1 创建事件（外部日历）
+为了在断网环境下提供无缝体验并保证数据的时效性，应用采取 "**离线先行 + 实时按需获取**" 双规策略。
+
+### 3.1 初始启动加载（离线先行）
+
+```
+程序启动
+    │
+    ▼
+CalendarStore.initialize()
+    │
+    ├─► 从本地 SQLite `events` 表中读取所有事件（包含 local 和 external）
+    │
+    └─► 瞬间完成界面渲染，无需等待网络请求，断网下依然可见完整日历。
+```
+
+### 3.2 翻页动态刷新（实时拉取与落库合并）
+
+当用户切换月份/周（即 `currentDateRange` 发生变化时）：
+
+```
+watch(currentDateRange, (newRange) => {
+    loadExternalEvents(newRange.start, newRange.end)
+})
+    │
+    ▼
+向后端发起 `get_external_events` (传递检索范围与账号凭证)
+    │
+    ▼
+Rust 转换调用 CalDAV Client 发出 HTTP 请求获取事件
+    │
+    ▼
+前端接收最新数据并进入与 SQLite 的协调阶段：
+    │
+    ├─► 1. 查找缓存：查出当前范围内，归属于该外部账号的本地 SQLite 事件 `oldEvents`
+    │
+    ├─► 2. 差分删除：如果 `oldEvents` 中的事件不在服务器最新返回库中，调用 `dbDeleteEvent` 删除本地"幽灵事件"
+    │
+    ├─► 3. 同步落库：遍历获取的新事件，调用 `saveEvent` 全部覆盖更新进 SQLite 数据库
+    │
+    └─► 4. 刷新 Vue Store：内存中剥离旧事件，注入最新事件触发 UI 更新。
+```
+
+---
+
+## 4. 事件增删改操作流程 (外部日历)
+
+### 4.1 创建事件（外部日历）
 
 ```
 用户在日历视图创建事件
@@ -180,22 +226,20 @@ CalendarStore.addEvent(event)
           │
           ▼
         safeInvoke('create_external_event', {
-          accountId, calendarId, event
+          accountId, ...authParams, calendarUrl, event
         })
           │
           ▼
-        Rust: 根据账号类型调用对应客户端
-          - EWS: CreateItem SOAP 请求
-          - CalDAV: PUT 请求上传 iCal
+        Rust: CalDAV PUT 请求上传 iCal 生成事件
           │
           ▼
-        返回新事件 ID
+        返回 ExternalEventResult(success, externalId)
           │
           ▼
-        保存到本地数据库（带 external_id）
+        合并外部ID，并立即存入本地 SQLite (saveEvent)
 ```
 
-### 3.2 修改事件（外部日历）
+### 4.2 修改事件（外部日历）
 
 ```
 用户编辑事件
@@ -203,28 +247,23 @@ CalendarStore.addEvent(event)
     ▼
 CalendarStore.updateEvent(id, updates)
     │
-    ├─► 检查事件是否有 external_id
+    ├─► 根据 external_id 及类型判断调用方
     │
-    ├─► 如果没有 external_id（本地事件）:
-    │     └─► 直接更新数据库
-    │
-    └─► 如果有 external_id（外部事件）:
+    └─► 外部事件:
           │
           ▼
         safeInvoke('update_external_event', {
-          accountId, eventId, event
+          accountId, ...authParams, calendarUrl, event: 完整事件对象
         })
           │
           ▼
-        Rust: 根据账号类型调用对应客户端
-          - EWS: UpdateItem SOAP 请求
-          - CalDAV: PUT 请求更新 iCal
+        Rust: CalDAV PUT 请求更新 iCal
           │
           ▼
-        更新本地数据库
+        成功后更新 Vue store，并同步 saveEvent 进本地 SQLite
 ```
 
-### 3.3 删除事件（外部日历）
+### 4.3 删除事件（外部日历）
 
 ```
 用户删除事件
@@ -232,21 +271,25 @@ CalendarStore.updateEvent(id, updates)
     ▼
 CalendarStore.deleteEvent(id)
     │
-    ├─► 检查事件是否有 external_id
+    ├─► 若是本机事件则仅调用 dbDeleteEvent
     │
-    ├─► 如果没有 external_id（本地事件）:
-    │     └─► 直接从数据库删除
-    │
-    └─► 如果有 external_id（外部事件）:
+    └─► 如果是外部事件:
           │
           ▼
-        仅从本地数据库删除
-        （不删除服务器数据）
+        safeInvoke('delete_external_event', {
+          ...authParams, eventId: id
+        })
+          │
+          ▼
+        前端收到后端成功返回后
+          │
+          ▼
+        触发本地 dbDeleteEvent 彻底删除
 ```
 
 ---
 
-## 4. 凭证管理流程
+## 5. 凭证管理流程
 
 ### 4.1 密码加密存储
 
@@ -308,7 +351,7 @@ Rust: crypto::decrypt_password(ciphertext)
 
 ---
 
-## 5. 设置页面交互流程
+## 6. 设置页面交互流程
 
 ### 5.1 日历管理界面
 
@@ -369,7 +412,7 @@ Rust: crypto::decrypt_password(ciphertext)
 
 ---
 
-## 6. 错误处理流程
+## 7. 错误处理流程
 
 ### 6.1 连接错误
 
@@ -394,7 +437,7 @@ Rust: crypto::decrypt_password(ciphertext)
 
 ---
 
-## 7. 配置参数
+## 8. 配置参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|

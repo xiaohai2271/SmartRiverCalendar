@@ -25,6 +25,8 @@ pub struct CalendarInfo {
     pub color: Option<String>,
     /// 日历资源 URL
     pub url: String,
+    /// 是否只读（共享/订阅日历没有写权限）
+    pub read_only: bool,
 }
 
 /// 事件信息结构体
@@ -340,6 +342,7 @@ impl CalDavClient {
         <D:displayname/>
         <CS:calendar-color/>
         <C:supported-calendar-component-set/>
+        <D:current-user-privilege-set/>
     </D:prop>
 </D:propfind>"#;
 
@@ -382,6 +385,9 @@ impl CalDavClient {
         let mut current_name = String::new();
         let mut current_color: Option<String> = None;
         let mut is_calendar = false;
+        // 权限检测
+        let mut in_privilege_set = false;
+        let mut has_write = false;
 
         let mut in_href = false;
         let mut in_displayname = false;
@@ -397,9 +403,16 @@ impl CalDavClient {
                         b"displayname" => in_displayname = true,
                         b"calendar-color" => in_color = true,
                         b"resourcetype" => in_resourcetype = true,
+                        b"current-user-privilege-set" => in_privilege_set = true,
                         b"calendar" => {
                             if in_resourcetype {
                                 is_calendar = true;
+                            }
+                        }
+                        // write 或 all 权限都视为有写权限
+                        b"write" | b"write-content" | b"bind" => {
+                            if in_privilege_set {
+                                has_write = true;
                             }
                         }
                         _ => {}
@@ -412,7 +425,10 @@ impl CalDavClient {
                     } else if in_displayname {
                         current_name = text.to_string();
                     } else if in_color {
-                        current_color = Some(text.to_string());
+                        let c = text.trim();
+                        if (c.starts_with('#') && (c.len() == 7 || c.len() == 4 || c.len() == 9)) || (c.len() >= 6 && c.chars().all(|ch| ch.is_ascii_hexdigit())) {
+                            current_color = Some(c.to_string());
+                        }
                     }
                 }
                 Ok(Event::End(ref e)) => {
@@ -422,6 +438,7 @@ impl CalDavClient {
                         b"displayname" => in_displayname = false,
                         b"calendar-color" => in_color = false,
                         b"resourcetype" => in_resourcetype = false,
+                        b"current-user-privilege-set" => in_privilege_set = false,
                         b"response" => {
                             if is_calendar && !current_href.is_empty() {
                                 let calendar_url = if current_href.starts_with('/') {
@@ -440,17 +457,21 @@ impl CalDavClient {
                                     .unwrap_or(&current_href)
                                     .to_string();
 
-        let name = if current_name.is_empty() {
-            id.clone()
-        } else {
-            current_name.clone()
-        };
+                                let name = if current_name.is_empty() {
+                                    id.clone()
+                                } else {
+                                    current_name.clone()
+                                };
+
+                                info!("[CalDAV] 发现日历: {} | URL: {} | 可写: {}", name, calendar_url, has_write);
 
                                 calendars.push(CalendarInfo {
                                     id,
                                     name,
                                     color: current_color.clone(),
                                     url: calendar_url,
+                                    // 服务器返回了权限信息且无写权限时标记为只读
+                                    read_only: !has_write,
                                 });
                             }
 
@@ -458,6 +479,7 @@ impl CalDavClient {
                             current_name.clear();
                             current_color = None;
                             is_calendar = false;
+                            has_write = false;
                         }
                         _ => {}
                     }
@@ -466,6 +488,10 @@ impl CalDavClient {
                 Err(e) => return Err(format!("解析 XML 失败: {}", e)),
                 _ => {}
             }
+        }
+
+        if calendars.is_empty() {
+            info!("[CalDAV] 没有发现任何日历");
         }
 
         Ok(calendars)
@@ -493,17 +519,17 @@ impl CalDavClient {
         let body = format!(
             r#"<?xml version="1.0" encoding="utf-8" ?>
 <C:calendar-query xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
-    <D:prop>
-        <D:getetag/>
-        <C:calendar-data/>
-    </D:prop>
-    <C:filter>
-        <C:comp-filter name="VCALENDAR">
-            <C:comp-filter name="VEVENT">
-                <C:time-range start="{}" end="{}"/>
-            </C:comp-filter>
-        </C:comp-filter>
-    </C:filter>
+  <D:prop>
+    <C:calendar-data/>
+    <D:getetag/>
+  </D:prop>
+  <C:filter>
+    <C:comp-filter name="VCALENDAR">
+      <C:comp-filter name="VEVENT">
+        <C:time-range start="{}" end="{}"/>
+      </C:comp-filter>
+    </C:comp-filter>
+  </C:filter>
 </C:calendar-query>"#,
             start_str, end_str
         );
@@ -518,13 +544,17 @@ impl CalDavClient {
             .map_err(|e| format!("获取事件列表失败: {}", e))?;
 
         if !response.status().is_success() {
-            return Err(format!("获取事件列表失败: {}", response.status()));
+            let status = response.status();
+            info!("[CalDAV] REPORT 失败: {}", status);
+            return Err(format!("获取事件列表失败: {}", status));
         }
 
         let response_text = response
             .text()
             .await
             .map_err(|e| format!("读取响应失败: {}", e))?;
+
+
 
         self.parse_events_response(&response_text)
     }
@@ -552,12 +582,25 @@ impl CalDavClient {
                         current_ical.push_str(&text);
                     }
                 }
+                Ok(Event::CData(ref e)) => {
+                    if in_calendar_data {
+                        let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                        current_ical.push_str(&text);
+                    }
+                }
                 Ok(Event::End(ref e)) => {
                     if e.local_name().as_ref() == b"calendar-data" {
                         in_calendar_data = false;
                         if !current_ical.is_empty() {
-                            if let Ok(event) = self.parse_ical_event(&current_ical) {
-                                events.push(event);
+                            match self.parse_ical_event(&current_ical) {
+                                Ok(event) => {
+                                    events.push(event);
+                                }
+                                Err(e) => {
+                                    error!("[CalDAV] 解析个别 iCal 事件失败: {} (iCal 长度: {})", e, current_ical.len());
+                                    // 调试：打印失败的 ical片段
+                                    // debug!("[CalDAV] 失败的 iCal 内容: {}", current_ical);
+                                }
                             }
                         }
                     }
@@ -651,14 +694,14 @@ impl CalDavClient {
             Ok(datetime.and_utc().timestamp())
         } else {
             // 带时间格式: YYYYMMDDTHHMMSSZ 或 YYYYMMDDTHHMMSS
-            let datetime = if datetime.ends_with('Z') {
+            let res = if datetime.ends_with('Z') {
                 chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%SZ")
-                    .map_err(|e| format!("解析日期时间失败: {}", e))?
+                    .map_err(|e| format!("解析日期时间失败(带Z): {} (原始数据: {})", e, datetime))?
             } else {
                 chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%S")
-                    .map_err(|e| format!("解析日期时间失败: {}", e))?
+                    .map_err(|e| format!("解析日期时间失败(不带Z): {} (原始数据: {})", e, datetime))?
             };
-            Ok(datetime.and_utc().timestamp())
+            Ok(res.and_utc().timestamp())
         }
     }
 
@@ -669,26 +712,70 @@ impl CalDavClient {
         let auth_header = self.get_auth_header()?;
 
         let ical_data = self.generate_ical_event(event)?;
+        info!("[CalDAV] 生成的 iCal 数据（每行展示）:");
+        for line in ical_data.replace("\r\n", "\n").lines() {
+            info!("  iCal> {:?}", line);
+        }
 
-        let event_url = format!("{}{}.ics", calendar_url.trim_end_matches('/'), event.id);
+        let event_url = format!("{}/{}.ics", calendar_url.trim_end_matches('/'), event.id);
+        info!("[CalDAV] 创建事件 URL (PUT): {}", event_url);
 
         let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, auth_header);
+        headers.insert(AUTHORIZATION, auth_header.clone());
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/calendar; charset=utf-8"));
 
         let response = self
             .client
             .put(&event_url)
             .headers(headers)
-            .body(ical_data)
+            .body(ical_data.clone())
             .send()
             .await
-            .map_err(|e| format!("创建事件失败: {}", e))?;
+            .map_err(|e| format!("创建事件请求失败: {}", e))?;
 
-        if !response.status().is_success() {
-            return Err(format!("创建事件失败: {}", response.status()));
+        let status = response.status();
+
+        // 若 PUT 返回 409，降级尝试 POST 到日历集合 URL
+        if status == 409 {
+            info!("[CalDAV] PUT 返回 409，降级尝试 POST 到日历集合 URL: {}", calendar_url);
+            let mut post_headers = HeaderMap::new();
+            post_headers.insert(AUTHORIZATION, auth_header);
+            post_headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/calendar; charset=utf-8"));
+
+            let post_response = self
+                .client
+                .post(calendar_url)
+                .headers(post_headers)
+                .body(ical_data)
+                .send()
+                .await
+                .map_err(|e| format!("POST 创建事件请求失败: {}", e))?;
+
+            let post_status = post_response.status();
+            let post_headers_str = format!("{:?}", post_response.headers());
+            if !post_status.is_success() {
+                let body = post_response.text().await.unwrap_or_default();
+                error!("[CalDAV] POST 创建事件也失败: {} - 响应头: {} - 响应体: {}", post_status, post_headers_str, body);
+                return Err(format!("创建事件失败: PUT 409, POST {} - {}", post_status, body));
+            }
+            // POST 成功，从响应头 Location 获取事件 URL
+            let location = post_response.headers()
+                .get("location")
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or(&event_url)
+                .to_string();
+            info!("[CalDAV] POST 创建事件成功, location: {}", location);
+            return Ok(location);
         }
 
+        let resp_headers = format!("{:?}", response.headers());
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            error!("[CalDAV] 创建事件失败: {} - 响应头: {} - 响应体: {}", status, resp_headers, body);
+            return Err(format!("创建事件失败: {} - {}", status, body));
+        }
+
+        info!("[CalDAV] 事件创建成功: {}", event_url);
         Ok(event_url)
     }
 
@@ -713,28 +800,35 @@ impl CalDavClient {
             )
         };
 
-        let mut ical = format!(
-            "BEGIN:VCALENDAR\r\n\
-             VERSION:2.0\r\n\
-             PRODID:-//SmartRiverCalendar//CalDAV Client//CN\r\n\
-             BEGIN:VEVENT\r\n\
-             UID:{}\r\n\
-             DTSTAMP:{}\r\n\
-             {}\r\n\
-             {}\r\n\
-             SUMMARY:{}\r\n",
-            event.id, dtstamp, dtstart, dtend, event.title
-        );
+        // 注意：iCal 格式要求每行不能有前导空格，使用独立的 push_str 避免 format! 续行引入空格
+        let mut ical = String::new();
+        ical.push_str("BEGIN:VCALENDAR\r\n");
+        ical.push_str("VERSION:2.0\r\n");
+        ical.push_str("CALSCALE:GREGORIAN\r\n");
+        ical.push_str("PRODID:-//SmartRiverCalendar//CalDAV Client//CN\r\n");
+        ical.push_str("BEGIN:VEVENT\r\n");
+        ical.push_str(&format!("UID:{}\r\n", event.id));
+        ical.push_str(&format!("DTSTAMP:{}\r\n", dtstamp));
+        ical.push_str(&format!("{}\r\n", dtstart));
+        ical.push_str(&format!("{}\r\n", dtend));
+        ical.push_str(&format!("SUMMARY:{}\r\n", event.title));
 
+        // 只有 description 非空时才添加（空值会让部分 CalDAV 服务器返回 409）
         if let Some(ref desc) = event.description {
-            ical.push_str(&format!("DESCRIPTION:{}\r\n", desc.replace('\n', "\\n")));
+            if !desc.is_empty() {
+                ical.push_str(&format!("DESCRIPTION:{}\r\n", desc.replace('\n', "\\n")));
+            }
         }
 
+        // 只有 location 非空时才添加
         if let Some(ref loc) = event.location {
-            ical.push_str(&format!("LOCATION:{}\r\n", loc));
+            if !loc.is_empty() {
+                ical.push_str(&format!("LOCATION:{}\r\n", loc));
+            }
         }
 
-        ical.push_str("END:VEVENT\r\nEND:VCALENDAR\r\n");
+        ical.push_str("END:VEVENT\r\n");
+        ical.push_str("END:VCALENDAR\r\n");
 
         Ok(ical)
     }

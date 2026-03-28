@@ -186,6 +186,7 @@
             <div class="cal-type">
               <span v-if="cal.type === 'local'">本地</span>
               <span v-else class="external-type">{{ cal.type }}</span>
+              <span v-if="cal.readOnly" class="readonly-badge">只读</span>
               <span v-if="cal.lastSync" class="sync-time">最后同步: {{ formatSyncTime(cal.lastSync) }}</span>
             </div>
             <div v-if="cal.syncStatus" class="sync-status" :class="cal.syncStatus">
@@ -215,7 +216,7 @@
           <div class="form-group">
             <label>日历类型</label>
             <select v-model="addCalendarForm.type">
-              <option value="exchange">Exchange</option>
+              <!-- <option value="exchange">Exchange</option> -->
               <option value="caldav">CalDAV</option>
             </select>
           </div>
@@ -331,7 +332,7 @@ const newMakeup = reactive({ date: '', name: '' })
 // 添加外部日历对话框状态
 const showAddCalendarDialog = ref(false)
 const addCalendarForm = reactive({
-  type: 'exchange' as 'exchange' | 'caldav',
+  type: 'caldav' as 'exchange' | 'caldav',
   serverUrl: '',
   username: '',
   password: ''
@@ -383,7 +384,7 @@ function toggleCalendar(id: string) {
 // 关闭添加日历对话框
 function closeAddCalendarDialog() {
   showAddCalendarDialog.value = false
-  addCalendarForm.type = 'exchange'
+  addCalendarForm.type = 'caldav'
   addCalendarForm.serverUrl = ''
   addCalendarForm.username = ''
   addCalendarForm.password = ''
@@ -420,14 +421,6 @@ async function testConnection() {
         addCalendarForm.username,
         addCalendarForm.password
       )
-      // Exchange 返回 AccountInfo，包装为 ConnectResult 格式
-      result = {
-        success: true,
-        data: {
-          ...result,
-          calendars: []
-        }
-      }
     } else {
       console.log('[CalDAV] 开始连接:', {
         serverUrl: addCalendarForm.serverUrl,
@@ -442,49 +435,30 @@ async function testConnection() {
 
       console.log('[CalDAV] 连接结果:', caldavResult)
 
-      // 检查 CalDAV 返回的数据（后端直接返回 account + calendars，没有 success 字段）
-      if (!caldavResult.account) {
-        console.error('[CalDAV] 连接失败，无 account 数据:', caldavResult.error)
-        result = { success: false, error: caldavResult.error || 'CalDAV 连接失败' }
-      } else {
-        console.log('[CalDAV] 连接成功, account:', caldavResult.account, 'calendars:', caldavResult.calendars)
-        // CalDAV 返回 ConnectResult 结构
-        result = {
-          success: true,
-          data: {
-            id: caldavResult.account.id,
-            account_type: caldavResult.account.account_type,
-            server_url: caldavResult.account.server_url,
-            username: caldavResult.account.username,
-            encrypted_password: caldavResult.account.encrypted_password,
-            display_name: caldavResult.account.display_name,
-            enabled: caldavResult.account.enabled,
-            calendars: caldavResult.calendars
-          }
-        }
-      }
+      // CalDAV 返回 ConnectResult 结构（account + calendars）
+      result = caldavResult
     }
 
     if (result && result.success) {
       connectionSuccess.value = true
-      discoveredCalendars.value = result.data?.calendars || []
+      discoveredCalendars.value = result.calendars || []
       selectedCalendars.value = discoveredCalendars.value.map(c => c.id)
 
-      // 保存账号到数据库（只有不存在时才保存）
-      if (result.data) {
-        const existing = await getAccountByServerUrl(result.data.server_url, result.data.username)
-        if (!existing) {
-          await saveExternalAccount({
-            id: result.data.id,
-            type: result.data.account_type,
-            serverUrl: result.data.server_url,
-            username: result.data.username,
-            encryptedPassword: result.data.encrypted_password,
-            displayName: result.data.display_name,
-            enabled: result.data.enabled,
-            createdAt: Date.now()
-          })
+      // 保存或更新账号到数据库
+      if (result.account) {
+        const existing = await getAccountByServerUrl(result.account.server_url, result.account.username)
+        const accountToSave = {
+          id: existing ? existing.id : result.account.id,
+          type: result.account.account_type,
+          serverUrl: result.account.server_url,
+          username: result.account.username,
+          encryptedPassword: result.account.encrypted_password,
+          displayName: result.account.display_name,
+          enabled: existing ? existing.enabled : true,
+          createdAt: existing ? existing.createdAt : Date.now(),
+          updatedAt: Date.now()
         }
+        await saveExternalAccount(accountToSave)
       }
     } else {
       connectionError.value = result?.error || '连接失败，请检查服务器地址和凭据'
@@ -870,6 +844,16 @@ h2 {
   border-radius: var(--radius-sm);
   font-size: 10px;
   margin-left: 8px;
+}
+
+.readonly-badge {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--text-tertiary);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  margin-left: 4px;
 }
 
 .sync-time {

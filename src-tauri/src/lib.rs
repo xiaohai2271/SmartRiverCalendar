@@ -11,7 +11,10 @@ mod sync;
 mod updater;
 
 pub fn run() {
-    env_logger::init();
+    // 设置默认日志级别为 info，这样即使不设 RUST_LOG 环境变量也能看到后端日志
+    env_logger::Builder::from_env(
+        env_logger::Env::default().default_filter_or("info")
+    ).init();
 
     let app_state = Mutex::new(commands::AppState::default());
 
@@ -172,6 +175,9 @@ pub fn run() {
             commands::get_sync_status,
             commands::set_sync_interval,
             commands::create_external_event,
+            commands::get_external_events,
+            commands::update_external_event,
+            commands::delete_external_event,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

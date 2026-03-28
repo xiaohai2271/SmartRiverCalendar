@@ -135,16 +135,17 @@
             <div class="bottom-row">
               <!-- Calendar Selection -->
               <div class="calendar-selector">
-                <button
-                  v-for="cal in calendarStore.calendars"
-                  :key="cal.id"
-                  type="button"
-                  :class="['calendar-option', { active: eventFormData.calendarId === cal.id }]"
-                  @click="eventFormData.calendarId = cal.id"
-                >
-                  <span class="calendar-color" :style="{ background: cal.color }"></span>
-                  <span>{{ cal.name }}</span>
-                </button>
+                <template v-for="cal in calendarStore.calendars" :key="cal.id">
+                  <button
+                    v-if="!cal.readOnly"
+                    type="button"
+                    :class="['calendar-option', { active: eventFormData.calendarId === cal.id }]"
+                    @click="eventFormData.calendarId = cal.id"
+                  >
+                    <span class="calendar-color" :style="{ background: cal.color }"></span>
+                    <span>{{ cal.name }}</span>
+                  </button>
+                </template>
               </div>
 
               <!-- Description -->

@@ -144,13 +144,18 @@ export async function invokeSyncAllCalendars() {
 // 获取外部日历列表
 export async function invokeGetExternalCalendars(account: any) {
   console.log('[invokeGetExternalCalendars] account:', account)
-  return safeInvoke<any[]>('get_external_calendars', {
-    accountId: account.id,
-    accountType: account.type,
-    serverUrl: account.serverUrl,
-    username: account.username,
-    encryptedPassword: account.encryptedPassword
+  const result = await safeInvoke<any[]>('get_external_calendars', {
+    accountId: account.id || '',
+    accountType: account.type || '',
+    serverUrl: account.serverUrl || '',
+    username: account.username || '',
+    encryptedPassword: account.encryptedPassword || ''
   })
+  // Rust serde 默认输出 snake_case，这里手动映射 read_only -> readOnly
+  return result?.map(cal => ({
+    ...cal,
+    readOnly: cal.read_only ?? false,
+  })) ?? null
 }
 
 // 获取所有外部账号
