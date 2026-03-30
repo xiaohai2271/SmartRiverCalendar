@@ -144,8 +144,39 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
-// 存储之前的 overflow 值，用于正确恢复
-let previousOverflow: string = ''
+// ============================================================
+// 全局 overflow 管理器（引用计数）
+// 解决多个页面独立使用 ContextMenu 组件时的 overflow 状态混乱问题
+// ============================================================
+
+// 全局锁计数器
+let overflowLockCount = 0
+// 保存原始 overflow 值
+let savedOverflow = ''
+
+/**
+ * 锁定页面滚动（增加引用计数）
+ * 只有第一个调用者会真正设置 overflow: hidden
+ */
+function lockOverflow() {
+  if (overflowLockCount === 0) {
+    savedOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+  }
+  overflowLockCount++
+}
+
+/**
+ * 解锁页面滚动（减少引用计数）
+ * 只有最后一个调用者才会真正恢复 overflow
+ */
+function unlockOverflow() {
+  overflowLockCount--
+  if (overflowLockCount <= 0) {
+    overflowLockCount = 0
+    document.body.style.overflow = savedOverflow
+  }
+}
 
 // 监听键盘事件
 onMounted(() => {
@@ -154,22 +185,21 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
-  // 组件卸载时，确保恢复 body 的 overflow 样式
+  // 组件卸载时，如果菜单是打开状态，确保解锁
   // 防止因组件销毁导致 overflow: hidden 未被清除
-  if (document.body.style.overflow === 'hidden') {
-    document.body.style.overflow = previousOverflow
+  if (props.visible) {
+    unlockOverflow()
   }
 })
 
-// 监听 visible 变化，阻止/恢复页面滚动
-watch(() => props.visible, (newVal) => {
-  if (newVal) {
-    // 保存当前的 overflow 值
-    previousOverflow = document.body.style.overflow
-    document.body.style.overflow = 'hidden'
-  } else {
-    // 恢复之前的 overflow 值
-    document.body.style.overflow = previousOverflow
+// 监听 visible 变化，使用引用计数管理 overflow
+watch(() => props.visible, (newVal, oldVal) => {
+  if (newVal && !oldVal) {
+    // 从关闭变为打开：锁定
+    lockOverflow()
+  } else if (!newVal && oldVal) {
+    // 从打开变为关闭：解锁
+    unlockOverflow()
   }
 }, { immediate: true })
 </script>
