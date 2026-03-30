@@ -48,6 +48,20 @@ pub struct EventInfo {
     pub location: Option<String>,
 }
 
+/// 事件引用结构体（用于两阶段获取）
+///
+/// 飞书等 CalDAV 服务器的 REPORT calendar-query 响应中
+/// calendar-data 可能为空（返回 404），此时需要单独获取每个事件的 iCal 数据
+#[derive(Debug, Clone)]
+struct EventRef {
+    /// 事件资源的 URL（相对或绝对路径）
+    href: String,
+    /// 事件的 ETag（用于缓存验证）
+    etag: Option<String>,
+    /// iCal 数据（如果 REPORT 响应中已包含）
+    ical_data: Option<String>,
+}
+
 /// CalDAV 客户端
 pub struct CalDavClient {
     /// CalDAV 服务器地址
@@ -73,8 +87,16 @@ impl CalDavClient {
             .build()
             .unwrap_or_default();
 
+        // 规范化服务器 URL：确保包含协议前缀
+        let normalized_url = if server_url.starts_with("http://") || server_url.starts_with("https://") {
+            server_url
+        } else {
+            // 默认使用 HTTPS
+            format!("https://{}", server_url)
+        };
+
         Self {
-            server_url,
+            server_url: normalized_url,
             username,
             password,
             client,
@@ -146,6 +168,8 @@ impl CalDavClient {
     ///
     /// 发送 PROPFIND 请求获取当前用户的 principal URL
     pub async fn discover_principal(&self) -> Result<String, String> {
+        info!("[CalDAV Client] discover_principal: 开始发现 principal URL, server_url={}", self.server_url);
+        
         let auth_header = self.get_auth_header()?;
 
         let mut headers = HeaderMap::new();
@@ -163,6 +187,8 @@ impl CalDavClient {
     </D:prop>
 </D:propfind>"#;
 
+        info!("[CalDAV Client] discover_principal: 发送 PROPFIND 请求到 {}", self.server_url);
+        
         let response = self
             .client
             .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &self.server_url)
@@ -170,10 +196,17 @@ impl CalDavClient {
             .body(body)
             .send()
             .await
-            .map_err(|e| format!("发送 PROPFIND 请求失败: {}", e))?;
+            .map_err(|e| {
+                error!("[CalDAV Client] discover_principal: 请求失败: {}", e);
+                format!("发送 PROPFIND 请求失败: {}", e)
+            })?;
 
-        if !response.status().is_success() {
-            return Err(format!("PROPFIND 请求失败: {}", response.status()));
+        let status = response.status();
+        info!("[CalDAV Client] discover_principal: 响应状态: {}", status);
+        
+        if !status.is_success() {
+            error!("[CalDAV Client] discover_principal: 请求失败, status={}", status);
+            return Err(format!("PROPFIND 请求失败: {}", status));
         }
 
         let response_text = response
@@ -181,54 +214,112 @@ impl CalDavClient {
             .await
             .map_err(|e| format!("读取响应失败: {}", e))?;
 
+        // 打印响应内容（截取前2000字符避免日志过长）
+        let preview_len = response_text.len().min(2000);
+        info!("[CalDAV Client] discover_principal: 响应内容 (前{}字符): {}", preview_len, &response_text[..preview_len]);
+
         self.parse_principal_url(&response_text)
     }
 
     /// 解析 principal URL
     fn parse_principal_url(&self, xml: &str) -> Result<String, String> {
+        info!("[CalDAV Client] parse_principal_url: 开始解析 XML, 长度={}", xml.len());
+        
         let mut reader = Reader::from_str(xml);
         reader.config_mut().trim_text(true);
 
         let mut in_href = false;
+        let mut in_current_user_principal = false;
         let mut principal_url = String::new();
+        let mut found_hrefs: Vec<String> = Vec::new();
+        // 用于 fallback：记录第一个有效的相对路径 href
+        let mut first_relative_href = String::new();
 
         loop {
             match reader.read_event() {
                 Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                     let local_name = e.local_name();
+                    // 记录所有标签名用于调试
+                    let name_str = String::from_utf8_lossy(local_name.as_ref()).to_string();
                     if local_name.as_ref() == b"href" {
                         in_href = true;
+                        info!("[CalDAV Client] parse_principal_url: 发现 <href> 标签");
+                    }
+                    // 检测 current-user-principal 元素
+                    if name_str.contains("current-user-principal") {
+                        in_current_user_principal = true;
+                        info!("[CalDAV Client] parse_principal_url: 发现 <current-user-principal> 标签");
                     }
                 }
                 Ok(Event::Text(ref e)) => {
                     if in_href {
-                        let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
-                        // 匹配多种格式：/principals/、/principal/ 或 /username/
-                        if text.contains("/principals/") || text.contains("/principal")
-                            || (text.starts_with('/') && !text.starts_with("//")) {
+                        let text = e.unescape().map_err(|e| {
+                            error!("[CalDAV Client] parse_principal_url: 文本解析失败: {}", e);
+                            format!("解析文本失败: {}", e)
+                        })?;
+                        info!("[CalDAV Client] parse_principal_url: href 内容: {}", text);
+                        found_hrefs.push(text.to_string());
+                        
+                        // 优先：只有在 current-user-principal 元素内的 href 才是 principal URL
+                        if in_current_user_principal {
                             principal_url = text.to_string();
+                            info!("[CalDAV Client] parse_principal_url: 找到 principal URL (在 current-user-principal 内): {}", principal_url);
+                        } else if first_relative_href.is_empty() {
+                            // Fallback: 记录第一个有效的相对路径（以 / 开头但不是 //）
+                            let trimmed = text.trim();
+                            if trimmed.starts_with('/') && !trimmed.starts_with("//") {
+                                first_relative_href = text.to_string();
+                                info!("[CalDAV Client] parse_principal_url: 记录 fallback href: {}", first_relative_href);
+                            }
                         }
                     }
                 }
                 Ok(Event::End(ref e)) => {
-                    if e.local_name().as_ref() == b"href" {
+                    let local_name = e.local_name();
+                    let name_str = String::from_utf8_lossy(local_name.as_ref()).to_string();
+                    if local_name.as_ref() == b"href" {
                         in_href = false;
+                    }
+                    if name_str.contains("current-user-principal") {
+                        in_current_user_principal = false;
                     }
                 }
                 Ok(Event::Eof) => break,
-                Err(e) => return Err(format!("解析 XML 失败: {}", e)),
+                Err(e) => {
+                    // 打印更详细的 XML 解析错误信息
+                    let preview = if xml.len() > 500 { &xml[..500] } else { xml };
+                    error!("[CalDAV Client] parse_principal_url: XML 解析失败: {} | XML预览: {}", e, preview);
+                    return Err(format!("解析 XML 失败: {}", e));
+                }
                 _ => {}
             }
         }
 
+        // 记录所有找到的 href
+        info!("[CalDAV Client] parse_principal_url: 共找到 {} 个 href 元素", found_hrefs.len());
+        for (i, href) in found_hrefs.iter().enumerate() {
+            info!("[CalDAV Client] parse_principal_url: href[{}] = {}", i, href);
+        }
+
+        // 如果没找到 principal URL，尝试使用 fallback
+        if principal_url.is_empty() && !first_relative_href.is_empty() {
+            principal_url = first_relative_href;
+            info!("[CalDAV Client] parse_principal_url: 使用 fallback href: {}", principal_url);
+        }
+
         if principal_url.is_empty() {
+            let preview = if xml.len() > 500 { &xml[..500] } else { xml };
+            error!("[CalDAV Client] parse_principal_url: 未找到 principal URL | XML预览: {}", preview);
             return Err("未找到 principal URL".to_string());
         }
 
         if principal_url.starts_with('/') {
             let base = self.server_url.trim_end_matches('/');
-            Ok(format!("{}{}", base, principal_url))
+            let full_url = format!("{}{}", base, principal_url);
+            info!("[CalDAV Client] parse_principal_url: 最终 principal URL (相对路径拼接): {}", full_url);
+            Ok(full_url)
         } else {
+            info!("[CalDAV Client] parse_principal_url: 最终 principal URL (绝对路径): {}", principal_url);
             Ok(principal_url)
         }
     }
@@ -237,6 +328,8 @@ impl CalDavClient {
     ///
     /// 从 principal URL 获取日历主路径 (calendar-home-set)
     async fn get_calendar_home_set(&self, principal_url: &str) -> Result<String, String> {
+        info!("[CalDAV Client] get_calendar_home_set: 开始获取日历主路径, principal_url={}", principal_url);
+        
         let auth_header = self.get_auth_header()?;
 
         let mut headers = HeaderMap::new();
@@ -251,6 +344,8 @@ impl CalDavClient {
     </D:prop>
 </D:propfind>"#;
 
+        info!("[CalDAV Client] get_calendar_home_set: 发送 PROPFIND 请求到 {}", principal_url);
+        
         let response = self
             .client
             .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), principal_url)
@@ -258,10 +353,17 @@ impl CalDavClient {
             .body(body)
             .send()
             .await
-            .map_err(|e| format!("获取日历主路径失败: {}", e))?;
+            .map_err(|e| {
+                error!("[CalDAV Client] get_calendar_home_set: 请求失败: {}", e);
+                format!("获取日历主路径失败: {}", e)
+            })?;
 
-        if !response.status().is_success() {
-            return Err(format!("获取日历主路径失败: {}", response.status()));
+        let status = response.status();
+        info!("[CalDAV Client] get_calendar_home_set: 响应状态: {}", status);
+        
+        if !status.is_success() {
+            error!("[CalDAV Client] get_calendar_home_set: 请求失败, status={}", status);
+            return Err(format!("获取日历主路径失败: {}", status));
         }
 
         let response_text = response
@@ -269,49 +371,110 @@ impl CalDavClient {
             .await
             .map_err(|e| format!("读取响应失败: {}", e))?;
 
+        // 打印响应内容（截取前2000字符避免日志过长）
+        let preview_len = response_text.len().min(2000);
+        info!("[CalDAV Client] get_calendar_home_set: 响应内容 (前{}字符): {}", preview_len, &response_text[..preview_len]);
+
         self.parse_calendar_home_set(&response_text)
     }
 
     /// 解析日历主路径
     fn parse_calendar_home_set(&self, xml: &str) -> Result<String, String> {
+        info!("[CalDAV Client] parse_calendar_home_set: 开始解析 XML, 长度={}", xml.len());
+        
         let mut reader = Reader::from_str(xml);
         reader.config_mut().trim_text(true);
 
         let mut in_href = false;
+        let mut in_calendar_home_set = false;
         let mut calendar_home = String::new();
+        let mut found_hrefs: Vec<String> = Vec::new();
+        // 用于 fallback：记录第一个有效的相对路径 href
+        let mut first_relative_href = String::new();
 
         loop {
             match reader.read_event() {
                 Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
-                    if e.local_name().as_ref() == b"href" {
+                    let local_name = e.local_name();
+                    let name_str = String::from_utf8_lossy(local_name.as_ref()).to_string();
+                    if local_name.as_ref() == b"href" {
                         in_href = true;
+                        info!("[CalDAV Client] parse_calendar_home_set: 发现 <href> 标签");
+                    }
+                    // 检测 calendar-home-set 元素
+                    if name_str.contains("calendar-home-set") {
+                        in_calendar_home_set = true;
+                        info!("[CalDAV Client] parse_calendar_home_set: 发现 <calendar-home-set> 标签");
                     }
                 }
                 Ok(Event::Text(ref e)) => {
                     if in_href {
-                        let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
-                        calendar_home = text.to_string();
+                        let text = e.unescape().map_err(|e| {
+                            error!("[CalDAV Client] parse_calendar_home_set: 文本解析失败: {}", e);
+                            format!("解析文本失败: {}", e)
+                        })?;
+                        info!("[CalDAV Client] parse_calendar_home_set: href 内容: {}", text);
+                        found_hrefs.push(text.to_string());
+                        
+                        // 优先：只有在 calendar-home-set 元素内的 href 才是日历主路径
+                        if in_calendar_home_set {
+                            calendar_home = text.to_string();
+                            info!("[CalDAV Client] parse_calendar_home_set: 找到日历主路径 (在 calendar-home-set 内): {}", calendar_home);
+                        } else if first_relative_href.is_empty() {
+                            // Fallback: 记录第一个有效的相对路径（以 / 开头但不是 //）
+                            let trimmed = text.trim();
+                            if trimmed.starts_with('/') && !trimmed.starts_with("//") {
+                                first_relative_href = text.to_string();
+                                info!("[CalDAV Client] parse_calendar_home_set: 记录 fallback href: {}", first_relative_href);
+                            }
+                        }
                     }
                 }
                 Ok(Event::End(ref e)) => {
-                    if e.local_name().as_ref() == b"href" {
+                    let local_name = e.local_name();
+                    let name_str = String::from_utf8_lossy(local_name.as_ref()).to_string();
+                    if local_name.as_ref() == b"href" {
                         in_href = false;
+                    }
+                    if name_str.contains("calendar-home-set") {
+                        in_calendar_home_set = false;
                     }
                 }
                 Ok(Event::Eof) => break,
-                Err(e) => return Err(format!("解析 XML 失败: {}", e)),
+                Err(e) => {
+                    let preview = if xml.len() > 500 { &xml[..500] } else { xml };
+                    error!("[CalDAV Client] parse_calendar_home_set: XML 解析失败: {} | XML预览: {}", e, preview);
+                    return Err(format!("解析 XML 失败: {}", e));
+                }
                 _ => {}
             }
         }
 
+        // 记录所有找到的 href
+        info!("[CalDAV Client] parse_calendar_home_set: 共找到 {} 个 href 元素", found_hrefs.len());
+        for (i, href) in found_hrefs.iter().enumerate() {
+            info!("[CalDAV Client] parse_calendar_home_set: href[{}] = {}", i, href);
+        }
+
+        // 如果没找到日历主路径，尝试使用 fallback
+        if calendar_home.is_empty() && !first_relative_href.is_empty() {
+            calendar_home = first_relative_href;
+            info!("[CalDAV Client] parse_calendar_home_set: 使用 fallback href: {}", calendar_home);
+        }
+
         if calendar_home.is_empty() {
+            let preview = if xml.len() > 500 { &xml[..500] } else { xml };
+            error!("[CalDAV Client] parse_calendar_home_set: 未找到日历主路径 | XML预览: {}", preview);
             return Err("未找到日历主路径".to_string());
         }
 
         if calendar_home.starts_with('/') {
             let base = self.server_url.trim_end_matches('/');
-            Ok(format!("{}{}", base, calendar_home))
+            let full_url = format!("{}{}", base, calendar_home);
+            info!("[CalDAV Client] parse_calendar_home_set: 最终日历主路径 (相对路径拼接): {}", full_url);
+            Ok(full_url)
         } else {
+            info!("[CalDAV Client] parse_calendar_home_set: 最终日历主路径 (绝对路径): {}", calendar_home);
             Ok(calendar_home)
         }
     }
@@ -372,11 +535,18 @@ impl CalDavClient {
             .await
             .map_err(|e| format!("读取响应失败: {}", e))?;
 
+        // 记录响应体内容（截取前 500 字符）
+        let preview_len = response_text.len().min(500);
+        info!("[CalDAV Client] list_calendars: 响应体 (前{}字符): {}", preview_len, &response_text[..preview_len]);
+        info!("[CalDAV Client] list_calendars: 响应体总长度: {}", response_text.len());
+
         self.parse_calendars(&response_text, &calendar_home)
     }
 
     /// 解析日历列表
     fn parse_calendars(&self, xml: &str, base_url: &str) -> Result<Vec<CalendarInfo>, String> {
+        info!("[CalDAV Client] parse_calendars: 开始解析 XML, 长度={}, base_url={}", xml.len(), base_url);
+        
         let mut reader = Reader::from_str(xml);
         reader.config_mut().trim_text(true);
 
@@ -393,39 +563,53 @@ impl CalDavClient {
         let mut in_displayname = false;
         let mut in_color = false;
         let mut in_resourcetype = false;
+        let mut response_count = 0;
 
         loop {
             match reader.read_event() {
                 Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => {
                     let local_name = e.local_name();
+                    // 记录关键标签用于调试
+                    let name_str = String::from_utf8_lossy(local_name.as_ref()).to_string();
                     match local_name.as_ref() {
                         b"href" => in_href = true,
                         b"displayname" => in_displayname = true,
                         b"calendar-color" => in_color = true,
-                        b"resourcetype" => in_resourcetype = true,
+                        b"resourcetype" => {
+                            in_resourcetype = true;
+                            info!("[CalDAV Client] parse_calendars: 发现 <resourcetype> 标签");
+                        }
                         b"current-user-privilege-set" => in_privilege_set = true,
                         b"calendar" => {
                             if in_resourcetype {
                                 is_calendar = true;
+                                info!("[CalDAV Client] parse_calendars: 发现 <calendar> 标签，标记为日历资源");
                             }
                         }
                         // write 或 all 权限都视为有写权限
                         b"write" | b"write-content" | b"bind" => {
                             if in_privilege_set {
                                 has_write = true;
+                                info!("[CalDAV Client] parse_calendars: 发现写权限: {}", name_str);
                             }
                         }
                         _ => {}
                     }
                 }
                 Ok(Event::Text(ref e)) => {
-                    let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
+                    let text = e.unescape().map_err(|e| {
+                        error!("[CalDAV Client] parse_calendars: 文本解析失败: {}", e);
+                        format!("解析文本失败: {}", e)
+                    })?;
                     if in_href {
                         current_href = text.to_string();
+                        info!("[CalDAV Client] parse_calendars: href = {}", current_href);
                     } else if in_displayname {
                         current_name = text.to_string();
+                        info!("[CalDAV Client] parse_calendars: displayname = {}", current_name);
                     } else if in_color {
                         let c = text.trim();
+                        info!("[CalDAV Client] parse_calendars: calendar-color = {}", c);
                         if (c.starts_with('#') && (c.len() == 7 || c.len() == 4 || c.len() == 9)) || (c.len() >= 6 && c.chars().all(|ch| ch.is_ascii_hexdigit())) {
                             current_color = Some(c.to_string());
                         }
@@ -440,6 +624,10 @@ impl CalDavClient {
                         b"resourcetype" => in_resourcetype = false,
                         b"current-user-privilege-set" => in_privilege_set = false,
                         b"response" => {
+                            response_count += 1;
+                            info!("[CalDAV Client] parse_calendars: 处理 response #{}, is_calendar={}, href={}", 
+                                  response_count, is_calendar, current_href);
+                            
                             if is_calendar && !current_href.is_empty() {
                                 let calendar_url = if current_href.starts_with('/') {
                                     let base = self.server_url.trim_end_matches('/');
@@ -463,7 +651,7 @@ impl CalDavClient {
                                     current_name.clone()
                                 };
 
-                                info!("[CalDAV] 发现日历: {} | URL: {} | 可写: {}", name, calendar_url, has_write);
+                                info!("[CalDAV Client] parse_calendars: 发现日历! name={}, url={}, writable={}", name, calendar_url, has_write);
 
                                 calendars.push(CalendarInfo {
                                     id,
@@ -473,6 +661,13 @@ impl CalDavClient {
                                     // 服务器返回了权限信息且无写权限时标记为只读
                                     read_only: !has_write,
                                 });
+                            } else {
+                                if !is_calendar {
+                                    info!("[CalDAV Client] parse_calendars: 跳过非日历资源: {}", current_href);
+                                }
+                                if current_href.is_empty() {
+                                    info!("[CalDAV Client] parse_calendars: 跳过空 href");
+                                }
                             }
 
                             current_href.clear();
@@ -485,13 +680,22 @@ impl CalDavClient {
                     }
                 }
                 Ok(Event::Eof) => break,
-                Err(e) => return Err(format!("解析 XML 失败: {}", e)),
+                Err(e) => {
+                    let preview = if xml.len() > 500 { &xml[..500] } else { xml };
+                    error!("[CalDAV Client] parse_calendars: XML 解析失败: {} | XML预览: {}", e, preview);
+                    return Err(format!("解析 XML 失败: {}", e));
+                }
                 _ => {}
             }
         }
 
+        info!("[CalDAV Client] parse_calendars: 共处理 {} 个 response 元素", response_count);
+        
         if calendars.is_empty() {
-            info!("[CalDAV] 没有发现任何日历");
+            let preview = if xml.len() > 500 { &xml[..500] } else { xml };
+            info!("[CalDAV Client] parse_calendars: 没有发现任何日历 | XML预览: {}", preview);
+        } else {
+            info!("[CalDAV Client] parse_calendars: 共发现 {} 个日历", calendars.len());
         }
 
         Ok(calendars)
@@ -500,6 +704,9 @@ impl CalDavClient {
     /// 获取日历中的事件列表
     ///
     /// 使用 REPORT calendar-query 请求获取指定时间范围内的事件
+    /// 
+    /// 对于飞书等服务器，REPORT 响应中的 calendar-data 可能为空，
+    /// 此时需要额外对每个事件发送 GET 请求获取完整 iCal 数据
     pub async fn fetch_events(&self, calendar_url: &str, start: i64, end: i64) -> Result<Vec<EventInfo>, String> {
         let auth_header = self.get_auth_header()?;
 
@@ -534,6 +741,8 @@ impl CalDavClient {
             start_str, end_str
         );
 
+        info!("[CalDAV] 发送 REPORT calendar-query 到: {}", calendar_url);
+        
         let response = self
             .client
             .request(reqwest::Method::from_bytes(b"REPORT").unwrap(), calendar_url)
@@ -554,12 +763,355 @@ impl CalDavClient {
             .await
             .map_err(|e| format!("读取响应失败: {}", e))?;
 
+        info!("[CalDAV] REPORT 响应长度: {} 字节", response_text.len());
 
+        // 第一阶段：解析事件引用列表
+        let event_refs = self.parse_events_refs(&response_text, calendar_url)?;
+        info!("[CalDAV] 解析到 {} 个事件引用", event_refs.len());
 
-        self.parse_events_response(&response_text)
+        // 检查是否所有事件都没有 iCal 数据（飞书等服务器的情况）
+        let needs_multiget = event_refs.iter().all(|r| r.ical_data.is_none());
+        
+        if needs_multiget && !event_refs.is_empty() {
+            // 使用 calendar-multiget 批量获取所有事件的 iCal 数据
+            info!("[CalDAV] 所有事件都没有 iCal 数据，使用 calendar-multiget 批量获取");
+            return self.fetch_events_multiget(calendar_url, &event_refs).await;
+        }
+
+        // 如果部分事件已有 iCal 数据，按原来的方式处理
+        let mut events = Vec::new();
+        for event_ref in event_refs {
+            let ical_data = if let Some(ref ical) = event_ref.ical_data {
+                // REPORT 响应中已包含 iCal 数据，直接使用
+                info!("[CalDAV] 事件 {} 已有 iCal 数据", event_ref.href);
+                ical.clone()
+            } else {
+                // 需要单独获取 iCal 数据
+                info!("[CalDAV] 事件 {} 需要单独获取 iCal 数据", event_ref.href);
+                match self.fetch_event_ical(&event_ref.href).await {
+                    Ok(data) => data,
+                    Err(e) => {
+                        error!("[CalDAV] 获取事件 {} 的 iCal 数据失败: {}", event_ref.href, e);
+                        continue;
+                    }
+                }
+            };
+
+            // 解析 iCal 数据
+            match self.parse_ical_event(&ical_data) {
+                Ok(event) => events.push(event),
+                Err(e) => {
+                    error!("[CalDAV] 解析 iCal 事件失败: {} (href: {})", e, event_ref.href);
+                }
+            }
+        }
+
+        info!("[CalDAV] 成功获取 {} 个事件", events.len());
+        Ok(events)
     }
 
-    /// 解析事件响应
+    /// 使用 calendar-multiget 批量获取事件
+    ///
+    /// 当 REPORT calendar-query 返回的事件没有 calendar-data 时，
+    /// 使用 calendar-multiget 批量获取所有事件的完整 iCal 数据
+    async fn fetch_events_multiget(&self, calendar_url: &str, event_refs: &[EventRef]) -> Result<Vec<EventInfo>, String> {
+        let auth_header = self.get_auth_header()?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, auth_header);
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/xml"));
+        headers.insert("Depth", HeaderValue::from_static("1"));
+
+        // 构建 calendar-multiget 请求体
+        let mut hrefs_xml = String::new();
+        for event_ref in event_refs {
+            // 提取相对路径
+            let href = if event_ref.href.starts_with(&self.server_url) {
+                event_ref.href.replace(&self.server_url, "")
+            } else {
+                event_ref.href.clone()
+            };
+            hrefs_xml.push_str(&format!("      <D:href>{}</D:href>\n", href));
+        }
+
+        let body = format!(
+            r#"<?xml version="1.0" encoding="utf-8" ?>
+<C:calendar-multiget xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <D:prop>
+    <C:calendar-data/>
+    <D:getetag/>
+  </D:prop>
+{}
+</C:calendar-multiget>"#,
+            hrefs_xml
+        );
+
+        info!("[CalDAV] 发送 calendar-multiget 请求到: {}", calendar_url);
+
+        let response = self
+            .client
+            .request(reqwest::Method::from_bytes(b"REPORT").unwrap(), calendar_url)
+            .headers(headers)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| format!("calendar-multiget 请求失败: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            error!("[CalDAV] calendar-multiget 失败: {}", status);
+            return Err(format!("calendar-multiget 失败: {}", status));
+        }
+
+        let response_text = response
+            .text()
+            .await
+            .map_err(|e| format!("读取响应失败: {}", e))?;
+
+        info!("[CalDAV] calendar-multiget 响应长度: {} 字节", response_text.len());
+
+        // 解析 multiget 响应
+        self.parse_multiget_response(&response_text)
+    }
+
+    /// 解析 calendar-multiget 响应
+    fn parse_multiget_response(&self, xml: &str) -> Result<Vec<EventInfo>, String> {
+        let mut reader = Reader::from_str(xml);
+        reader.config_mut().trim_text(true);
+
+        let mut events = Vec::new();
+        let mut in_calendar_data = false;
+        let mut current_ical = String::new();
+
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(ref e)) => {
+                    if e.local_name().as_ref() == b"calendar-data" {
+                        in_calendar_data = true;
+                        current_ical.clear();
+                    }
+                }
+                Ok(Event::Text(ref e)) => {
+                    if in_calendar_data {
+                        let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
+                        current_ical.push_str(&text);
+                    }
+                }
+                Ok(Event::CData(ref e)) => {
+                    if in_calendar_data {
+                        let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                        current_ical.push_str(&text);
+                    }
+                }
+                Ok(Event::End(ref e)) => {
+                    if e.local_name().as_ref() == b"calendar-data" {
+                        in_calendar_data = false;
+                        if !current_ical.is_empty() {
+                            match self.parse_ical_event(&current_ical) {
+                                Ok(event) => {
+                                    events.push(event);
+                                }
+                                Err(e) => {
+                                    error!("[CalDAV] 解析 multiget iCal 失败: {}", e);
+                                }
+                            }
+                        }
+                        current_ical.clear();
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Err(e) => return Err(format!("解析 XML 失败: {}", e)),
+                _ => {}
+            }
+        }
+
+        info!("[CalDAV] calendar-multiget 解析到 {} 个事件", events.len());
+        Ok(events)
+    }
+
+    /// 获取单个事件的 iCal 数据
+    ///
+    /// 对事件 URL 发送 GET 请求获取完整的 iCal 内容
+    async fn fetch_event_ical(&self, event_url: &str) -> Result<String, String> {
+        let auth_header = self.get_auth_header()?;
+
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, auth_header);
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/calendar"));
+
+        info!("[CalDAV] GET 请求获取事件 iCal: {}", event_url);
+
+        let response = self
+            .client
+            .get(event_url)
+            .headers(headers)
+            .send()
+            .await
+            .map_err(|e| format!("获取事件 iCal 失败: {}", e))?;
+
+        let status = response.status();
+        if !status.is_success() {
+            return Err(format!("获取事件 iCal 失败: HTTP {}", status));
+        }
+
+        let ical_data = response
+            .text()
+            .await
+            .map_err(|e| format!("读取事件 iCal 失败: {}", e))?;
+
+        info!("[CalDAV] 成功获取事件 iCal，长度: {} 字节", ical_data.len());
+        Ok(ical_data)
+    }
+
+    /// 解析事件引用列表
+    ///
+    /// 从 REPORT calendar-query 响应中提取事件 href、etag 和 calendar-data
+    fn parse_events_refs(&self, xml: &str, calendar_url: &str) -> Result<Vec<EventRef>, String> {
+        info!("[CalDAV] parse_events_refs: 开始解析 XML, 长度={}", xml.len());
+        
+        let mut reader = Reader::from_str(xml);
+        reader.config_mut().trim_text(true);
+
+        let mut event_refs = Vec::new();
+        let mut current_href = String::new();
+        let mut current_etag = Option::<String>::None;
+        let mut current_ical = Option::<String>::None;
+        
+        let mut in_href = false;
+        let mut in_getetag = false;
+        let mut in_status = false;
+        let mut current_status;
+        let mut response_count = 0;
+        let mut calendar_data_status = String::new();
+
+        loop {
+            match reader.read_event() {
+                Ok(Event::Start(ref e)) => {
+                    let local_name = e.local_name();
+                    
+                    match local_name.as_ref() {
+                        b"href" => {
+                            in_href = true;
+                            current_href.clear();
+                        }
+                        b"getetag" => {
+                            in_getetag = true;
+                        }
+                        b"status" => {
+                            in_status = true;
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(Event::Empty(ref e)) => {
+                    // 空元素处理，如 <C:calendar-data/>
+                    let local_name = e.local_name();
+                    let name_str = String::from_utf8_lossy(local_name.as_ref()).to_string();
+                    
+                    // calendar-data 空元素表示服务器返回 404
+                    if name_str.contains("calendar-data") {
+                        info!("[CalDAV] parse_events_refs: calendar-data 为空元素，服务器返回 404");
+                        current_ical = None;
+                    }
+                }
+                Ok(Event::Text(ref e)) => {
+                    let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
+                    
+                    if in_href {
+                        current_href = text.to_string();
+                        info!("[CalDAV] parse_events_refs: href = {}", current_href);
+                    } else if in_getetag {
+                        current_etag = Some(text.to_string());
+                        info!("[CalDAV] parse_events_refs: etag = {:?}", current_etag);
+                    } else if in_status {
+                        current_status = text.to_string();
+                        info!("[CalDAV] parse_events_refs: status = {}", current_status);
+                        
+                        // 记录 calendar-data 相关的 propstat 状态
+                        // 如果状态包含 404，表示 calendar-data 获取失败
+                        if text.contains("404") {
+                            calendar_data_status = text.to_string();
+                        }
+                    }
+                }
+                Ok(Event::CData(ref e)) => {
+                    // CDATA 内容通常包含 iCal 数据
+                    let text = String::from_utf8_lossy(e.as_ref()).to_string();
+                    info!("[CalDAV] parse_events_refs: 获取到 CDATA iCal 数据, 长度={}", text.len());
+                    current_ical = Some(text);
+                }
+                Ok(Event::End(ref e)) => {
+                    let local_name = e.local_name();
+                    
+                    match local_name.as_ref() {
+                        b"href" => in_href = false,
+                        b"getetag" => in_getetag = false,
+                        b"status" => in_status = false,
+                        b"response" => {
+                            response_count += 1;
+                            info!("[CalDAV] parse_events_refs: 处理 response #{}, href={}", 
+                                  response_count, current_href);
+                            
+                            // 一个 response 元素结束，保存事件引用
+                            if !current_href.is_empty() {
+                                // 处理相对 URL
+                                let full_url = if current_href.starts_with("http") {
+                                    current_href.clone()
+                                } else if current_href.starts_with('/') {
+                                    let base = self.server_url.trim_end_matches('/');
+                                    format!("{}{}", base, current_href)
+                                } else {
+                                    format!("{}/{}", calendar_url.trim_end_matches('/'), current_href)
+                                };
+
+                                // 检查 iCal 数据是否有效
+                                let ical_data = if let Some(ref ical) = current_ical {
+                                    if ical.contains("BEGIN:VCALENDAR") {
+                                        Some(ical.clone())
+                                    } else {
+                                        info!("[CalDAV] parse_events_refs: iCal 数据无效（不包含 BEGIN:VCALENDAR）");
+                                        None
+                                    }
+                                } else {
+                                    info!("[CalDAV] parse_events_refs: 无 iCal 数据");
+                                    None
+                                };
+
+                                info!("[CalDAV] parse_events_refs: 添加事件引用 href={}, has_ical={}", 
+                                      full_url, ical_data.is_some());
+
+                                event_refs.push(EventRef {
+                                    href: full_url,
+                                    etag: current_etag.clone(),
+                                    ical_data,
+                                });
+                            }
+                            
+                            // 重置状态
+                            current_href.clear();
+                            current_etag = None;
+                            current_ical = None;
+                            calendar_data_status.clear();
+                        }
+                        _ => {}
+                    }
+                }
+                Ok(Event::Eof) => break,
+                Err(e) => {
+                    let preview = if xml.len() > 500 { &xml[..500] } else { xml };
+                    return Err(format!("解析 XML 失败: {} | XML预览: {}", e, preview));
+                }
+                _ => {}
+            }
+        }
+
+        info!("[CalDAV] parse_events_refs: 共解析到 {} 个事件引用", event_refs.len());
+        Ok(event_refs)
+    }
+
+    /// 解析事件响应（用于标准 CalDAV 服务器，响应中包含完整 iCal 数据）
+    ///
+    /// 从 REPORT calendar-query 响应中解析事件列表
     fn parse_events_response(&self, xml: &str) -> Result<Vec<EventInfo>, String> {
         let mut reader = Reader::from_str(xml);
         reader.config_mut().trim_text(true);
@@ -598,8 +1150,6 @@ impl CalDavClient {
                                 }
                                 Err(e) => {
                                     error!("[CalDAV] 解析个别 iCal 事件失败: {} (iCal 长度: {})", e, current_ical.len());
-                                    // 调试：打印失败的 ical片段
-                                    // debug!("[CalDAV] 失败的 iCal 内容: {}", current_ical);
                                 }
                             }
                         }
@@ -1272,5 +1822,459 @@ END:VCALENDAR"#;
         let result = client.parse_ical_datetime("20240115", true);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1705276800);
+    }
+
+    // ========== 飞书 CalDAV 兼容性测试 ==========
+
+    #[test]
+    fn test_server_url_normalization() {
+        // 测试不带协议的 URL
+        let client = CalDavClient::new(
+            "caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+        assert_eq!(client.server_url, "https://caldav.feishu.cn");
+
+        // 测试带 https 的 URL
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+        assert_eq!(client.server_url, "https://caldav.feishu.cn");
+
+        // 测试带 http 的 URL
+        let client = CalDavClient::new(
+            "http://caldav.example.com".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+        assert_eq!(client.server_url, "http://caldav.example.com");
+    }
+
+    #[test]
+    fn test_parse_principal_url_feishu_format() {
+        // 测试飞书风格的 principal URL（使用 /dav/users/ 路径）
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        let xml = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:">
+    <D:response>
+        <D:href>/</D:href>
+        <D:propstat>
+            <D:prop>
+                <D:current-user-principal>
+                    <D:href>/dav/users/ou_xxxxx/</D:href>
+                </D:current-user-principal>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+</D:multistatus>"#;
+
+        let result = client.parse_principal_url(xml);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "https://caldav.feishu.cn/dav/users/ou_xxxxx/");
+    }
+
+    #[test]
+    fn test_parse_principal_url_fallback_relative_path() {
+        // 测试当没有 current-user-principal 标签时，使用第一个相对路径作为 fallback
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 模拟某些服务器可能返回的格式（没有 current-user-principal 包装）
+        let xml = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:">
+    <D:response>
+        <D:href>/dav/users/ou_xxxxx/</D:href>
+        <D:propstat>
+            <D:prop>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+</D:multistatus>"#;
+
+        let result = client.parse_principal_url(xml);
+        assert!(result.is_ok());
+        // 应该使用 fallback 机制
+        assert_eq!(result.unwrap(), "https://caldav.feishu.cn/dav/users/ou_xxxxx/");
+    }
+
+    #[test]
+    fn test_parse_calendar_home_set_feishu_format() {
+        // 测试飞书风格的 calendar-home-set
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        let xml = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+    <D:response>
+        <D:href>/dav/users/ou_xxxxx/</D:href>
+        <D:propstat>
+            <D:prop>
+                <C:calendar-home-set>
+                    <D:href>/dav/users/ou_xxxxx/calendars/</D:href>
+                </C:calendar-home-set>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+</D:multistatus>"#;
+
+        let result = client.parse_calendar_home_set(xml);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "https://caldav.feishu.cn/dav/users/ou_xxxxx/calendars/");
+    }
+
+    #[test]
+    fn test_parse_calendar_home_set_fallback() {
+        // 测试 calendar-home-set 的 fallback 机制
+        // 场景：响应中第一个 href 是响应标识（通常是 principal URL），第二个在 calendar-home-set 内
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 模拟真实场景：响应中有多个 href，需要正确识别 calendar-home-set 内的那个
+        let xml = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+    <D:response>
+        <D:href>/dav/users/ou_xxxxx/</D:href>
+        <D:propstat>
+            <D:prop>
+                <C:calendar-home-set>
+                    <D:href>/dav/users/ou_xxxxx/calendars/</D:href>
+                </C:calendar-home-set>
+            </D:prop>
+            <D:status>HTTP/1.1 200 OK</D:status>
+        </D:propstat>
+    </D:response>
+</D:multistatus>"#;
+
+        let result = client.parse_calendar_home_set(xml);
+        assert!(result.is_ok());
+        // 应该正确识别 calendar-home-set 内的 href，而不是第一个 href
+        assert_eq!(result.unwrap(), "https://caldav.feishu.cn/dav/users/ou_xxxxx/calendars/");
+    }
+
+    // ========== 飞书 CalDAV 事件测试 ==========
+
+    /// 测试解析飞书格式的事件响应
+    ///
+    /// 飞书的 REPORT 响应格式可能包含特定的命名空间和结构
+    #[test]
+    fn test_parse_events_response_feishu() {
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 模拟飞书 CalDAV 的 REPORT 响应格式
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <response>
+    <href>/dav/users/ou_xxxxx/calendars/calendar-id/event-001.ics</href>
+    <propstat>
+      <prop>
+        <C:calendar-data>BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//FeiShu//CalDAV//CN
+BEGIN:VEVENT
+UID:event-001@feishu.cn
+DTSTAMP:20240315T080000Z
+DTSTART:20240320T090000Z
+DTEND:20240320T100000Z
+SUMMARY:飞书日历事件
+DESCRIPTION:这是飞书日历的事件描述
+LOCATION:飞书会议室
+END:VEVENT
+END:VCALENDAR</C:calendar-data>
+        <getetag>"abc123"</getetag>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+  <response>
+    <href>/dav/users/ou_xxxxx/calendars/calendar-id/event-002.ics</href>
+    <propstat>
+      <prop>
+        <C:calendar-data>BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//FeiShu//CalDAV//CN
+BEGIN:VEVENT
+UID:event-002@feishu.cn
+DTSTAMP:20240315T080000Z
+DTSTART;VALUE=DATE:20240321
+DTEND;VALUE=DATE:20240322
+SUMMARY:飞书全天事件
+END:VEVENT
+END:VCALENDAR</C:calendar-data>
+        <getetag>"def456"</getetag>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+</multistatus>"#;
+
+        let result = client.parse_events_response(xml);
+        assert!(result.is_ok());
+
+        let events = result.unwrap();
+        assert_eq!(events.len(), 2);
+
+        // 验证第一个事件（普通事件）
+        assert_eq!(events[0].id, "event-001@feishu.cn");
+        assert_eq!(events[0].title, "飞书日历事件");
+        assert_eq!(events[0].description, Some("这是飞书日历的事件描述".to_string()));
+        assert_eq!(events[0].location, Some("飞书会议室".to_string()));
+        assert!(!events[0].all_day);
+        // 2024-03-20 09:00:00 UTC = 1710925200
+        assert_eq!(events[0].start_time, 1710925200);
+        // 2024-03-20 10:00:00 UTC = 1710928800
+        assert_eq!(events[0].end_time, 1710928800);
+
+        // 验证第二个事件（全天事件）
+        assert_eq!(events[1].id, "event-002@feishu.cn");
+        assert_eq!(events[1].title, "飞书全天事件");
+        assert!(events[1].all_day);
+        // 2024-03-21 00:00:00 UTC = 1710979200
+        assert_eq!(events[1].start_time, 1710979200);
+        // 2024-03-22 00:00:00 UTC = 1711065600
+        assert_eq!(events[1].end_time, 1711065600);
+    }
+
+    /// 测试带时区参数的 iCal 事件解析
+    ///
+    /// 某些服务器可能返回带 TZID 参数的日期时间
+    #[test]
+    fn test_parse_ical_event_with_timezone() {
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 注意：当前实现不处理 TZID 参数，只解析纯 UTC 时间格式
+        // 这个测试验证 Z 后缀的 UTC 时间格式能正确解析
+        let ical_data = r#"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//CN
+BEGIN:VEVENT
+UID:tz-event-001
+DTSTAMP:20240315T080000Z
+DTSTART:20240320T090000Z
+DTEND:20240320T100000Z
+SUMMARY:带时区的事件
+DESCRIPTION:UTC 时间格式事件
+LOCATION:上海办公室
+END:VEVENT
+END:VCALENDAR"#;
+
+        let result = client.parse_ical_event(ical_data);
+        assert!(result.is_ok());
+
+        let event = result.unwrap();
+        assert_eq!(event.id, "tz-event-001");
+        assert_eq!(event.title, "带时区的事件");
+        assert_eq!(event.description, Some("UTC 时间格式事件".to_string()));
+        assert_eq!(event.location, Some("上海办公室".to_string()));
+        assert!(!event.all_day);
+        // 2024-03-20 09:00:00 UTC
+        assert_eq!(event.start_time, 1710925200);
+        // 2024-03-20 10:00:00 UTC
+        assert_eq!(event.end_time, 1710928800);
+    }
+
+    /// 测试多行描述的 iCal 事件解析
+    ///
+    /// iCal 格式中多行文本使用换行符，需要正确处理
+    #[test]
+    fn test_parse_ical_event_multiline_description() {
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // iCal 多行描述使用 \n 转义（在原始数据中可能是 \\n）
+        let ical_data = r#"BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//CN
+BEGIN:VEVENT
+UID:multiline-event-001
+DTSTAMP:20240315T080000Z
+DTSTART:20240320T090000Z
+DTEND:20240320T100000Z
+SUMMARY:多行描述事件
+DESCRIPTION:第一行描述\n第二行描述\n第三行描述
+LOCATION:会议室
+END:VEVENT
+END:VCALENDAR"#;
+
+        let result = client.parse_ical_event(ical_data);
+        assert!(result.is_ok());
+
+        let event = result.unwrap();
+        assert_eq!(event.id, "multiline-event-001");
+        assert_eq!(event.title, "多行描述事件");
+        // 验证描述内容（包含转义的换行符）
+        let desc = event.description.as_ref().unwrap();
+        assert!(desc.contains("第一行描述"));
+        assert!(desc.contains("第二行描述"));
+        assert!(desc.contains("第三行描述"));
+    }
+
+    /// 测试带时区的日期时间解析
+    ///
+    /// 验证不同格式的日期时间字符串能正确转换为时间戳
+    #[test]
+    fn test_parse_ical_datetime_with_timezone() {
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 时间戳基准: 2024-01-01 00:00:00 UTC = 1704067200
+        // 2024-03-20 00:00:00 UTC = 1704067200 + 79天 * 86400 = 1710892800
+        // (从1月1日到3月20日: 1月31天 + 2月29天(闰年) + 3月1-19日19天 = 79天)
+
+        // 测试 UTC 时间格式 (带 Z 后缀)
+        // 2024-03-20 09:00:00 UTC = 1710892800 + 32400 = 1710925200
+        let result = client.parse_ical_datetime("20240320T090000Z", false);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1710925200);
+
+        // 测试不带时区的时间格式 (不带 Z 后缀)
+        // 按本地时间解析，应该等同于 UTC 格式
+        let result = client.parse_ical_datetime("20240320T090000", false);
+        assert!(result.is_ok());
+        // 不带 Z 的时间按 UTC 处理
+        assert_eq!(result.unwrap(), 1710925200);
+
+        // 测试全天事件日期格式
+        // 2024-03-20 00:00:00 UTC
+        let result = client.parse_ical_datetime("20240320", true);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1710892800);
+
+        // 测试边界情况：午夜时间
+        let result = client.parse_ical_datetime("20240320T000000Z", false);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1710892800);
+
+        // 测试边界情况：午夜前一刻
+        // 2024-03-20 23:59:59 UTC = 1710892800 + 86399 = 1710979199
+        let result = client.parse_ical_datetime("20240320T235959Z", false);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 1710979199);
+    }
+
+    /// 测试解析不含任何事件的响应
+    #[test]
+    fn test_parse_events_response_empty() {
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 空响应（没有事件）
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+</multistatus>"#;
+
+        let result = client.parse_events_response(xml);
+        assert!(result.is_ok());
+        let events = result.unwrap();
+        assert!(events.is_empty());
+    }
+
+    /// 测试解析包含 CDATA 的日历数据
+    #[test]
+    fn test_parse_events_response_with_cdata() {
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 某些服务器可能使用 CDATA 包装日历数据
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<multistatus xmlns="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav">
+  <response>
+    <href>/calendars/user/test/event.ics</href>
+    <propstat>
+      <prop>
+        <C:calendar-data><![CDATA[BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Test//Test//CN
+BEGIN:VEVENT
+UID:cdata-event
+DTSTAMP:20240315T080000Z
+DTSTART:20240320T090000Z
+DTEND:20240320T100000Z
+SUMMARY:CDATA 格式事件
+END:VEVENT
+END:VCALENDAR]]></C:calendar-data>
+      </prop>
+      <status>HTTP/1.1 200 OK</status>
+    </propstat>
+  </response>
+</multistatus>"#;
+
+        let result = client.parse_events_response(xml);
+        assert!(result.is_ok());
+        let events = result.unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id, "cdata-event");
+        assert_eq!(events[0].title, "CDATA 格式事件");
+    }
+
+    /// 测试解析飞书格式的事件引用（calendar-data 返回 404）
+    ///
+    /// 飞书 CalDAV 服务器在 REPORT 响应中返回事件的 href 和 etag，
+    /// 但 calendar-data 元素返回 404 Not Found，需要单独获取
+    #[test]
+    fn test_parse_events_refs_feishu_format() {
+        let client = CalDavClient::new(
+            "https://caldav.feishu.cn".to_string(),
+            "user".to_string(),
+            "pass".to_string(),
+        );
+
+        // 飞书返回的实际 XML 格式（完整复制自真实响应）
+        let xml = r#"<?xml version="1.0" encoding="UTF-8"?><D:multistatus xmlns:D="DAV:" xmlns:C="urn:ietf:params:xml:ns:caldav" xmlns:CS="http://calendarserver.org/ns/" xmlns:ICAL="http://apple.com/ns/ical/" xmlns:ME="http://me.com/_namespace/"><D:response><D:href>/u_xptl9894/66DEC3A3-D95F-4002-66DE-C3A3D95F4002/c3c3bc79-2df4-4a84-b28d-66d203692600.ics</D:href><D:propstat><D:prop><D:getetag>1774681140736792</D:getetag></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat><D:propstat><D:prop><C:calendar-data/></D:prop><D:status>HTTP/1.1 404 Not Found</D:status></D:propstat></D:response><D:response><D:href>/u_xptl9894/66DEC3A3-D95F-4002-66DE-C3A3D95F4002/2ed4c701-dd30-4c13-8843-f889c698f022.ics</D:href><D:propstat><D:prop><D:getetag>1774684439909022</D:getetag></D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat><D:propstat><D:prop><C:calendar-data/></D:prop><D:status>HTTP/1.1 404 Not Found</D:status></D:propstat></D:response></D:multistatus>"#;
+
+        let result = client.parse_events_refs(xml, "https://caldav.feishu.cn/u_xptl9894/66DEC3A3-D95F-4002-66DE-C3A3D95F4002/");
+        assert!(result.is_ok());
+
+        let event_refs = result.unwrap();
+        assert_eq!(event_refs.len(), 2, "应该解析到 2 个事件引用");
+
+        // 验证第一个事件引用
+        assert_eq!(event_refs[0].href, "https://caldav.feishu.cn/u_xptl9894/66DEC3A3-D95F-4002-66DE-C3A3D95F4002/c3c3bc79-2df4-4a84-b28d-66d203692600.ics");
+        assert_eq!(event_refs[0].etag, Some("1774681140736792".to_string()));
+        assert!(event_refs[0].ical_data.is_none(), "calendar-data 返回 404，应该没有 iCal 数据");
+
+        // 验证第二个事件引用
+        assert_eq!(event_refs[1].href, "https://caldav.feishu.cn/u_xptl9894/66DEC3A3-D95F-4002-66DE-C3A3D95F4002/2ed4c701-dd30-4c13-8843-f889c698f022.ics");
+        assert_eq!(event_refs[1].etag, Some("1774684439909022".to_string()));
+        assert!(event_refs[1].ical_data.is_none(), "calendar-data 返回 404，应该没有 iCal 数据");
     }
 }

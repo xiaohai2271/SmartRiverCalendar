@@ -738,6 +738,8 @@ mod tests {
             color: Some("#FF5733".to_string()),
             account_id: "account-123".to_string(),
             enabled: true,
+            url: Some("https://caldav.example.com/calendars/user/work/".to_string()),
+            read_only: false,
         };
 
         let json = serde_json::to_string(&calendar).unwrap();

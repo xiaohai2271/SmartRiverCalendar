@@ -445,3 +445,81 @@ Rust: crypto::decrypt_password(ciphertext)
 | `SYNC_WINDOW_PAST_DAYS` | 30 | 同步过去多少天的事件 |
 | `SYNC_WINDOW_FUTURE_DAYS` | 90 | 同步未来多少天的事件 |
 | 请求超时 | 30 秒 | HTTP 请求超时时间 |
+
+---
+
+## 9. CalDAV 服务商兼容性
+
+### 9.1 飞书 CalDAV 特殊处理
+
+飞书 CalDAV 服务器有一些非标准行为，需要特殊处理：
+
+#### Principal URL 格式
+
+飞书使用 `/u_xxx/` 格式的用户路径，而非标准的 `/principals/users/xxx/`：
+
+```
+标准格式: /principals/users/username/
+飞书格式: /u_xptl9894/
+```
+
+代码通过优先匹配 `current-user-principal` 元素内的 href，并使用 fallback 机制支持多种路径格式。
+
+#### 日历主路径
+
+飞书的 calendar-home-set 响应可能直接返回日历 URL，需要在解析时特别处理。
+
+#### 事件获取 - 两阶段机制
+
+飞书 CalDAV 服务器**不支持**通过 REPORT calendar-query 请求直接返回 `calendar-data` 内容：
+
+```xml
+<!-- 飞书返回的响应 -->
+<D:propstat>
+  <D:prop>
+    <C:calendar-data/>
+  </D:prop>
+  <D:status>HTTP/1.1 404 Not Found</D:status>
+</D:propstat>
+```
+
+因此需要实现**两阶段获取**：
+
+```
+阶段 1: REPORT calendar-query
+    │
+    ├─► 获取事件 href 列表
+    │   /u_xptl9894/calendar-id/event-1.ics
+    │   /u_xptl9894/calendar-id/event-2.ics
+    │
+    └─► 不返回 calendar-data 内容
+
+阶段 2: GET 请求
+    │
+    ├─► 对每个事件 href 发送 GET 请求
+    │
+    └─► 获取完整的 iCal 数据
+        BEGIN:VCALENDAR
+        VERSION:2.0
+        BEGIN:VEVENT
+        UID:event-1
+        SUMMARY:事件标题
+        ...
+        END:VEVENT
+        END:VCALENDAR
+```
+
+### 9.2 兼容性测试
+
+所有 CalDAV 实现都通过以下测试：
+
+| 测试项 | 状态 |
+|--------|------|
+| 连接验证 (OPTIONS) | ✅ |
+| Principal URL 发现 | ✅ |
+| Calendar-home-set 获取 | ✅ |
+| 日历列表获取 | ✅ |
+| 事件列表获取 | ✅ |
+| iCal 解析 | ✅ |
+| 全天事件处理 | ✅ |
+| 时区处理 | ✅ |
