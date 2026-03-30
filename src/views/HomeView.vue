@@ -5,6 +5,9 @@
       <p>掌控时间，让生活更有节奏</p>
     </div>
 
+    <!-- 实时时间显示 -->
+    <TimeDisplay />
+
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-icon">📅</div>
@@ -105,6 +108,7 @@ import { useCalendarStore } from '../stores/calendar'
 import { useTodoStore } from '../stores/todo'
 import { isSameDay, formatDateTime, formatDate } from '../utils/date'
 import type { CalendarEvent, Todo } from '../types'
+import TimeDisplay from '../components/home/TimeDisplay.vue'
 
 const calendarStore = useCalendarStore()
 const todoStore = useTodoStore()

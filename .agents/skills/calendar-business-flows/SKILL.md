@@ -48,6 +48,11 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
   - 设计文档: [references/external-calendar-design.md](references/external-calendar-design.md)
   - 业务流程: [references/external-calendar-integration.md](references/external-calendar-integration.md)
 
+### 8. 首页时间显示
+- **功能**: 实时时间显示、农历日期、节气、节假日标签、补休班提醒
+- **涉及组件**: TimeDisplay 组件、lunar 工具函数、tyme4ts 库
+- **详细文档**: 参考 [references/home-time-display.md](references/home-time-display.md)
+
 ## 快速参考
 
 ### 关键文件路径
