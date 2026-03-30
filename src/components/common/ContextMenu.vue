@@ -171,7 +171,7 @@ watch(() => props.visible, (newVal) => {
     // 恢复之前的 overflow 值
     document.body.style.overflow = previousOverflow
   }
-})
+}, { immediate: true })
 </script>
 
 <style scoped>
