@@ -88,10 +88,9 @@ export function getLunarInfo(date: Date): LunarInfo {
   const lunarMonthName = lunarMonth.getName()
   const lunarDayName = lunarDay.getName()
 
-  // 简化农历日期显示：
-  // - 初一：只显示月份，如"正月"
-  // - 其他日期：只显示日期，如"初八"
-  const simplifiedLunarDate = lunarDayName === '初一' ? lunarMonthName : lunarDayName
+  // 简化农历日期显示：显示月份+日期，如"二月十二"、"腊月初八"
+  // 初一也显示完整格式"正月初一"，保持一致性
+  const simplifiedLunarDate = `${lunarMonthName}${lunarDayName}`
 
   // 获取农历节日
   const lunarFestival = lunarDay.getFestival()

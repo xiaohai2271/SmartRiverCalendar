@@ -219,17 +219,20 @@ function formatEventTime(event: CalendarEvent): string {
 
 .welcome-section {
   text-align: center;
-  padding: 40px 0;
+  padding: 16px 0 8px;
 }
 
 .welcome-section h1 {
-  font-size: 32px;
-  margin-bottom: 8px;
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  color: var(--text-primary);
 }
 
 .welcome-section p {
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: 14px;
+  margin: 0;
 }
 
 .stats-grid {

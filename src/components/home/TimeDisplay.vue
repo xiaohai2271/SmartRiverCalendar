@@ -97,50 +97,29 @@ onUnmounted(() => {
 .time-display {
   background: var(--bg-secondary);
   border-radius: 16px;
-  padding: 24px;
-  margin-bottom: 24px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
   box-shadow: var(--shadow-sm);
   text-align: center;
 }
 
-/* 时间区域 */
+/* 时间区域 - 作为主视觉焦点 */
 .time-section {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .current-time {
-  font-size: 56px;
-  font-weight: 300;
+  font-size: 52px;
+  font-weight: 600;
   font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
   letter-spacing: 2px;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+  line-height: 1.1;
 }
 
-/* 日期区域 */
+/* 日期区域 - 紧凑布局 */
 .date-section {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 12px;
-}
-
-.current-date {
-  font-size: 18px;
-  color: var(--text-secondary);
-}
-
-.weekday {
-  font-size: 16px;
-  color: var(--text-secondary);
-  padding: 4px 12px;
-  background: var(--bg-hover);
-  border-radius: 8px;
-}
-
-/* 农历和节气区域 */
-.lunar-section {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -148,17 +127,45 @@ onUnmounted(() => {
   margin-bottom: 12px;
 }
 
-.lunar-date {
-  font-size: 15px;
+.current-date {
+  font-size: 16px;
   color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.weekday {
+  font-size: 14px;
+  color: var(--accent-color);
+  padding: 4px 12px;
+  background: rgba(74, 144, 217, 0.1);
+  border-radius: 12px;
+  font-weight: 500;
+}
+
+/* 农历和节气区域 - 使用标签样式 */
+.lunar-section {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.lunar-date {
+  font-size: 14px;
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  background: var(--bg-hover);
+  border-radius: 8px;
 }
 
 .solar-term {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--accent-color);
-  padding: 3px 10px;
+  padding: 4px 10px;
   background: rgba(74, 144, 217, 0.1);
-  border-radius: 6px;
+  border-radius: 8px;
   font-weight: 500;
 }
 
@@ -169,11 +176,10 @@ onUnmounted(() => {
   gap: 6px;
   padding: 8px 16px;
   background: linear-gradient(135deg, rgba(255, 107, 107, 0.15), rgba(255, 159, 67, 0.15));
-  border-radius: 10px;
-  font-size: 15px;
+  border-radius: 20px;
+  font-size: 14px;
   font-weight: 500;
   color: #e74c3c;
-  margin-top: 8px;
 }
 
 .holiday-icon {
@@ -187,8 +193,8 @@ onUnmounted(() => {
   gap: 6px;
   padding: 8px 16px;
   background: linear-gradient(135deg, rgba(241, 196, 15, 0.15), rgba(243, 156, 18, 0.15));
-  border-radius: 10px;
-  font-size: 14px;
+  border-radius: 20px;
+  font-size: 13px;
   font-weight: 500;
   color: #e67e22;
   margin-top: 8px;
@@ -200,8 +206,12 @@ onUnmounted(() => {
 
 /* 响应式 */
 @media (max-width: 600px) {
+  .time-display {
+    padding: 16px 20px;
+  }
+
   .current-time {
-    font-size: 42px;
+    font-size: 40px;
   }
 
   .date-section {
@@ -211,11 +221,15 @@ onUnmounted(() => {
 
   .lunar-section {
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
   }
 }
 
 /* 深色模式适配 */
+:root.dark .weekday {
+  background: rgba(74, 144, 217, 0.2);
+}
+
 :root.dark .solar-term {
   background: rgba(74, 144, 217, 0.2);
 }
