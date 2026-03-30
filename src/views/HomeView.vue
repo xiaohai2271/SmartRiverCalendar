@@ -52,6 +52,7 @@
             :key="todo.id"
             class="todo-item"
             :class="{ overdue: isOverdue(todo) }"
+            @contextmenu.prevent="(e) => handleContextMenu(e, todo)"
           >
             <label class="checkbox-wrapper" @click.stop>
               <input
@@ -77,6 +78,36 @@
             暂无待办事项
           </div>
         </div>
+
+        <!-- 右键菜单 -->
+        <ContextMenu
+          v-model:visible="contextMenuVisible"
+          :position="contextMenuPosition"
+          :items="todoMenuItems"
+        />
+
+        <!-- 删除确认气泡 -->
+        <!-- 用于定位删除确认气泡的虚拟元素 -->
+        <div
+          ref="deleteConfirmTargetRef"
+          style="position: fixed; width: 1px; height: 1px; pointer-events: none; z-index: -1;"
+        />
+        <ConfirmPopover
+          v-model:visible="confirmPopoverVisible"
+          :target="deleteConfirmTargetRef"
+          title="确定要删除此待办事项吗？"
+          confirm-text="删除"
+          cancel-text="取消"
+          @confirm="confirmDelete"
+          @cancel="cancelDelete"
+        />
+
+        <!-- 待办详情弹窗 -->
+        <TodoDetailModal
+          v-model:visible="detailModalVisible"
+          :todo="selectedTodo"
+          @close="detailModalVisible = false"
+        />
       </div>
 
       <!-- 即将到来的日程 -->
@@ -86,7 +117,12 @@
           <router-link to="/calendar" class="view-all">查看全部 →</router-link>
         </div>
         <div class="events-list">
-          <div v-for="event in upcomingEvents" :key="event.id" class="event-item">
+          <div
+            v-for="event in upcomingEvents"
+            :key="event.id"
+            class="event-item"
+            @contextmenu.prevent="(e) => handleEventContextMenu(e, event)"
+          >
             <div class="event-color" :style="{ background: getCalendarColor(event.calendarId) }"></div>
             <div class="event-info">
               <div class="event-title">{{ event.title }}</div>
@@ -97,21 +133,76 @@
             暂无即将到来的日程
           </div>
         </div>
+
+        <!-- 日程右键菜单 -->
+        <ContextMenu
+          v-model:visible="eventContextMenuVisible"
+          :position="eventContextMenuPosition"
+          :items="eventMenuItems"
+        />
+
+        <!-- 日程删除确认气泡定位元素 -->
+        <div
+          ref="eventDeleteConfirmTargetRef"
+          style="position: fixed; width: 1px; height: 1px; pointer-events: none; z-index: -1;"
+        />
+
+        <!-- 日程删除确认气泡 -->
+        <ConfirmPopover
+          v-model:visible="eventConfirmPopoverVisible"
+          :target="eventDeleteConfirmTargetRef"
+          title="确定要删除此日程吗？"
+          confirm-text="删除"
+          cancel-text="取消"
+          @confirm="confirmDeleteEvent"
+          @cancel="cancelDeleteEvent"
+        />
+
+        <!-- 日程详情弹窗 -->
+        <EventDetailModal
+          :visible="eventDetailModalVisible"
+          :event="selectedEvent"
+          @close="closeEventDetailModal"
+        />
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useCalendarStore } from '../stores/calendar'
 import { useTodoStore } from '../stores/todo'
 import { isSameDay, formatDateTime, formatDate } from '../utils/date'
 import type { CalendarEvent, Todo } from '../types'
 import TimeDisplay from '../components/home/TimeDisplay.vue'
+import ContextMenu from '../components/common/ContextMenu.vue'
+import ConfirmPopover from '../components/common/ConfirmPopover.vue'
+import TodoDetailModal from '../components/common/TodoDetailModal.vue'
+import EventDetailModal from '../components/common/EventDetailModal.vue'
+import { useRouter } from 'vue-router'
 
 const calendarStore = useCalendarStore()
 const todoStore = useTodoStore()
+const router = useRouter()
+
+// ========== 待办项右键菜单相关状态 ==========
+const contextMenuVisible = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const selectedTodo = ref<Todo | null>(null)
+const confirmPopoverVisible = ref(false)
+const deleteTargetPosition = ref({ x: 0, y: 0 })
+const deleteConfirmTargetRef = ref<HTMLElement | null>(null)
+const detailModalVisible = ref(false)
+
+// ========== 日程项右键菜单相关状态 ==========
+const eventContextMenuVisible = ref(false)
+const eventContextMenuPosition = ref({ x: 0, y: 0 })
+const selectedEvent = ref<CalendarEvent | null>(null)
+const eventConfirmPopoverVisible = ref(false)
+const eventDeleteTargetPosition = ref({ x: 0, y: 0 })
+const eventDeleteConfirmTargetRef = ref<HTMLElement | null>(null)
+const eventDetailModalVisible = ref(false)
 
 onMounted(() => {
   todoStore.initialize()
@@ -121,6 +212,189 @@ const priorityLabels = {
   low: '低',
   medium: '中',
   high: '高'
+}
+
+// 右键菜单项配置
+const todoMenuItems = computed(() => [
+  {
+    label: '编辑',
+    icon: '✏️',
+    action: handleEdit
+  },
+  {
+    label: '删除',
+    icon: '🗑️',
+    action: handleDelete
+  },
+  {
+    label: selectedTodo.value?.completed ? '标记未完成' : '标记完成',
+    icon: '✅',
+    action: handleToggle
+  },
+  {
+    label: '详情',
+    icon: '📋',
+    action: handleDetail
+  }
+])
+
+/**
+ * 处理待办项右键点击事件
+ * @param event 鼠标事件
+ * @param todo 点击的待办项
+ */
+function handleContextMenu(event: MouseEvent, todo: Todo) {
+  event.preventDefault()
+  selectedTodo.value = todo
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  contextMenuVisible.value = true
+}
+
+/**
+ * 处理编辑操作
+ * 首页没有编辑功能，跳转到待办页面
+ */
+function handleEdit() {
+  // 首页没有编辑弹窗，可以跳转到待办页面
+  // 这里选择显示提示信息
+  console.log('编辑待办项:', selectedTodo.value?.id)
+  // TODO: 如果需要跳转，可以使用 router.push('/todos')
+}
+
+/**
+ * 处理删除操作
+ * 显示确认气泡
+ */
+function handleDelete() {
+  // 使用右键菜单位置作为确认气泡的参考位置
+  deleteTargetPosition.value = { ...contextMenuPosition.value }
+  confirmPopoverVisible.value = true
+
+  // 在下一帧更新定位元素的位置
+  requestAnimationFrame(() => {
+    if (deleteConfirmTargetRef.value) {
+      deleteConfirmTargetRef.value.style.left = `${deleteTargetPosition.value.x}px`
+      deleteConfirmTargetRef.value.style.top = `${deleteTargetPosition.value.y}px`
+    }
+  })
+}
+
+/**
+ * 确认删除待办项
+ */
+function confirmDelete() {
+  if (selectedTodo.value) {
+    todoStore.deleteTodo(selectedTodo.value.id)
+  }
+}
+
+/**
+ * 取消删除操作
+ */
+function cancelDelete() {
+  // 取消删除，无需额外操作
+}
+
+/**
+ * 处理切换完成状态操作
+ */
+function handleToggle() {
+  if (selectedTodo.value) {
+    todoStore.toggleTodo(selectedTodo.value.id)
+  }
+}
+
+/**
+ * 处理查看详情操作
+ */
+function handleDetail() {
+  detailModalVisible.value = true
+}
+
+// ========== 日程项菜单配置（注意：没有"完成"选项，日程无此状态） ==========
+const eventMenuItems = computed(() => [
+  { label: '编辑', icon: '✏️', action: handleEventEdit },
+  { label: '删除', icon: '🗑️', action: handleEventDelete },
+  { label: '详情', icon: '📋', action: handleEventDetail }
+])
+
+/**
+ * 处理日程项右键点击事件
+ */
+function handleEventContextMenu(event: MouseEvent, evt: CalendarEvent) {
+  event.preventDefault()
+  selectedEvent.value = evt
+  eventContextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  eventContextMenuVisible.value = true
+}
+
+/**
+ * 处理编辑日程
+ * 跳转到日程视图
+ */
+function handleEventEdit() {
+  if (!selectedEvent.value) return
+  router.push('/calendar')
+  eventContextMenuVisible.value = false
+}
+
+/**
+ * 处理删除日程
+ * 显示气泡确认框
+ */
+function handleEventDelete() {
+  // 使用右键菜单位置作为确认气泡的参考位置
+  eventDeleteTargetPosition.value = { ...eventContextMenuPosition.value }
+  eventConfirmPopoverVisible.value = true
+
+  // 在下一帧更新定位元素的位置
+  requestAnimationFrame(() => {
+    if (eventDeleteConfirmTargetRef.value) {
+      eventDeleteConfirmTargetRef.value.style.left = `${eventDeleteTargetPosition.value.x}px`
+      eventDeleteConfirmTargetRef.value.style.top = `${eventDeleteTargetPosition.value.y}px`
+    }
+  })
+}
+
+/**
+ * 确认删除日程
+ */
+async function confirmDeleteEvent() {
+  if (!selectedEvent.value) return
+  try {
+    await calendarStore.deleteEvent(selectedEvent.value.id)
+    console.log('日程删除成功:', selectedEvent.value.title)
+  } catch (error) {
+    console.error('删除日程失败:', error)
+  }
+  eventConfirmPopoverVisible.value = false
+  selectedEvent.value = null
+}
+
+/**
+ * 取消删除日程
+ */
+function cancelDeleteEvent() {
+  eventConfirmPopoverVisible.value = false
+  selectedEvent.value = null
+}
+
+/**
+ * 处理查看日程详情
+ * 打开详情弹窗
+ */
+function handleEventDetail() {
+  if (!selectedEvent.value) return
+  eventDetailModalVisible.value = true
+  eventContextMenuVisible.value = false
+}
+
+/**
+ * 关闭日程详情弹窗
+ */
+function closeEventDetailModal() {
+  eventDetailModalVisible.value = false
+  selectedEvent.value = null
 }
 
 const todayEvents = computed(() => {

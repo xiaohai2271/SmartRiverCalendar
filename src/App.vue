@@ -118,6 +118,9 @@ onMounted(() => {
 
   // 监听稍后提醒事件
   window.addEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
+  
+  // 添加全局右键菜单禁用
+  document.addEventListener('contextmenu', handleContextMenu)
 })
 
 // 应用关闭时清理定时器
@@ -125,7 +128,23 @@ onUnmounted(() => {
   stopReminderService()
   // 移除事件监听
   window.removeEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
+  // 移除右键菜单监听
+  document.removeEventListener('contextmenu', handleContextMenu)
 })
+
+// 全局右键菜单处理函数
+function handleContextMenu(e: MouseEvent) {
+  // 检查是否为输入框（保留输入框的默认右键菜单）
+  const target = e.target as HTMLElement
+  const isInput = target.tagName === 'INPUT' || 
+                  target.tagName === 'TEXTAREA' || 
+                  target.isContentEditable
+  
+  // 如果不是输入框，阻止默认右键菜单
+  if (!isInput) {
+    e.preventDefault()
+  }
+}
 
 // 应用主题到 :root
 function applyTheme() {

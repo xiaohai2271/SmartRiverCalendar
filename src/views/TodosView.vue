@@ -33,6 +33,7 @@
           :key="todo.id"
           class="todo-item fluent-card"
           :class="{ completed: todo.completed }"
+          @contextmenu.prevent="handleContextMenu($event, todo)"
         >
           <label class="checkbox-wrapper">
             <input
@@ -64,7 +65,7 @@
             </svg>
           </button>
           
-          <button class="delete-btn" @click="todoStore.deleteTodo(todo.id)" title="删除">
+          <button class="delete-btn" @click="handleDeleteClick($event, todo)" title="删除">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M4.5 3V1.5C4.5 1.22 4.72 1 5 1H11C11.28 1 11.5 1.22 11.5 1.5V3M2.5 4H13.5M12.5 4V14C12.5 14.28 12.28 14.5 12 14.5H4C3.72 14.5 3.5 14.28 3.5 14V4M6.5 7V11.5M9.5 7V11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
@@ -159,6 +160,29 @@
       </div>
     </Transition>
   </div>
+  <!-- 右键菜单 -->
+  <ContextMenu
+    v-model:visible="contextMenuVisible"
+    :position="contextMenuPosition"
+    :items="todoMenuItems"
+  />
+
+  <!-- 删除确认气泡 -->
+  <ConfirmPopover
+    v-model:visible="confirmPopoverVisible"
+    title="确定要删除这个待办吗？"
+    confirmText="删除"
+    cancelText="取消"
+    :target="deleteTargetElement"
+    @confirm="confirmDelete"
+  />
+
+  <!-- 待办详情弹窗 -->
+  <TodoDetailModal
+    :visible="detailModalVisible"
+    :todo="selectedTodo"
+    @close="closeDetailModal"
+  />
 </template>
 
 <script setup lang="ts">
@@ -166,6 +190,10 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useTodoStore } from '../stores/todo'
 import { formatDate } from '../utils/date'
 import type { Todo } from '../types'
+import ContextMenu from '../components/common/ContextMenu.vue'
+import ConfirmPopover from '../components/common/ConfirmPopover.vue'
+import TodoDetailModal from '../components/common/TodoDetailModal.vue'
+import type { MenuItem } from '../components/common/ContextMenu.vue'
 
 const todoStore = useTodoStore()
 const titleInput = ref<HTMLInputElement | null>(null)
@@ -178,6 +206,14 @@ const filter = ref<'all' | 'pending' | 'completed'>('all')
 const showModal = ref(false)
 const isEditing = ref(false)
 const editingTodoId = ref<string | null>(null)
+
+// 右键菜单状态管理
+const contextMenuVisible = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const selectedTodo = ref<Todo | null>(null)
+const confirmPopoverVisible = ref(false)
+const detailModalVisible = ref(false)
+const deleteTargetElement = ref<HTMLElement | null>(null)
 
 const formData = ref({
   title: '',
@@ -297,6 +333,76 @@ function isOverdue(timestamp: number): boolean {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return timestamp < today.getTime()
+}
+
+// 右键菜单配置
+const todoMenuItems = computed<MenuItem[]>(() => [
+  { label: '编辑', icon: '✏️', action: handleEdit },
+  { label: '删除', icon: '🗑️', action: handleDelete },
+  { label: selectedTodo.value?.completed ? '标记未完成' : '标记完成', icon: '✅', action: handleToggle },
+  { label: '详情', icon: '📋', action: handleDetail }
+])
+
+// 处理右键菜单显示
+function handleContextMenu(event: MouseEvent, todo: Todo) {
+  event.preventDefault()
+  selectedTodo.value = todo
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  contextMenuVisible.value = true
+}
+
+// 处理编辑
+function handleEdit() {
+  if (selectedTodo.value) {
+    openEditModal(selectedTodo.value)
+  }
+  contextMenuVisible.value = false
+}
+
+// 处理删除 - 显示确认气泡
+function handleDelete(event?: MouseEvent) {
+  if (event) {
+    // 如果是通过按钮点击删除，记录目标元素用于定位
+    deleteTargetElement.value = event.target as HTMLElement
+  }
+  contextMenuVisible.value = false
+  confirmPopoverVisible.value = true
+}
+
+// 确认删除
+async function confirmDelete() {
+  if (selectedTodo.value) {
+    await todoStore.deleteTodo(selectedTodo.value.id)
+  }
+  confirmPopoverVisible.value = false
+  selectedTodo.value = null
+}
+
+// 处理切换完成状态
+async function handleToggle() {
+  if (selectedTodo.value) {
+    await todoStore.toggleTodo(selectedTodo.value.id)
+  }
+  contextMenuVisible.value = false
+}
+
+// 处理删除按钮点击（用于现有删除按钮）
+function handleDeleteClick(event: MouseEvent, todo: Todo) {
+  selectedTodo.value = todo
+  deleteTargetElement.value = event.currentTarget as HTMLElement
+  confirmPopoverVisible.value = true
+}
+
+// 处理显示详情
+function handleDetail() {
+  detailModalVisible.value = true
+  contextMenuVisible.value = false
+}
+
+// 关闭详情弹窗
+function closeDetailModal() {
+  detailModalVisible.value = false
+  selectedTodo.value = null
 }
 </script>
 

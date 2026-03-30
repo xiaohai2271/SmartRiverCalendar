@@ -73,6 +73,7 @@
               v-for="event in group.events"
               :key="event.id"
               :class="['event-item', 'fluent-card', { 'all-day': event.allDay }]"
+              @contextmenu.prevent="handleContextMenu($event, event)"
             >
               <div class="event-color-bar" :style="{ background: getEventColor(event) }"></div>
               <div class="event-content" @click="openEditModal(event)">
@@ -240,6 +241,29 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 右键菜单 -->
+    <ContextMenu
+      v-model:visible="contextMenuVisible"
+      :position="contextMenuPosition"
+      :items="eventMenuItems"
+    />
+
+    <!-- 删除确认气泡 -->
+    <ConfirmPopover
+      v-model:visible="confirmPopoverVisible"
+      title="确定要删除这个日程吗？"
+      confirm-text="删除"
+      cancel-text="取消"
+      @confirm="confirmDeleteEvent"
+    />
+
+    <!-- 日程详情弹窗 -->
+    <EventDetailModal
+      :visible="detailModalVisible"
+      :event="selectedEvent"
+      @close="closeDetailModal"
+    />
   </div>
 </template>
 
@@ -249,6 +273,10 @@ import { useRoute } from 'vue-router'
 import { useCalendarStore } from '../stores/calendar'
 import { formatDate, formatTime } from '../utils/date'
 import type { CalendarEvent } from '../types'
+import ContextMenu from '../components/common/ContextMenu.vue'
+import ConfirmPopover from '../components/common/ConfirmPopover.vue'
+import EventDetailModal from '../components/common/EventDetailModal.vue'
+import type { MenuItem } from '../components/common/ContextMenu.vue'
 
 const route = useRoute()
 const calendarStore = useCalendarStore()
@@ -263,6 +291,13 @@ const selectedCalendars = ref<string[]>([])
 const showModal = ref(false)
 const editingEventId = ref<string | null>(null)
 const titleInput = ref<HTMLInputElement | null>(null)
+
+// 右键菜单状态
+const contextMenuVisible = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const selectedEvent = ref<CalendarEvent | null>(null)
+const confirmPopoverVisible = ref(false)
+const detailModalVisible = ref(false)
 
 const formData = ref({
   title: '',
@@ -467,6 +502,75 @@ function handleSubmit() {
 function handleDeleteEvent(id: string) {
   calendarStore.deleteEvent(id)
   closeModal()
+}
+
+// ==================== 右键菜单功能 ====================
+
+// 日程菜单项配置（注意：没有"完成"选项，日程无此状态）
+const eventMenuItems = computed((): MenuItem[] => [
+  { label: '编辑', icon: '✏️', action: handleMenuEdit },
+  { label: '删除', icon: '🗑️', action: handleMenuDelete },
+  { label: '详情', icon: '📋', action: handleMenuDetail }
+])
+
+// 处理右键菜单事件
+function handleContextMenu(event: MouseEvent, eventItem: CalendarEvent) {
+  // 阻止默认右键菜单
+  event.preventDefault()
+  // 保存选中的日程
+  selectedEvent.value = eventItem
+  // 设置菜单位置
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  // 显示右键菜单
+  contextMenuVisible.value = true
+}
+
+// 处理编辑菜单项
+function handleMenuEdit() {
+  if (selectedEvent.value) {
+    openEditModal(selectedEvent.value)
+  }
+  closeContextMenu()
+}
+
+// 处理删除菜单项 - 显示气泡确认
+function handleMenuDelete() {
+  if (selectedEvent.value) {
+    confirmPopoverVisible.value = true
+  }
+  closeContextMenu()
+}
+
+// 处理详情菜单项
+function handleMenuDetail() {
+  if (selectedEvent.value) {
+    detailModalVisible.value = true
+  }
+  closeContextMenu()
+}
+
+// 关闭右键菜单
+function closeContextMenu() {
+  contextMenuVisible.value = false
+}
+
+// 确认删除事件
+function confirmDeleteEvent() {
+  if (selectedEvent.value) {
+    calendarStore.deleteEvent(selectedEvent.value.id)
+    // 如果编辑弹窗是打开的，也关闭它
+    if (showModal.value) {
+      closeModal()
+    }
+  }
+  confirmPopoverVisible.value = false
+  selectedEvent.value = null
+}
+
+// 关闭详情弹窗
+function closeDetailModal() {
+  detailModalVisible.value = false
+  selectedEvent.value = null
 }
 </script>
 
