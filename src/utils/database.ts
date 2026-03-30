@@ -96,11 +96,51 @@ export async function initDatabase(): Promise<Database> {
       }
     }
 
+    // 执行数据库迁移
+    await runMigrations(db)
+
     console.log('Database initialized successfully')
     return db
   } catch (error) {
     console.error('Failed to initialize database:', error)
     throw error
+  }
+}
+
+/**
+ * 检查表中是否存在指定列
+ */
+async function columnExists(database: Database, table: string, column: string): Promise<boolean> {
+  const rows = await database.select<{ name: string }[]>(`PRAGMA table_info(${table})`)
+  return rows.some(row => row.name === column)
+}
+
+/**
+ * 执行数据库迁移
+ * 用于处理旧版本数据库缺少列的问题
+ */
+async function runMigrations(database: Database): Promise<void> {
+  try {
+    // 迁移 1: 检查 events 表是否有 external_id 列
+    const eventsHasExternalId = await columnExists(database, 'events', 'external_id')
+    if (!eventsHasExternalId) {
+      console.log('[Database Migration] 添加 events.external_id 列...')
+      await database.execute('ALTER TABLE events ADD COLUMN external_id TEXT')
+      console.log('[Database Migration] events.external_id 列添加成功')
+    }
+
+    // 迁移 2: 检查 events 表是否有 location 列（额外检查）
+    const eventsHasLocation = await columnExists(database, 'events', 'location')
+    if (!eventsHasLocation) {
+      console.log('[Database Migration] 添加 events.location 列...')
+      await database.execute('ALTER TABLE events ADD COLUMN location TEXT')
+      console.log('[Database Migration] events.location 列添加成功')
+    }
+
+    console.log('[Database Migration] 迁移完成')
+  } catch (error) {
+    console.error('[Database Migration] 迁移失败:', error)
+    // 迁移失败不应阻止应用启动，仅记录错误
   }
 }
 
