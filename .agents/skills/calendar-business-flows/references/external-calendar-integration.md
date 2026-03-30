@@ -523,3 +523,119 @@ Rust: crypto::decrypt_password(ciphertext)
 | iCal 解析 | ✅ |
 | 全天事件处理 | ✅ |
 | 时区处理 | ✅ |
+
+---
+
+## 10. iCal 时间解析与时区处理
+
+### 10.1 iCal 时间格式规范 (RFC 5545)
+
+iCal 格式定义了三种日期时间格式：
+
+| 格式 | 示例 | 说明 |
+|------|------|------|
+| UTC 时间 | `20240320T090000Z` | 以 Z 结尾，表示 UTC 时间 |
+| 本地/浮动时间 | `20240320T090000` | 不带 Z，表示用户本地时区的时间 |
+| 日期（全天事件） | `20240320` | 仅日期，无时间 |
+
+### 10.2 时区处理逻辑
+
+```
+parse_ical_datetime(datetime, all_day)
+    │
+    ├─► all_day = true
+    │     │
+    │     └─► 解析为 UTC 日期的 00:00:00
+    │         例如: 20240320 → 2024-03-20 00:00:00 UTC
+    │
+    └─► all_day = false
+          │
+          ├─► datetime 以 'Z' 结尾
+          │     │
+          │     └─► 解析为 UTC 时间
+          │         例如: 20240320T090000Z → 2024-03-20 09:00:00 UTC
+          │
+          └─► datetime 不带 'Z'
+                │
+                └─► 解析为本地时区时间，转换为 UTC 时间戳
+                    例如（北京时间 UTC+8）:
+                    20240320T090000 → 本地 09:00 = UTC 01:00
+```
+
+### 10.3 关键代码位置
+
+时间解析的核心实现在 `src-tauri/src/caldav.rs` 的 `parse_ical_datetime` 函数：
+
+```rust
+fn parse_ical_datetime(&self, datetime: &str, all_day: bool) -> Result<i64, String> {
+    if all_day {
+        // 全天事件：按 UTC 日期处理
+        let date = chrono::NaiveDate::parse_from_str(datetime, "%Y%m%d")?;
+        Ok(date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp())
+    } else if datetime.ends_with('Z') {
+        // UTC 时间：直接转换
+        let naive = chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%SZ")?;
+        Ok(naive.and_utc().timestamp())
+    } else {
+        // 本地时间：转换为本地时区后提取 UTC 时间戳
+        let naive = chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%S")?;
+        let local = naive.and_local_timezone(chrono::Local).single()?;
+        Ok(local.timestamp())
+    }
+}
+```
+
+### 10.4 时区问题修复记录
+
+#### 问题描述
+
+从 CalDAV 账户（如飞书）获取的日程事件时间对不上，存在时区偏差。
+
+#### 根本原因
+
+原代码将不带 `Z` 后缀的 iCal 时间错误地当作 UTC 时间处理：
+
+```rust
+// 错误的原代码
+let res = chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%S")?;
+Ok(res.and_utc().timestamp())  // 强制当作 UTC，导致时区错误！
+```
+
+例如，飞书返回的北京时间 `09:00`（实际是 UTC+8）被错误当作 UTC `09:00`，导致 8 小时偏差。
+
+#### 修复方案
+
+按照 iCal 规范，将不带 `Z` 的时间解释为本地时区时间：
+
+```rust
+// 修复后的代码
+let naive = chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%S")?;
+let local_datetime = naive.and_local_timezone(chrono::Local).single()?;
+Ok(local_datetime.timestamp())  // 正确转换为 UTC 时间戳
+```
+
+#### 修复时间
+
+2026-03-30
+
+### 10.5 时间单位约定
+
+系统内各层的时间单位约定：
+
+| 层级 | 时间单位 | 说明 |
+|------|----------|------|
+| Rust 后端 (caldav.rs) | 秒 | Unix 时间戳（秒） |
+| Tauri 命令接口 | 毫秒 | 输入/输出转换为毫秒 |
+| 前端 TypeScript | 毫秒 | `Date.now()` 返回毫秒 |
+| SQLite 数据库 | 毫秒 | 存储 `Date.now()` 值 |
+
+转换示例（commands.rs）：
+
+```rust
+// 获取事件：输入毫秒 → 转秒
+let events = client.fetch_events(&calendar_url, start_time / 1000, end_time / 1000)?;
+
+// 返回事件：秒 → 转毫秒
+start_time: e.start_time * 1000,
+end_time: e.end_time * 1000,
+```

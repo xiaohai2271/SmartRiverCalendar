@@ -245,18 +245,10 @@ pub async fn connect_caldav(
             format!("密码加密失败: {}", e)
         })?;
 
-    // 创建 CalDAV 客户端并验证连接
+    // 创建 CalDAV 客户端并获取日历列表
     let client = caldav::CalDavClient::new(server_url.clone(), username.clone(), password.clone());
 
-    match client.connect().await {
-        Ok(_) => info!("[CalDAV] 连接成功"),
-        Err(e) => {
-            error!("[CalDAV] 连接失败: {}", e);
-            return Err(format!("连接失败: {}", e));
-        }
-    }
-
-    // 获取日历列表
+    // 获取日历列表（list_calendars 内部会自动尝试标准发现和用户路径发现）
     let calendars = match client.list_calendars().await {
         Ok(cals) => {
             info!("[CalDAV] 获取到 {} 个日历", cals.len());
@@ -470,9 +462,6 @@ pub async fn create_external_event(
                 password
             );
 
-            // 连接验证
-            client.connect().await?;
-
             // 为 CalDAV 事件生成全新的 UUID，避免使用前端内部 ID 导致冲突
             let caldav_uid = uuid::Uuid::new_v4().to_string();
             info!("[create_external_event] 生成 CalDAV UID: {}", caldav_uid);
@@ -487,6 +476,7 @@ pub async fn create_external_event(
                 location: event.location,
             };
 
+            // create_event 内部会发送 PUT 请求，不需要先验证服务器连接
             let event_url = client.create_event(&calendar_url, &event_info).await?;
 
             info!("[create_external_event] CalDAV 事件创建成功: {}", event_url);
@@ -529,7 +519,9 @@ pub async fn get_external_events(
     match account_type_lower.as_str() {
         "caldav" => {
             let client = caldav::CalDavClient::new(server_url, username, password);
-            client.connect().await?;
+            // fetch_events 内部会直接使用 calendar_url 发送 REPORT 请求
+            // 不需要先调用 connect() 验证服务器根地址
+            // 因为 calendar_url 已经是完整的日历路径
             let events = client.fetch_events(&calendar_url, start_time / 1000, end_time / 1000).await?;
             
             let output_events = events.into_iter().map(|e| ExternalEventOutput {
@@ -576,7 +568,6 @@ pub async fn update_external_event(
     match account_type_lower.as_str() {
         "caldav" => {
             let client = caldav::CalDavClient::new(server_url, username, password);
-            client.connect().await?;
 
             let event_info = caldav::EventInfo {
                 id: event.id.clone(),
@@ -588,12 +579,13 @@ pub async fn update_external_event(
                 location: event.location,
             };
 
-            let event_url = format!("{}/{}.ics", calendar_url.trim_end_matches('/'), event.id);
-            client.update_event(&event_url, &event_info).await?;
+            // event.id 现在存储的是完整的事件 URL，直接使用
+            // 不需要再拼接 calendar_url
+            client.update_event(&event.id, &event_info).await?;
 
             Ok(ExternalEventResult {
                 success: true,
-                external_id: event_url,
+                external_id: event.id,
                 error: None,
             })
         }
@@ -626,14 +618,14 @@ pub async fn delete_external_event(
     match account_type_lower.as_str() {
         "caldav" => {
             let client = caldav::CalDavClient::new(server_url, username, password);
-            client.connect().await?;
 
-            let event_url = format!("{}/{}.ics", calendar_url.trim_end_matches('/'), event_id);
-            client.delete_event(&event_url).await?;
+            // event_id 现在存储的是完整的事件 URL，直接使用
+            // 不需要再拼接 calendar_url
+            client.delete_event(&event_id).await?;
 
             Ok(ExternalEventResult {
                 success: true,
-                external_id: event_url,
+                external_id: event_id,
                 error: None,
             })
         }

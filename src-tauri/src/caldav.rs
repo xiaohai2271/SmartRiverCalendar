@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use log::{info, error};
+use log::{info, error, warn};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -116,13 +116,14 @@ impl CalDavClient {
     /// 验证服务器是否支持 CalDAV
     ///
     /// 发送 OPTIONS 请求检查服务器的 DAV 支持
+    /// 如果服务器不返回 DAV 头部（如钉钉），尝试直接发送 PROPFIND 请求验证
     pub async fn connect(&self) -> Result<(), String> {
         info!("[CalDAV Client] 尝试连接到: {}", self.server_url);
 
         let auth_header = self.get_auth_header()?;
 
         let mut headers = HeaderMap::new();
-        headers.insert(AUTHORIZATION, auth_header);
+        headers.insert(AUTHORIZATION, auth_header.clone());
 
         info!("[CalDAV Client] 发送 OPTIONS 请求");
 
@@ -149,19 +150,70 @@ impl CalDavClient {
             Some(value) => {
                 let dav_value = value.to_str().unwrap_or("");
                 info!("[CalDAV Client] DAV 头: {}", dav_value);
-                if !dav_value.contains("1") && !dav_value.contains("2") {
+                if !dav_value.contains("1") && !dav_value.contains("2") && !dav_value.contains("calendar-access") {
                     error!("[CalDAV Client] 服务器不支持 DAV 协议");
                     return Err("服务器不支持 DAV 协议".to_string());
                 }
+                info!("[CalDAV Client] 连接验证成功");
+                Ok(())
             }
             None => {
-                error!("[CalDAV Client] 服务器未返回 DAV 头部");
-                return Err("服务器未返回 DAV 头部".to_string());
+                // 某些 CalDAV 服务器（如钉钉）不返回 DAV 头部
+                // 尝试直接发送 PROPFIND 请求验证服务器是否支持 CalDAV
+                info!("[CalDAV Client] 服务器未返回 DAV 头部，尝试 PROPFIND 验证");
+                self.verify_caldav_by_propfind(&auth_header).await
             }
         }
+    }
 
-        info!("[CalDAV Client] 连接验证成功");
-        Ok(())
+    /// 通过 PROPFIND 请求验证服务器是否支持 CalDAV
+    ///
+    /// 用于处理某些不返回 DAV 头部的服务器（如钉钉）
+    async fn verify_caldav_by_propfind(&self, auth_header: &HeaderValue) -> Result<(), String> {
+        let mut headers = HeaderMap::new();
+        headers.insert(AUTHORIZATION, auth_header.clone());
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/xml"));
+        headers.insert("Depth", HeaderValue::from_static("0"));
+
+        let body = r#"<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:">
+    <D:prop>
+        <D:current-user-principal/>
+    </D:prop>
+</D:propfind>"#;
+
+        info!("[CalDAV Client] 发送 PROPFIND 验证请求到 {}", self.server_url);
+
+        let response = self
+            .client
+            .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &self.server_url)
+            .headers(headers)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| {
+                error!("[CalDAV Client] PROPFIND 请求失败: {}", e);
+                format!("验证服务器失败: {}", e)
+            })?;
+
+        let status = response.status();
+        info!("[CalDAV Client] PROPFIND 响应状态: {}", status);
+
+        if status.is_success() {
+            info!("[CalDAV Client] PROPFIND 成功，服务器支持 CalDAV");
+            Ok(())
+        } else if status.as_u16() == 401 {
+            error!("[CalDAV Client] 认证失败");
+            Err("认证失败，请检查用户名和密码".to_string())
+        } else if status.as_u16() == 404 {
+            // 404 可能表示 URL 路径不正确，但服务器本身可达
+            // 尝试检查是否需要特定的路径
+            info!("[CalDAV Client] PROPFIND 返回 404，可能需要特定路径");
+            Err("服务器未返回 DAV 头部，且 PROPFIND 失败。请检查服务器地址是否正确".to_string())
+        } else {
+            error!("[CalDAV Client] PROPFIND 失败: {}", status);
+            Err(format!("验证服务器失败: {}", status))
+        }
     }
 
     /// 发现用户主路径
@@ -482,15 +534,77 @@ impl CalDavClient {
     /// 列出所有可用日历
     ///
     /// 发送 PROPFIND 请求获取日历列表
+    /// 
+    /// 采用渐进式发现策略：
+    /// 1. 标准 CalDAV 发现流程（PROPFIND current-user-principal → calendar-home-set）
+    /// 2. 如果失败，尝试基于用户名的常见路径模式（如 /dav/{username}/primary/）
     pub async fn list_calendars(&self) -> Result<Vec<CalendarInfo>, String> {
         info!("[CalDAV Client] 开始列出日历");
 
+        // 策略 1: 标准 CalDAV 发现流程
+        match self.standard_discovery().await {
+            Ok(calendars) => {
+                info!("[CalDAV Client] 标准发现成功，找到 {} 个日历", calendars.len());
+                return Ok(calendars);
+            }
+            Err(e) => {
+                info!("[CalDAV Client] 标准发现失败: {}, 尝试用户路径发现", e);
+            }
+        }
+
+        // 策略 2: 基于用户名的路径发现
+        self.user_path_discovery().await
+    }
+
+    /// 标准 CalDAV 发现流程
+    async fn standard_discovery(&self) -> Result<Vec<CalendarInfo>, String> {
         let principal_url = self.discover_principal().await?;
         info!("[CalDAV Client] principal_url: {}", principal_url);
 
         let calendar_home = self.get_calendar_home_set(&principal_url).await?;
         info!("[CalDAV Client] calendar_home: {}", calendar_home);
 
+        self.list_calendars_at_path(&calendar_home).await
+    }
+
+    /// 基于用户名的路径发现
+    /// 
+    /// 某些 CalDAV 服务器（如钉钉）不支持标准发现流程，
+    /// 需要直接访问用户特定的日历路径。
+    /// 常见模式：/dav/{username}/primary/
+    async fn user_path_discovery(&self) -> Result<Vec<CalendarInfo>, String> {
+        let base_url = self.server_url.trim_end_matches('/');
+        
+        // 常见的 CalDAV 用户路径模式
+        let path_patterns = vec![
+            format!("/dav/{}/primary/", self.username),           // 钉钉风格
+            format!("/dav/{}/", self.username),                    // 简化风格
+            format!("/calendars/{}/", self.username),              // 某些服务器
+            format!("/{}/calendar/", self.username),               // 备选风格
+        ];
+
+        for path in path_patterns {
+            let test_url = format!("{}{}", base_url, path);
+            info!("[CalDAV Client] 尝试路径: {}", test_url);
+
+            match self.list_calendars_at_path(&test_url).await {
+                Ok(calendars) => {
+                    if !calendars.is_empty() {
+                        info!("[CalDAV Client] 用户路径发现成功，找到 {} 个日历", calendars.len());
+                        return Ok(calendars);
+                    }
+                }
+                Err(e) => {
+                    info!("[CalDAV Client] 路径 {} 失败: {}", test_url, e);
+                }
+            }
+        }
+
+        Err("无法发现日历，请检查服务器地址和用户名是否正确".to_string())
+    }
+
+    /// 在指定路径列出日历
+    async fn list_calendars_at_path(&self, calendar_home: &str) -> Result<Vec<CalendarInfo>, String> {
         let auth_header = self.get_auth_header()?;
 
         let mut headers = HeaderMap::new();
@@ -513,7 +627,7 @@ impl CalDavClient {
 
         let response = self
             .client
-            .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), &calendar_home)
+            .request(reqwest::Method::from_bytes(b"PROPFIND").unwrap(), calendar_home)
             .headers(headers)
             .body(body)
             .send()
@@ -797,8 +911,8 @@ impl CalDavClient {
                 }
             };
 
-            // 解析 iCal 数据
-            match self.parse_ical_event(&ical_data) {
+            // 解析 iCal 数据，使用事件 href 作为 ID
+            match self.parse_ical_event_with_href(&ical_data, &event_ref.href) {
                 Ok(event) => events.push(event),
                 Err(e) => {
                     error!("[CalDAV] 解析 iCal 事件失败: {} (href: {})", e, event_ref.href);
@@ -880,19 +994,36 @@ impl CalDavClient {
         reader.config_mut().trim_text(true);
 
         let mut events = Vec::new();
+        let mut in_response = false;
+        let mut in_href = false;
         let mut in_calendar_data = false;
+        let mut current_href = String::new();
         let mut current_ical = String::new();
 
         loop {
             match reader.read_event() {
                 Ok(Event::Start(ref e)) => {
-                    if e.local_name().as_ref() == b"calendar-data" {
-                        in_calendar_data = true;
-                        current_ical.clear();
+                    match e.local_name().as_ref() {
+                        b"response" => {
+                            in_response = true;
+                            current_href.clear();
+                            current_ical.clear();
+                        }
+                        b"href" => {
+                            in_href = true;
+                        }
+                        b"calendar-data" => {
+                            in_calendar_data = true;
+                            current_ical.clear();
+                        }
+                        _ => {}
                     }
                 }
                 Ok(Event::Text(ref e)) => {
-                    if in_calendar_data {
+                    if in_href {
+                        let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
+                        current_href.push_str(&text);
+                    } else if in_calendar_data {
                         let text = e.unescape().map_err(|e| format!("解析文本失败: {}", e))?;
                         current_ical.push_str(&text);
                     }
@@ -904,19 +1035,35 @@ impl CalDavClient {
                     }
                 }
                 Ok(Event::End(ref e)) => {
-                    if e.local_name().as_ref() == b"calendar-data" {
-                        in_calendar_data = false;
-                        if !current_ical.is_empty() {
-                            match self.parse_ical_event(&current_ical) {
-                                Ok(event) => {
-                                    events.push(event);
-                                }
-                                Err(e) => {
-                                    error!("[CalDAV] 解析 multiget iCal 失败: {}", e);
+                    match e.local_name().as_ref() {
+                        b"href" => {
+                            in_href = false;
+                        }
+                        b"calendar-data" => {
+                            in_calendar_data = false;
+                            if !current_ical.is_empty() && !current_href.is_empty() {
+                                // 将相对 href 转换为完整 URL
+                                let full_href = if current_href.starts_with("http") {
+                                    current_href.clone()
+                                } else {
+                                    format!("{}{}", self.server_url.trim_end_matches('/'), current_href)
+                                };
+                                
+                                match self.parse_ical_event_with_href(&current_ical, &full_href) {
+                                    Ok(event) => {
+                                        events.push(event);
+                                    }
+                                    Err(e) => {
+                                        error!("[CalDAV] 解析 multiget iCal 失败: {} (href: {})", e, full_href);
+                                    }
                                 }
                             }
+                            current_ical.clear();
                         }
-                        current_ical.clear();
+                        b"response" => {
+                            in_response = false;
+                        }
+                        _ => {}
                     }
                 }
                 Ok(Event::Eof) => break,
@@ -1165,7 +1312,11 @@ impl CalDavClient {
     }
 
     /// 解析 iCal 事件数据
-    fn parse_ical_event(&self, ical_data: &str) -> Result<EventInfo, String> {
+    /// 
+    /// # 参数
+    /// - `ical_data`: iCal 格式的事件数据
+    /// - `event_href`: 事件的完整 URL（用于更新/删除操作）
+    fn parse_ical_event_with_href(&self, ical_data: &str, event_href: &str) -> Result<EventInfo, String> {
         let parser = ical::IcalParser::new(ical_data.as_bytes());
         let mut events = Vec::new();
 
@@ -1215,9 +1366,17 @@ impl CalDavClient {
                     }
                 }
 
-                if !id.is_empty() && !title.is_empty() {
+                if !title.is_empty() && (!id.is_empty() || !event_href.is_empty()) {
+                    // 如果有 event_href，使用它作为 id（用于更新/删除）
+                    // 否则使用 UID 作为 id（用于测试和向后兼容）
+                    let final_id = if !event_href.is_empty() {
+                        event_href.to_string()
+                    } else {
+                        id
+                    };
+                    
                     events.push(EventInfo {
-                        id,
+                        id: final_id,
                         title,
                         description,
                         start_time,
@@ -1233,25 +1392,54 @@ impl CalDavClient {
             .ok_or_else(|| "未找到 VEVENT 组件".to_string())
     }
 
+    /// 解析 iCal 事件数据（保留旧方法以兼容测试）
+    fn parse_ical_event(&self, ical_data: &str) -> Result<EventInfo, String> {
+        self.parse_ical_event_with_href(ical_data, "")
+    }
+
     /// 解析 iCal 日期时间
+    ///
+    /// 根据 iCal 规范 (RFC 5545) 处理不同格式的时间：
+    /// - UTC 时间: 以 Z 结尾，如 20240320T090000Z
+    /// - 本地时间/浮动时间: 不带 Z，如 20240320T090000
+    /// - 全天事件: 仅日期，如 20240320
+    ///
+    /// 对于不带 Z 的时间，按照 iCal 规范将其解释为"浮动时间"（floating time），
+    /// 即没有时区信息的时间。在日历应用中，这通常意味着"用户本地时区的时间"。
+    ///
+    /// 注意：当前实现不处理 TZID 参数，对于带时区 ID 的时间（如 TZID=Asia/Shanghai），
+    /// 会按照不带 Z 的方式处理，可能会有时区偏差。
     fn parse_ical_datetime(&self, datetime: &str, all_day: bool) -> Result<i64, String> {
         if all_day {
             // 全天事件格式: YYYYMMDD
+            // 全天事件按 UTC 日期处理，避免时区转换导致日期变化
             let date = chrono::NaiveDate::parse_from_str(datetime, "%Y%m%d")
                 .map_err(|e| format!("解析日期失败: {}", e))?;
-            let datetime = date.and_hms_opt(0, 0, 0)
+            let naive_datetime = date.and_hms_opt(0, 0, 0)
                 .ok_or_else(|| "创建日期时间失败".to_string())?;
-            Ok(datetime.and_utc().timestamp())
+            // 使用 UTC 时区，保证全天事件的日期不因时区转换而变化
+            Ok(naive_datetime.and_utc().timestamp())
         } else {
             // 带时间格式: YYYYMMDDTHHMMSSZ 或 YYYYMMDDTHHMMSS
-            let res = if datetime.ends_with('Z') {
-                chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%SZ")
-                    .map_err(|e| format!("解析日期时间失败(带Z): {} (原始数据: {})", e, datetime))?
+            if datetime.ends_with('Z') {
+                // UTC 时间格式: 以 Z 结尾表示 UTC
+                let naive = chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%SZ")
+                    .map_err(|e| format!("解析日期时间失败(UTC): {} (原始数据: {})", e, datetime))?;
+                // 直接转换为 UTC DateTime 并获取时间戳
+                Ok(naive.and_utc().timestamp())
             } else {
-                chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%S")
-                    .map_err(|e| format!("解析日期时间失败(不带Z): {} (原始数据: {})", e, datetime))?
-            };
-            Ok(res.and_utc().timestamp())
+                // 本地时间/浮动时间格式: 不带 Z
+                // iCal 规范中，不带 Z 的时间是"浮动时间"，应解释为本地时区
+                // 例如：飞书返回的 09:00 是北京时间，不是 UTC 时间
+                let naive = chrono::NaiveDateTime::parse_from_str(datetime, "%Y%m%dT%H%M%S")
+                    .map_err(|e| format!("解析日期时间失败(本地): {} (原始数据: {})", e, datetime))?;
+                // 使用本地时区（Local）解释时间，然后转换为 UTC 时间戳
+                // 这样北京时间 09:00 会正确转换为 UTC 01:00（而非错误的 UTC 09:00）
+                let local_datetime = naive.and_local_timezone(chrono::Local)
+                    .single()
+                    .ok_or_else(|| format!("无法将时间转换为本地时区: {}", datetime))?;
+                Ok(local_datetime.timestamp())
+            }
         }
     }
 
@@ -1330,13 +1518,21 @@ impl CalDavClient {
     }
 
     /// 生成 iCal 事件数据
+    /// 生成 iCal 事件数据
+    ///
+    /// # 参数
+    /// - `event`: 事件信息，id 字段存储的是事件 URL 或 UID
+    ///
+    /// # 注意
+    /// - 如果 event.id 是 URL，会自动提取最后一部分作为 UID
+    /// - 如果 event.id 不是 URL，直接作为 UID 使用
     fn generate_ical_event(&self, event: &EventInfo) -> Result<String, String> {
+        let dtstamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+
         let start_dt = Utc.timestamp_opt(event.start_time, 0).single()
             .ok_or_else(|| "无效的开始时间戳".to_string())?;
         let end_dt = Utc.timestamp_opt(event.end_time, 0).single()
             .ok_or_else(|| "无效的结束时间戳".to_string())?;
-
-        let dtstamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
 
         let (dtstart, dtend) = if event.all_day {
             (
@@ -1350,6 +1546,14 @@ impl CalDavClient {
             )
         };
 
+        // 从 URL 中提取 UID（如果 id 是 URL 格式）
+        // 例如：https://.../primary/eXNOSm9qdVZvdmZZTHQ4TzJ3cCtPdz09 -> eXNOSm9qdVZvdmZZTHQ4TzJ3cCtPdz09
+        let uid = if event.id.starts_with("http") {
+            event.id.rsplit('/').next().unwrap_or(&event.id).to_string()
+        } else {
+            event.id.clone()
+        };
+
         // 注意：iCal 格式要求每行不能有前导空格，使用独立的 push_str 避免 format! 续行引入空格
         let mut ical = String::new();
         ical.push_str("BEGIN:VCALENDAR\r\n");
@@ -1357,7 +1561,7 @@ impl CalDavClient {
         ical.push_str("CALSCALE:GREGORIAN\r\n");
         ical.push_str("PRODID:-//SmartRiverCalendar//CalDAV Client//CN\r\n");
         ical.push_str("BEGIN:VEVENT\r\n");
-        ical.push_str(&format!("UID:{}\r\n", event.id));
+        ical.push_str(&format!("UID:{}\r\n", uid));
         ical.push_str(&format!("DTSTAMP:{}\r\n", dtstamp));
         ical.push_str(&format!("{}\r\n", dtstart));
         ical.push_str(&format!("{}\r\n", dtend));
@@ -1386,29 +1590,136 @@ impl CalDavClient {
     /// 更新事件
     ///
     /// 使用 PUT 请求更新现有事件
+    /// 
+    /// 策略：
+    /// 1. 先 GET 获取原始事件数据
+    /// 2. 在原始数据基础上修改用户指定的字段
+    /// 3. PUT 更新回服务器
+    /// 
+    /// 这样可以保留服务器生成的属性（如 ORGANIZER, ATTENDEE, VALARM 等）
     pub async fn update_event(&self, event_url: &str, event: &EventInfo) -> Result<(), String> {
+        info!("[CalDAV] ========== 更新事件开始 ==========");
+        info!("[CalDAV] 更新事件 URL: {}", event_url);
+
+        // 步骤 1: GET 获取当前事件数据
+        info!("[CalDAV] 步骤1: GET 获取当前事件数据...");
+        let get_response = self
+            .client
+            .get(event_url)
+            .header(AUTHORIZATION, self.get_auth_header()?)
+            .send()
+            .await
+            .map_err(|e| format!("GET 事件失败: {}", e))?;
+        
+        let get_status = get_response.status();
+        if !get_status.is_success() {
+            return Err(format!("获取原始事件失败: {}", get_status));
+        }
+
+        let original_ical = get_response.text().await.map_err(|e| format!("读取 GET 响应失败: {}", e))?;
+        info!("[CalDAV] 原始事件数据 (前 300 字符):");
+        let preview = if original_ical.len() > 300 { &original_ical[..300] } else { &original_ical };
+        for line in preview.replace("\r\n", "\n").lines() {
+            info!("  ORIG> {:?}", line);
+        }
+
+        // 步骤 2: 在原始数据基础上修改
+        let updated_ical = self.update_ical_properties(&original_ical, event)?;
+        
+        info!("[CalDAV] 步骤2: 修改后的 iCal 数据:");
+        for line in updated_ical.replace("\r\n", "\n").lines() {
+            info!("  MOD> {:?}", line);
+        }
+
+        // 步骤 3: PUT 更新
+        info!("[CalDAV] 步骤3: PUT 更新事件...");
         let auth_header = self.get_auth_header()?;
-
-        let ical_data = self.generate_ical_event(event)?;
-
         let mut headers = HeaderMap::new();
         headers.insert(AUTHORIZATION, auth_header);
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("text/calendar; charset=utf-8"));
+        headers.insert("If-Match", HeaderValue::from_static("*"));
 
         let response = self
             .client
             .put(event_url)
             .headers(headers)
-            .body(ical_data)
+            .body(updated_ical.clone())
             .send()
             .await
             .map_err(|e| format!("更新事件失败: {}", e))?;
 
-        if !response.status().is_success() {
-            return Err(format!("更新事件失败: {}", response.status()));
+        let status = response.status();
+        info!("[CalDAV] PUT 响应状态: {}", status);
+
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            error!("[CalDAV] 更新事件失败，响应体: {}", body);
+            return Err(format!("更新事件失败: {} - {}", status, body));
         }
 
+        info!("[CalDAV] ========== 更新事件成功 ==========");
         Ok(())
+    }
+
+    /// 在原始 iCal 数据基础上更新指定属性
+    ///
+    /// 保留原始事件的所有属性（ORGANIZER, ATTENDEE, VALARM 等），
+    /// 只修改用户指定的字段（SUMMARY, DESCRIPTION, DTSTART, DTEND, LOCATION）
+    fn update_ical_properties(&self, original: &str, event: &EventInfo) -> Result<String, String> {
+        let mut lines: Vec<String> = original.lines().map(|s| s.to_string()).collect();
+        
+        // 需要更新的字段
+        let mut update_summary = true;
+        let mut update_description = event.description.is_some();
+        let mut update_dtstart = true;
+        let mut update_dtend = true;
+        let mut update_location = event.location.is_some();
+        
+        // 时间格式转换
+        let start_dt = Utc.timestamp_opt(event.start_time, 0).single()
+            .ok_or_else(|| "无效的开始时间戳".to_string())?;
+        let end_dt = Utc.timestamp_opt(event.end_time, 0).single()
+            .ok_or_else(|| "无效的结束时间戳".to_string())?;
+        
+        let new_dtstart = if event.all_day {
+            format!("DTSTART;VALUE=DATE:{}", start_dt.format("%Y%m%d"))
+        } else {
+            format!("DTSTART:{}", start_dt.format("%Y%m%dT%H%M%SZ"))
+        };
+        let new_dtend = if event.all_day {
+            format!("DTEND;VALUE=DATE:{}", end_dt.format("%Y%m%d"))
+        } else {
+            format!("DTEND:{}", end_dt.format("%Y%m%dT%H%M%SZ"))
+        };
+        
+        // 更新 DTSTAMP 为当前时间
+        let new_dtstamp = format!("DTSTAMP:{}", Utc::now().format("%Y%m%dT%H%M%SZ"));
+
+        // 遍历并更新行
+        for i in 0..lines.len() {
+            let line = &lines[i];
+            
+            if line.starts_with("SUMMARY:") && update_summary {
+                lines[i] = format!("SUMMARY:{}", event.title);
+            } else if line.starts_with("DESCRIPTION:") && update_description {
+                if let Some(ref desc) = event.description {
+                    lines[i] = format!("DESCRIPTION:{}", desc.replace('\n', "\\n"));
+                }
+            } else if line.starts_with("DTSTART") && update_dtstart {
+                lines[i] = new_dtstart.clone();
+            } else if line.starts_with("DTEND") && update_dtend {
+                lines[i] = new_dtend.clone();
+            } else if line.starts_with("LOCATION:") && update_location {
+                if let Some(ref loc) = event.location {
+                    lines[i] = format!("LOCATION:{}", loc);
+                }
+            } else if line.starts_with("DTSTAMP:") {
+                lines[i] = new_dtstamp.clone();
+            }
+        }
+
+        // 重新组合为 iCal 格式
+        Ok(lines.join("\r\n"))
     }
 
     /// 删除事件
@@ -2161,11 +2472,38 @@ END:VCALENDAR"#;
         assert_eq!(result.unwrap(), 1710925200);
 
         // 测试不带时区的时间格式 (不带 Z 后缀)
-        // 按本地时间解析，应该等同于 UTC 格式
+        // 根据 iCal 规范，不带 Z 的时间是"浮动时间"，应解释为本地时区
+        // 例如：在 UTC+8 时区，本地 09:00 = UTC 01:00
         let result = client.parse_ical_datetime("20240320T090000", false);
         assert!(result.is_ok());
-        // 不带 Z 的时间按 UTC 处理
-        assert_eq!(result.unwrap(), 1710925200);
+        let local_timestamp = result.unwrap();
+        
+        // 获取本地时区偏移（秒）
+        // local_minus_utc 返回正值表示本地时间比 UTC 快（如 UTC+8 返回 28800）
+        let local_offset = chrono::Local::now().offset().local_minus_utc();
+        
+        // 本地时间 09:00 对应的 UTC 时间：
+        // UTC 时间 = 本地时间 - 时区偏移
+        // UTC 时间戳 = 本地时间戳（这里 local_timestamp 已经是 UTC 时间戳）
+        // 
+        // 例如 UTC+8：
+        // 本地 09:00 -> UTC 01:00（09:00 - 8小时）
+        // UTC 01:00 时间戳 = 1710892800 + 3600 = 1710896400
+        // 
+        // 验证：UTC 09:00 时间戳 - 本地时间戳 应该等于 时区偏移
+        // 因为：本地 09:00 -> UTC (09-offset/3600)
+        // UTC 时间戳 = 本地时间戳（解析结果）
+        // UTC 09:00 时间戳 = 本地时间戳 + offset
+        // 所以：本地时间戳 = UTC 09:00 时间戳 - offset
+        let utc_0900_timestamp = 1710925200; // UTC 09:00 的时间戳
+        let expected_local_timestamp = utc_0900_timestamp - local_offset as i64;
+        
+        // 允许 1 秒误差
+        assert!(
+            (local_timestamp - expected_local_timestamp).abs() <= 1,
+            "本地时间戳 {} 应该接近 {} (UTC 09:00 时间戳 {} - 时区偏移 {}秒)",
+            local_timestamp, expected_local_timestamp, utc_0900_timestamp, local_offset
+        );
 
         // 测试全天事件日期格式
         // 2024-03-20 00:00:00 UTC
@@ -2173,12 +2511,12 @@ END:VCALENDAR"#;
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1710892800);
 
-        // 测试边界情况：午夜时间
+        // 测试边界情况：午夜时间 (UTC)
         let result = client.parse_ical_datetime("20240320T000000Z", false);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1710892800);
 
-        // 测试边界情况：午夜前一刻
+        // 测试边界情况：午夜前一刻 (UTC)
         // 2024-03-20 23:59:59 UTC = 1710892800 + 86399 = 1710979199
         let result = client.parse_ical_datetime("20240320T235959Z", false);
         assert!(result.is_ok());

@@ -202,6 +202,16 @@ export async function getAllEvents() {
 
 export async function saveEvent(event: any) {
   const database = await getDatabase()
+  
+  // 查询是否已存在该事件（用于保留 createdAt）
+  const existing = await database.select<any[]>(
+    'SELECT created_at FROM events WHERE id = ?',
+    [event.id]
+  )
+  
+  // 如果已存在，保留原有的 createdAt；否则使用当前时间
+  const createdAt = existing.length > 0 ? existing[0].created_at : (event.createdAt ?? Date.now())
+  
   await database.execute(
     `INSERT OR REPLACE INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, repeat_rule, location, external_id, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -218,7 +228,7 @@ export async function saveEvent(event: any) {
       event.repeatRule ? JSON.stringify(event.repeatRule) : null,
       event.location || null,
       event.externalId || null,
-      event.createdAt,
+      createdAt,
       Date.now()
     ]
   )

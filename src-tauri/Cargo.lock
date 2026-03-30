@@ -7297,6 +7297,7 @@ dependencies = [
  "tauri-plugin-sql",
  "tauri-plugin-updater",
  "tokio",
+ "url",
  "uuid",
 ]
 
