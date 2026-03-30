@@ -144,6 +144,9 @@ function handleKeydown(event: KeyboardEvent) {
   }
 }
 
+// 存储之前的 overflow 值，用于正确恢复
+let previousOverflow: string = ''
+
 // 监听键盘事件
 onMounted(() => {
   document.addEventListener('keydown', handleKeydown)
@@ -151,14 +154,22 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  // 组件卸载时，确保恢复 body 的 overflow 样式
+  // 防止因组件销毁导致 overflow: hidden 未被清除
+  if (document.body.style.overflow === 'hidden') {
+    document.body.style.overflow = previousOverflow
+  }
 })
 
 // 监听 visible 变化，阻止/恢复页面滚动
 watch(() => props.visible, (newVal) => {
   if (newVal) {
+    // 保存当前的 overflow 值
+    previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
   } else {
-    document.body.style.overflow = ''
+    // 恢复之前的 overflow 值
+    document.body.style.overflow = previousOverflow
   }
 })
 </script>
