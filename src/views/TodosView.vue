@@ -159,30 +159,31 @@
         </div>
       </div>
     </Transition>
+
+    <!-- 右键菜单（放在容器内部，保持单一根元素） -->
+    <ContextMenu
+      v-model:visible="contextMenuVisible"
+      :position="contextMenuPosition"
+      :items="todoMenuItems"
+    />
+
+    <!-- 删除确认气泡 -->
+    <ConfirmPopover
+      v-model:visible="confirmPopoverVisible"
+      title="确定要删除这个待办吗？"
+      confirmText="删除"
+      cancelText="取消"
+      :target="deleteTargetElement"
+      @confirm="confirmDelete"
+    />
+
+    <!-- 待办详情弹窗 -->
+    <TodoDetailModal
+      :visible="detailModalVisible"
+      :todo="selectedTodo"
+      @close="closeDetailModal"
+    />
   </div>
-  <!-- 右键菜单 -->
-  <ContextMenu
-    v-model:visible="contextMenuVisible"
-    :position="contextMenuPosition"
-    :items="todoMenuItems"
-  />
-
-  <!-- 删除确认气泡 -->
-  <ConfirmPopover
-    v-model:visible="confirmPopoverVisible"
-    title="确定要删除这个待办吗？"
-    confirmText="删除"
-    cancelText="取消"
-    :target="deleteTargetElement"
-    @confirm="confirmDelete"
-  />
-
-  <!-- 待办详情弹窗 -->
-  <TodoDetailModal
-    :visible="detailModalVisible"
-    :todo="selectedTodo"
-    @close="closeDetailModal"
-  />
 </template>
 
 <script setup lang="ts">
