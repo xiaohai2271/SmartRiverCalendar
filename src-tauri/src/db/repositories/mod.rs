@@ -1,0 +1,15 @@
+// 数据库 Repository 模块
+// 实现数据访问层，封装各种实体的 CRUD 操作
+
+pub mod account;
+pub mod calendar;
+pub mod event;
+pub mod sync_state;
+pub mod todo;
+
+// 重新导出 Repository 类型
+pub use account::{Account, AccountRepository, CreateAccountParams, UpdateAccountParams};
+pub use calendar::CalendarRepository;
+pub use event::{CreateEvent, Event, EventRepository, UpdateEvent};
+pub use sync_state::{NewSyncState, SyncState, SyncStateRepository, UpdateSyncState};
+pub use todo::{CreateTodoInput, Todo, TodoRepository, UpdateTodoInput};
