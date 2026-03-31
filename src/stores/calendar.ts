@@ -2,26 +2,27 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
 import {
-  initDatabase,
-  getAllCalendars,
-  saveCalendar,
-  deleteCalendar as dbDeleteCalendar,
-  getAllEvents,
-  saveEvent,
-  deleteEvent as dbDeleteEvent,
-  cleanupDuplicateAccounts
-} from '../utils/database'
-import {
   invokeGetAllAccounts,
   invokeGetExternalCalendars,
-  safeInvoke
+  safeInvoke,
+  invokeGetCalendars,
+  invokeCreateCalendar,
+  invokeUpdateCalendar,
+  invokeDeleteCalendar,
+  invokeGetEvents,
+  invokeCreateEvent,
+  invokeUpdateEvent,
+  invokeDeleteEvent
 } from '../utils/tauri'
+
+// 默认日历 ID（前端生成的临时 ID，用于数据库为空时的默认日历）
+const DEFAULT_CALENDAR_ID = 'default'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // State
   const calendars = ref<Calendar[]>([
     {
-      id: 'default',
+      id: DEFAULT_CALENDAR_ID,
       name: '我的日历',
       color: '#4A90D9',
       type: 'local',
@@ -41,11 +42,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     if (isInitialized.value) return
 
     try {
-      await initDatabase()
-
-      // 清理重复账号
-      await cleanupDuplicateAccounts()
-
       // 从 localStorage 加载默认视图设置
       try {
         const storedSettings = localStorage.getItem('app-settings')
@@ -60,33 +56,30 @@ export const useCalendarStore = defineStore('calendar', () => {
       }
 
       // 加载本地日历
-      const loadedCalendars = await getAllCalendars()
+      const loadedCalendars = await invokeGetCalendars()
       if (loadedCalendars.length > 0) {
-        calendars.value = loadedCalendars.map(c => ({
-          id: c.id,
-          name: c.name,
-          color: c.color,
-          type: c.type,
-          accountId: c.account_id,
-          visible: c.visible === 1,
-          syncEnabled: c.sync_enabled === 1
-        }))
+        calendars.value = loadedCalendars
       } else {
         // 数据库为空，保存默认日历到数据库
-        const now = Date.now()
-        await saveCalendar({
-          ...calendars.value[0],
-          createdAt: now,
-          updatedAt: now
+        const defaultCal = calendars.value[0]
+        const created = await invokeCreateCalendar({
+          name: defaultCal.name,
+          color: defaultCal.color,
+          type: defaultCal.type,
+          visible: defaultCal.visible,
+          syncEnabled: defaultCal.syncEnabled
         })
-        console.log('Default calendar saved to database')
+        if (created) {
+          calendars.value = [created]
+          console.log('Default calendar saved to database:', created.id)
+        }
       }
 
       // 加载外部账号和日历
       await loadExternalCalendars()
 
       // 加载事件
-      const loadedEvents = await getAllEvents()
+      const loadedEvents = await invokeGetEvents()
       events.value = loadedEvents
 
       // 加载外部事件：根据当前视图范围初始化加载
@@ -121,6 +114,7 @@ export const useCalendarStore = defineStore('calendar', () => {
           console.log(`[CalendarStore] Loaded ${externalCalendars.length} calendars for account: ${account.username}`)
 
           for (const cal of externalCalendars) {
+            // 外部日历的 ID 格式: ext_{accountId}_{externalCalId}
             const calendarId = `ext_${account.id}_${cal.id}`
             const existingIndex = calendars.value.findIndex(c => c.id === calendarId)
 
@@ -145,10 +139,13 @@ export const useCalendarStore = defineStore('calendar', () => {
               
               // 持久化到数据库
               try {
-                await saveCalendar({
-                  ...newCal,
-                  createdAt: Date.now(),
-                  updatedAt: Date.now()
+                await invokeCreateCalendar({
+                  name: newCal.name,
+                  color: newCal.color,
+                  type: newCal.type,
+                  accountId: parseInt(account.id),
+                  visible: newCal.visible,
+                  syncEnabled: newCal.syncEnabled
                 })
                 console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库`)
               } catch (dbError) {
@@ -166,14 +163,18 @@ export const useCalendarStore = defineStore('calendar', () => {
                 readOnly: cal.readOnly ?? false,
               }
               
-              // 同步更新数据库中的信息（特别是 readOnly 状态）
-              try {
-                await saveCalendar({
-                  ...calendars.value[existingIndex],
-                  updatedAt: Date.now()
-                })
-              } catch (dbError) {
-                console.error(`更新外部日历 ${cal.name} 到数据库失败:`, dbError)
+              // 同步更新数据库中的信息
+              const calId = parseInt(calendars.value[existingIndex].id)
+              if (!isNaN(calId)) {
+                try {
+                  await invokeUpdateCalendar({
+                    id: calId,
+                    visible: calendars.value[existingIndex].visible,
+                    syncEnabled: calendars.value[existingIndex].syncEnabled
+                  })
+                } catch (dbError) {
+                  console.error(`更新外部日历 ${cal.name} 到数据库失败:`, dbError)
+                }
               }
             }
           }
@@ -190,24 +191,22 @@ export const useCalendarStore = defineStore('calendar', () => {
   // 加载外部事件并与本地数据库进行协调同步
   async function loadExternalEvents(startTime: number, endTime: number) {
     try {
-      // [DIAGNOSTIC] 函数被调用
-      console.log('[DIAGNOSTIC][loadExternalEvents] 开始加载外部事件', {
+      console.log('[loadExternalEvents] 开始加载外部事件', {
         startTime: new Date(startTime).toISOString(),
         endTime: new Date(endTime).toISOString(),
         totalCalendars: calendars.value.length
       })
 
       const externalCalendars = calendars.value.filter(c => c.type !== 'local')
-      console.log('[DIAGNOSTIC][loadExternalEvents] 外部日历数量:', externalCalendars.length)
+      console.log('[loadExternalEvents] 外部日历数量:', externalCalendars.length)
 
       for (const calendar of externalCalendars) {
         if (!calendar.accountId) {
-          console.log('[DIAGNOSTIC][loadExternalEvents] 跳过日历（无 accountId）:', calendar.name)
+          console.log('[loadExternalEvents] 跳过日历（无 accountId）:', calendar.name)
           continue
         }
 
-        // [DIAGNOSTIC] 打印外部日历对象的关键字段
-        console.log('[DIAGNOSTIC][loadExternalEvents] 日历对象:', {
+        console.log('[loadExternalEvents] 日历对象:', {
           id: calendar.id,
           name: calendar.name,
           type: calendar.type,
@@ -230,17 +229,15 @@ export const useCalendarStore = defineStore('calendar', () => {
           startTime: startTime,
           endTime: endTime
         }
-        console.log('[DIAGNOSTIC][loadExternalEvents] safeInvoke 调用前 - 参数:', JSON.stringify(invokeArgs))
+        console.log('[loadExternalEvents] safeInvoke 调用前 - 参数:', JSON.stringify(invokeArgs))
 
-        // [DIAGNOSTIC] 调用 safeInvoke 获取事件
+        // 调用 safeInvoke 获取事件
         const fetchedEvents = await safeInvoke<CalendarEvent[]>('get_external_events', invokeArgs)
 
-        // [DIAGNOSTIC] safeInvoke 调用后
-        console.log('[DIAGNOSTIC][loadExternalEvents] safeInvoke 调用后 - 返回值:', fetchedEvents === null ? 'null' : `获取到 ${fetchedEvents.length} 个事件`)
+        console.log('[loadExternalEvents] safeInvoke 调用后 - 返回值:', fetchedEvents === null ? 'null' : `获取到 ${fetchedEvents.length} 个事件`)
 
         if (fetchedEvents) {
-          // [DIAGNOSTIC] fetchedEvents 的内容和格式
-          console.log('[DIAGNOSTIC][loadExternalEvents] fetchedEvents 详情:', {
+          console.log('[loadExternalEvents] fetchedEvents 详情:', {
             count: fetchedEvents.length,
             sample: fetchedEvents.slice(0, 2).map(e => ({
               id: e.id,
@@ -254,8 +251,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
           console.log(`[loadExternalEvents] 从日历 ${calendar.name} 获取到 ${fetchedEvents.length} 个事件`)
 
-          // [DIAGNOSTIC] calendarId 匹配情况
-          console.log('[DIAGNOSTIC][loadExternalEvents] calendarId 匹配检查:', {
+          console.log('[loadExternalEvents] calendarId 匹配检查:', {
             calendarId: calendar.id,
             matchedEvents: fetchedEvents.filter(e => e.calendarId === calendar.id).length,
             mismatchedEvents: fetchedEvents.filter(e => e.calendarId !== calendar.id).length
@@ -267,49 +263,80 @@ export const useCalendarStore = defineStore('calendar', () => {
             e.startTime >= startTime &&
             e.startTime <= endTime
           )
-          console.log('[DIAGNOSTIC][loadExternalEvents] 本地旧事件数量:', oldEvents.length)
+          console.log('[loadExternalEvents] 本地旧事件数量:', oldEvents.length)
 
           const fetchedIds = new Set(fetchedEvents.map(e => e.id))
 
           // 找出当前范围内，本地有但服务器没有的事件（可能在其他端被删除），清理掉
           for (const old of oldEvents) {
             if (!fetchedIds.has(old.id)) {
-              await dbDeleteEvent(old.id)
+              const oldId = parseInt(old.id)
+              if (!isNaN(oldId)) {
+                await invokeDeleteEvent(oldId)
+              }
             }
           }
 
-          // [DIAGNOSTIC] 事件保存到数据库的状态
-          console.log('[DIAGNOSTIC][loadExternalEvents] 开始保存事件到数据库, 数量:', fetchedEvents.length)
+          console.log('[loadExternalEvents] 开始保存事件到数据库, 数量:', fetchedEvents.length)
 
           // 将服务器传来的最新事件全都覆盖保存到数据库，确保断网可用
           for (const newEv of fetchedEvents) {
-            const evToSave = {
-              ...newEv,
-              createdAt: Date.now(),
-              updatedAt: Date.now()
+            // 检查事件是否存在，决定是创建还是更新
+            const existingEvent = events.value.find(e => e.id === newEv.id)
+            const eventId = parseInt(newEv.id)
+            
+            if (existingEvent && !isNaN(eventId)) {
+              // 更新现有事件
+              await invokeUpdateEvent({
+                id: eventId,
+                title: newEv.title,
+                description: newEv.description,
+                startTime: newEv.startTime,
+                endTime: newEv.endTime,
+                allDay: newEv.allDay,
+                calendarId: parseInt(newEv.calendarId) || 1,
+                color: newEv.color,
+                reminder: newEv.reminder,
+                repeatRule: newEv.repeatRule ? JSON.stringify(newEv.repeatRule) : undefined,
+                location: newEv.location,
+                externalId: newEv.externalId
+              })
+            } else if (!isNaN(eventId)) {
+              // 创建新事件
+              await invokeCreateEvent({
+                title: newEv.title,
+                description: newEv.description,
+                startTime: newEv.startTime,
+                endTime: newEv.endTime,
+                allDay: newEv.allDay,
+                calendarId: parseInt(newEv.calendarId) || 1,
+                color: newEv.color,
+                reminder: newEv.reminder,
+                repeatRule: newEv.repeatRule ? JSON.stringify(newEv.repeatRule) : undefined,
+                location: newEv.location,
+                externalId: newEv.externalId
+              })
             }
-            await saveEvent(evToSave)
           }
 
-          console.log('[DIAGNOSTIC][loadExternalEvents] 事件保存到数据库完成')
+          console.log('[loadExternalEvents] 事件保存到数据库完成')
 
           // 更新前端状态库：剔除原来区间内的事件，将得到的新事件注入
           events.value = events.value.filter(e => !(e.calendarId === calendar.id && e.startTime >= startTime && e.startTime <= endTime))
           events.value.push(...fetchedEvents)
 
-          // [DIAGNOSTIC] 保存后的状态
-          console.log('[DIAGNOSTIC][loadExternalEvents] 保存后事件状态:', {
+          console.log('[loadExternalEvents] 保存后事件状态:', {
             totalEvents: events.value.length,
             calendarEvents: events.value.filter(e => e.calendarId === calendar.id).length
           })
         } else {
-          console.log('[DIAGNOSTIC][loadExternalEvents] fetchedEvents 为 null 或 undefined')
+          console.log('[loadExternalEvents] fetchedEvents 为 null 或 undefined')
         }
       }
 
-      console.log('[DIAGNOSTIC][loadExternalEvents] 加载外部事件完成')
+      console.log('[loadExternalEvents] 加载外部事件完成')
     } catch (error) {
-      console.error('[DIAGNOSTIC][loadExternalEvents] 加载外部事件失败:', error)
+      console.error('[loadExternalEvents] 加载外部事件失败:', error)
     }
   }
 
@@ -352,63 +379,62 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   // Actions
   async function addCalendar(calendar: Omit<Calendar, 'id'>) {
-    const id = `cal_${Date.now()}`
-    const now = Date.now()
-    const newCalendar: Calendar = { ...calendar, id }
-    calendars.value.push(newCalendar)
-
-    // 持久化
-    try {
-      await saveCalendar({
-        ...newCalendar,
-        createdAt: now,
-        updatedAt: now
-      })
-    } catch (error) {
-      console.error('Failed to save calendar:', error)
+    const created = await invokeCreateCalendar({
+      name: calendar.name,
+      color: calendar.color,
+      type: calendar.type || 'local',
+      accountId: calendar.accountId ? parseInt(calendar.accountId) : undefined,
+      visible: calendar.visible ?? true,
+      syncEnabled: calendar.syncEnabled ?? false
+    })
+    
+    if (created) {
+      calendars.value.push(created)
+      console.log('Calendar created:', created.id)
+    } else {
+      console.error('Failed to create calendar')
     }
   }
 
   async function updateCalendar(id: string, updates: Partial<Calendar>) {
     const index = calendars.value.findIndex(c => c.id === id)
     if (index !== -1) {
-      calendars.value[index] = { ...calendars.value[index], ...updates }
-
-      // 持久化
-      try {
-        await saveCalendar({
-          ...calendars.value[index],
-          updatedAt: Date.now()
+      const calId = parseInt(id)
+      if (!isNaN(calId)) {
+        const updated = await invokeUpdateCalendar({
+          id: calId,
+          name: updates.name,
+          color: updates.color,
+          visible: updates.visible,
+          syncEnabled: updates.syncEnabled
         })
-      } catch (error) {
-        console.error('Failed to update calendar:', error)
+        
+        if (updated) {
+          calendars.value[index] = { ...calendars.value[index], ...updates }
+          console.log('Calendar updated:', id)
+        }
+      } else {
+        // 外部日历或临时 ID，仅更新本地状态
+        calendars.value[index] = { ...calendars.value[index], ...updates }
       }
     }
   }
 
   async function deleteCalendar(id: string) {
+    const calId = parseInt(id)
+    if (!isNaN(calId)) {
+      await invokeDeleteCalendar(calId)
+    }
+    
     calendars.value = calendars.value.filter(c => c.id !== id)
     events.value = events.value.filter(e => e.calendarId !== id)
-
-    // 持久化
-    try {
-      await dbDeleteCalendar(id)
-    } catch (error) {
-      console.error('Failed to delete calendar:', error)
-    }
+    console.log('Calendar deleted:', id)
   }
 
   async function addEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) {
-    const now = Date.now()
-    const newEvent: CalendarEvent = {
-      ...event,
-      id: `evt_${now}`,
-      createdAt: now,
-      updatedAt: now
-    }
-
     // 检测目标日历类型
     const targetCalendar = calendars.value.find(c => c.id === event.calendarId)
+    
     if (targetCalendar && targetCalendar.type !== 'local') {
       // 只读日历检查
       if (targetCalendar.readOnly) {
@@ -417,7 +443,6 @@ export const useCalendarStore = defineStore('calendar', () => {
       }
       // 外部日历：调用 Rust 命令
       try {
-        // 传递完整的账号信息和日历 URL
         const result = await safeInvoke<any>('create_external_event', {
           accountId: targetCalendar.accountId || '',
           accountType: targetCalendar.accountType || targetCalendar.type || '',
@@ -425,17 +450,47 @@ export const useCalendarStore = defineStore('calendar', () => {
           username: targetCalendar.username || '',
           encryptedPassword: targetCalendar.encryptedPassword || '',
           calendarUrl: targetCalendar.calendarUrl || '',
-          event: newEvent
+          event: {
+            id: '',
+            title: event.title,
+            description: event.description,
+            startTime: event.startTime,
+            endTime: event.endTime,
+            allDay: event.allDay,
+            location: event.location
+          }
         })
         if (result && result.success) {
-          const finalEvent = { ...newEvent, externalId: result.external_id }
-          events.value.push(finalEvent)
+          // 创建成功后保存到本地数据库
+          const newEvent: CalendarEvent = {
+            ...event,
+            id: result.external_id || `ext_${Date.now()}`,
+            externalId: result.external_id,
+            createdAt: Date.now(),
+            updatedAt: Date.now()
+          }
+          events.value.push(newEvent)
 
-          // 成功后同样将数据落库以便离线查看
-          try {
-            await saveEvent(finalEvent)
-          } catch (dbError) {
-            console.error('保存外部事件到本地失败:', dbError)
+          // 保存到本地数据库以便离线查看
+          const eventId = parseInt(newEvent.id)
+          if (!isNaN(eventId)) {
+            try {
+              await invokeCreateEvent({
+                title: newEvent.title,
+                description: newEvent.description,
+                startTime: newEvent.startTime,
+                endTime: newEvent.endTime,
+                allDay: newEvent.allDay,
+                calendarId: parseInt(newEvent.calendarId) || 1,
+                color: newEvent.color,
+                reminder: newEvent.reminder,
+                repeatRule: newEvent.repeatRule ? JSON.stringify(newEvent.repeatRule) : undefined,
+                location: newEvent.location,
+                externalId: newEvent.externalId
+              })
+            } catch (dbError) {
+              console.error('保存外部事件到本地失败:', dbError)
+            }
           }
         } else {
           console.error('创建外部事件失败：', result?.error || '无法获取结果')
@@ -445,11 +500,25 @@ export const useCalendarStore = defineStore('calendar', () => {
       }
     } else {
       // 本地日历：保存到数据库
-      events.value.push(newEvent)
-      try {
-        await saveEvent(newEvent)
-      } catch (error) {
-        console.error('Failed to save event:', error)
+      const created = await invokeCreateEvent({
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        allDay: event.allDay,
+        calendarId: parseInt(event.calendarId) || 1,
+        color: event.color,
+        reminder: event.reminder,
+        repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
+        location: event.location,
+        externalId: event.externalId
+      })
+      
+      if (created) {
+        events.value.push(created)
+        console.log('Event created:', created.id)
+      } else {
+        console.error('Failed to create event')
       }
     }
   }
@@ -470,7 +539,15 @@ export const useCalendarStore = defineStore('calendar', () => {
             username: calendar.username || '',
             encryptedPassword: calendar.encryptedPassword || '',
             calendarUrl: calendar.calendarUrl || '',
-            event: { ...event, ...updates }
+            event: {
+              id: event.externalId || event.id,
+              title: updates.title ?? event.title,
+              description: updates.description ?? event.description,
+              startTime: updates.startTime ?? event.startTime,
+              endTime: updates.endTime ?? event.endTime,
+              allDay: updates.allDay ?? event.allDay,
+              location: updates.location ?? event.location
+            }
           })
           if (result && result.success) {
             const updatedEvent = {
@@ -480,10 +557,27 @@ export const useCalendarStore = defineStore('calendar', () => {
             }
             events.value[index] = updatedEvent
 
-            try {
-              await saveEvent(updatedEvent)
-            } catch (dbError) {
-              console.error('更新外部事件到本地库失败:', dbError)
+            // 更新本地数据库
+            const eventId = parseInt(updatedEvent.id)
+            if (!isNaN(eventId)) {
+              try {
+                await invokeUpdateEvent({
+                  id: eventId,
+                  title: updatedEvent.title,
+                  description: updatedEvent.description,
+                  startTime: updatedEvent.startTime,
+                  endTime: updatedEvent.endTime,
+                  allDay: updatedEvent.allDay,
+                  calendarId: parseInt(updatedEvent.calendarId) || 1,
+                  color: updatedEvent.color,
+                  reminder: updatedEvent.reminder,
+                  repeatRule: updatedEvent.repeatRule ? JSON.stringify(updatedEvent.repeatRule) : undefined,
+                  location: updatedEvent.location,
+                  externalId: updatedEvent.externalId
+                })
+              } catch (dbError) {
+                console.error('更新外部事件到本地库失败:', dbError)
+              }
             }
           } else {
             console.error('更新外部事件失败：', result?.error)
@@ -493,15 +587,27 @@ export const useCalendarStore = defineStore('calendar', () => {
         }
       } else {
         // 本地日历事件：更新数据库
-        events.value[index] = {
-          ...event,
-          ...updates,
-          updatedAt: Date.now()
-        }
-        try {
-          await saveEvent(events.value[index])
-        } catch (error) {
-          console.error('Failed to update event:', error)
+        const eventId = parseInt(id)
+        if (!isNaN(eventId)) {
+          const updated = await invokeUpdateEvent({
+            id: eventId,
+            title: updates.title ?? event.title,
+            description: updates.description ?? event.description,
+            startTime: updates.startTime ?? event.startTime,
+            endTime: updates.endTime ?? event.endTime,
+            allDay: updates.allDay ?? event.allDay,
+            calendarId: parseInt(updates.calendarId ?? event.calendarId) || 1,
+            color: updates.color ?? event.color,
+            reminder: updates.reminder ?? event.reminder,
+            repeatRule: updates.repeatRule ? JSON.stringify(updates.repeatRule) : (event.repeatRule ? JSON.stringify(event.repeatRule) : undefined),
+            location: updates.location ?? event.location,
+            externalId: updates.externalId ?? event.externalId
+          })
+          
+          if (updated) {
+            events.value[index] = updated
+            console.log('Event updated:', id)
+          }
         }
       }
     }
@@ -523,29 +629,32 @@ export const useCalendarStore = defineStore('calendar', () => {
           username: calendar.username || '',
           encryptedPassword: calendar.encryptedPassword || '',
           calendarUrl: calendar.calendarUrl || '',
-          eventId: id
+          eventId: event.externalId || event.id
         })
         if (result && result.success) {
           events.value = events.value.filter(e => e.id !== id)
-          try {
-            await dbDeleteEvent(id)
-          } catch (dbError) {
-            console.error('从本地库删除外部事件失败:', dbError)
+          const eventId = parseInt(id)
+          if (!isNaN(eventId)) {
+            try {
+              await invokeDeleteEvent(eventId)
+            } catch (dbError) {
+              console.error('从本地库删除外部事件失败:', dbError)
+            }
           }
         } else {
-          console.error('删除外部事件失败:', result?.error)
+          console.error('删除外部事件失败：', result?.error)
         }
       } catch (error) {
         console.error('调用删除外部事件失败:', error)
       }
     } else {
       // 本地日历事件：从数据库删除
-      events.value = events.value.filter(e => e.id !== id)
-      try {
-        await dbDeleteEvent(id)
-      } catch (error) {
-        console.error('Failed to delete event:', error)
+      const eventId = parseInt(id)
+      if (!isNaN(eventId)) {
+        await invokeDeleteEvent(eventId)
       }
+      events.value = events.value.filter(e => e.id !== id)
+      console.log('Event deleted:', id)
     }
   }
 
