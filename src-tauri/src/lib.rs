@@ -11,11 +11,56 @@ pub mod caldav;
 mod sync;
 mod updater;
 
+use db::connection::DatabaseConnection;
+use db::schema::create_tables;
+
+/// 初始化数据库连接
+fn init_database() -> Result<Mutex<DatabaseConnection>, Box<dyn std::error::Error>> {
+    // 获取应用数据目录
+    let app_data_dir = dirs::data_local_dir()
+        .or_else(|| dirs::data_dir())
+        .ok_or("无法确定应用数据目录")?;
+    
+    let db_dir = app_data_dir.join("SmartRiverCalendar");
+    
+    // 创建目录（如果不存在）
+    std::fs::create_dir_all(&db_dir)?;
+    
+    let db_path = db_dir.join("calendar.db");
+    let db_path_str = db_path.to_string_lossy().to_string();
+    
+    log::info!("数据库路径: {}", db_path_str);
+    
+    // 连接数据库
+    let db = DatabaseConnection::connect(&db_path_str)?;
+    
+    // 创建表结构
+    db.execute(|conn| create_tables(conn).map_err(|e| {
+        rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            e.to_string(),
+        )))
+    }))?;
+    
+    log::info!("数据库初始化完成");
+    
+    Ok(Mutex::new(db))
+}
+
 pub fn run() {
     // 设置默认日志级别为 info，这样即使不设 RUST_LOG 环境变量也能看到后端日志
     env_logger::Builder::from_env(
         env_logger::Env::default().default_filter_or("info")
     ).init();
+
+    // 初始化数据库
+    let db = match init_database() {
+        Ok(db) => db,
+        Err(e) => {
+            log::error!("数据库初始化失败: {}", e);
+            std::process::exit(1);
+        }
+    };
 
     let app_state = Mutex::new(commands::AppState::default());
 
@@ -29,7 +74,8 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .manage(app_state);
+        .manage(app_state)
+        .manage(db);
 
     // 仅在调试模式下启用 MCP Bridge 插件
     #[cfg(debug_assertions)]
@@ -179,6 +225,34 @@ pub fn run() {
             commands::get_external_events,
             commands::update_external_event,
             commands::delete_external_event,
+            // 本地日历命令
+            commands::get_calendars,
+            commands::create_calendar,
+            commands::update_calendar,
+            commands::delete_calendar,
+            // 本地事件命令
+            commands::get_events,
+            commands::get_events_by_calendar,
+            commands::get_events_by_time_range,
+            commands::create_event,
+            commands::update_event,
+            commands::delete_event,
+            // 待办事项命令
+            commands::get_todos,
+            commands::get_todos_by_calendar,
+            commands::create_todo,
+            commands::update_todo,
+            commands::delete_todo,
+            // 账号命令（数据库版本）
+            commands::get_all_db_accounts,
+            commands::get_account_by_id,
+            commands::create_account,
+            commands::update_account,
+            commands::delete_db_account,
+            // 同步状态命令
+            commands::get_sync_state,
+            commands::upsert_sync_state,
+            commands::delete_sync_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

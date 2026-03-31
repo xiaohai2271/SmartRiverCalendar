@@ -3,12 +3,13 @@
 
 use crate::db::errors::DatabaseResult;
 use rusqlite::{Connection, Row};
+use serde::{Deserialize, Serialize};
 
 /// 同步状态实体
 ///
 /// 存储外部日历的同步信息，用于增量同步
 /// 主键是复合主键 (account_id, calendar_id)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncState {
     /// 外部账户 ID
     pub account_id: i64,
