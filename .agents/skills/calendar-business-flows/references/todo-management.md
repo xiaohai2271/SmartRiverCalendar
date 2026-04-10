@@ -124,8 +124,10 @@ export const useTodoStore = defineStore('todo', () => {
 ### 1. 创建待办 (Create)
 ```typescript
 async function addTodo(todo: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) {
-  // 获取默认日历 ID
-  const calendarId = todo.calendarId ? parseInt(todo.calendarId) : 1
+  // 获取默认日历 ID：解析 calendarId，若无效则使用 1（默认本地日历）
+  // 注意：TodosView 传入的 calendarId 可能为 'default' 等非数字字符串
+  const parsedId = todo.calendarId ? parseInt(todo.calendarId) : NaN
+  const calendarId = isNaN(parsedId) ? 1 : parsedId
   
   // 调用 Rust 后端创建待办，返回带有自增 ID 的完整对象
   const created = await invokeCreateTodo({
@@ -155,6 +157,7 @@ async function updateTodo(id: string, updates: Partial<Todo>) {
     
     if (!isNaN(todoId)) {
       // 调用 Rust 后端更新待办
+      // 注意：calendarId 解析失败时应传递 undefined 而非 NaN
       const updated = await invokeUpdateTodo({
         id: todoId,
         title: updates.title,
@@ -162,7 +165,10 @@ async function updateTodo(id: string, updates: Partial<Todo>) {
         dueDate: updates.dueDate,
         completed: updates.completed,
         priority: updates.priority,
-        calendarId: updates.calendarId ? parseInt(updates.calendarId) : undefined
+        calendarId: updates.calendarId ? (() => {
+          const parsed = parseInt(updates.calendarId)
+          return isNaN(parsed) ? undefined : parsed
+        })() : undefined
       })
       
       if (updated) {

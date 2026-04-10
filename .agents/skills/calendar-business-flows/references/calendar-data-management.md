@@ -63,7 +63,9 @@
 - **Rust 层**：`id: i64`
 - **前端层**：`id: string`（通过 `String(raw.id)` 转换）
 
-> ⚠️ **注意**：前端保持 `id: string` 类型是为了兼容外部日历（如 CalDAV）的字符串 ID 格式。
+> ⚠️ **注意**：
+> - 前端保持 `id: string` 类型是为了兼容外部日历（如 CalDAV）的字符串 ID 格式
+> - `calendarId` 参数在传递前需要确保为有效数字，`parseInt` 失败时应回退到默认值 1
 
 ### 日历 (Calendar)
 ```typescript
