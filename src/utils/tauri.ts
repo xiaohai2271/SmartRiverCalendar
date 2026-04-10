@@ -191,7 +191,7 @@ export async function invokeCreateCalendar(params: {
   const result = await safeInvoke<RawCalendar>('create_calendar', {
     name: params.name,
     color: params.color,
-    calendarType: params.type, // 注意：Rust 命令参数名为 calendar_type
+    calendarType: params.type,
     accountId: params.accountId ?? null,
     visible: params.visible ?? true,
     syncEnabled: params.syncEnabled ?? false,

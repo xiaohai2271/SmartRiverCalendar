@@ -29,8 +29,9 @@ export const useTodoStore = defineStore('todo', () => {
   const completedTodos = computed(() => todos.value.filter(t => t.completed))
 
   async function addTodo(todo: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) {
-    // 获取默认日历 ID
-    const calendarId = todo.calendarId ? parseInt(todo.calendarId) : 1
+    // 获取默认日历 ID：解析 calendarId，若无效则使用 1（默认本地日历）
+    const parsedId = todo.calendarId ? parseInt(todo.calendarId) : NaN
+    const calendarId = isNaN(parsedId) ? 1 : parsedId
     
     const created = await invokeCreateTodo({
       title: todo.title,
@@ -62,7 +63,10 @@ export const useTodoStore = defineStore('todo', () => {
           dueDate: updates.dueDate,
           completed: updates.completed,
           priority: updates.priority,
-          calendarId: updates.calendarId ? parseInt(updates.calendarId) : undefined
+          calendarId: updates.calendarId ? (() => {
+            const parsed = parseInt(updates.calendarId)
+            return isNaN(parsed) ? undefined : parsed
+          })() : undefined
         })
         
         if (updated) {
