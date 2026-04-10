@@ -94,6 +94,9 @@ export interface AppSettings {
   reminderMode: 'standard' | 'strong' | 'silent' // 提醒强度
   customReminderTitle: string // 自定义通知标题模板
   customReminderBody: string // 自定义通知正文模板
+  // 系统集成设置
+  clockHookEnabled: boolean // 是否启用系统时钟点击唤醒
+  clockHookBlockPopup: boolean // 是否阻止系统日历弹窗
 }
 
 // View types

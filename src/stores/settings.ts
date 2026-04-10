@@ -22,7 +22,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   allDayReminderHour: 9, // 全天事件提醒小时（默认9点）
   reminderMode: 'standard', // 提醒强度：标准/强提醒/静默
   customReminderTitle: '', // 自定义通知标题模板
-  customReminderBody: '' // 自定义通知正文模板
+  customReminderBody: '', // 自定义通知正文模板
+  // 系统集成设置
+  clockHookEnabled: false, // 默认关闭，需用户主动开启
+  clockHookBlockPopup: false, // 默认不阻止系统弹窗
 }
 
 export const useSettingsStore = defineStore('settings', () => {
