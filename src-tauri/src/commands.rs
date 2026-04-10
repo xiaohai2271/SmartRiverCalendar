@@ -691,6 +691,7 @@ pub struct ExternalEventResult {
     pub error: Option<String>,
 }
 
+<<<<<<< HEAD
 // ============================================================
 // 本地日历命令
 // ============================================================
@@ -1171,6 +1172,96 @@ pub fn delete_sync_state(
     })?;
     let conn = db.get_connection();
     SyncStateRepository::delete(&conn, account_id, calendar_id).map_err(|e| e.into())
+=======
+// ==================== 时钟点击 Hook 相关命令 ====================
+
+#[cfg(target_os = "windows")]
+use crate::clock_hook::ClockHookManager;
+
+/// 启用时钟点击检测
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn enable_clock_hook(
+    app: tauri::AppHandle,
+    state: State<'_, Mutex<ClockHookManager>>,
+) -> Result<String, String> {
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
+    manager.enable(app)
+}
+
+/// 禁用时钟点击检测
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn disable_clock_hook(
+    state: State<'_, Mutex<ClockHookManager>>,
+) -> Result<(), String> {
+    let mut manager = state.lock().map_err(|e| e.to_string())?;
+    manager.disable()
+}
+
+/// 设置是否阻止系统日历弹窗
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_clock_hook_block_popup(
+    block: bool,
+    state: State<'_, Mutex<ClockHookManager>>,
+) -> Result<(), String> {
+    let manager = state.lock().map_err(|e| e.to_string())?;
+    manager.set_block_system_popup(block);
+    Ok(())
+}
+
+/// 获取时钟点击检测状态
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn get_clock_hook_status(
+    state: State<'_, Mutex<ClockHookManager>>,
+) -> String {
+    let manager = state.lock().unwrap();
+    manager.get_detection_method()
+}
+
+/// 检查时钟点击检测功能是否可用
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn is_clock_hook_available(
+    state: State<'_, Mutex<ClockHookManager>>,
+) -> bool {
+    let manager = state.lock().unwrap();
+    manager.is_available()
+}
+
+// 非 Windows 平台的 stub 函数
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn enable_clock_hook() -> Result<String, String> {
+    Err("此功能仅在 Windows 平台可用".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn disable_clock_hook() -> Result<(), String> {
+    Err("此功能仅在 Windows 平台可用".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn set_clock_hook_block_popup(_block: bool) -> Result<(), String> {
+    Err("此功能仅在 Windows 平台可用".to_string())
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn get_clock_hook_status() -> String {
+    "不支持".to_string()
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn is_clock_hook_available() -> bool {
+    false
+>>>>>>> 77bc4fe (feat(clock-hook): 集成时钟点击检测到 Tauri 命令和托盘)
 }
 
 #[cfg(test)]
