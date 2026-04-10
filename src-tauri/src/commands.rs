@@ -691,7 +691,6 @@ pub struct ExternalEventResult {
     pub error: Option<String>,
 }
 
-<<<<<<< HEAD
 // ============================================================
 // 本地日历命令
 // ============================================================
@@ -1172,7 +1171,8 @@ pub fn delete_sync_state(
     })?;
     let conn = db.get_connection();
     SyncStateRepository::delete(&conn, account_id, calendar_id).map_err(|e| e.into())
-=======
+}
+
 // ==================== 时钟点击 Hook 相关命令 ====================
 
 #[cfg(target_os = "windows")]
@@ -1261,7 +1261,6 @@ pub fn get_clock_hook_status() -> String {
 #[tauri::command]
 pub fn is_clock_hook_available() -> bool {
     false
->>>>>>> 77bc4fe (feat(clock-hook): 集成时钟点击检测到 Tauri 命令和托盘)
 }
 
 #[cfg(test)]

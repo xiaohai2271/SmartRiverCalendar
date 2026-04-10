@@ -5,13 +5,15 @@ use tauri::Manager;
 
 mod commands;
 mod crypto;
-pub mod db;
 pub mod ews;
 pub mod caldav;
+pub mod db;
 mod sync;
 mod updater;
 
-<<<<<<< HEAD
+#[cfg(target_os = "windows")]
+mod clock_hook;
+
 use db::connection::DatabaseConnection;
 use db::schema::create_tables;
 
@@ -47,10 +49,6 @@ fn init_database() -> Result<Mutex<DatabaseConnection>, Box<dyn std::error::Erro
     
     Ok(Mutex::new(db))
 }
-=======
-#[cfg(target_os = "windows")]
-mod clock_hook;
->>>>>>> 77bc4fe (feat(clock-hook): 集成时钟点击检测到 Tauri 命令和托盘)
 
 pub fn run() {
     // 设置默认日志级别为 info，这样即使不设 RUST_LOG 环境变量也能看到后端日志
@@ -260,43 +258,12 @@ pub fn run() {
             commands::get_external_events,
             commands::update_external_event,
             commands::delete_external_event,
-<<<<<<< HEAD
-            // 本地日历命令
-            commands::get_calendars,
-            commands::create_calendar,
-            commands::update_calendar,
-            commands::delete_calendar,
-            // 本地事件命令
-            commands::get_events,
-            commands::get_events_by_calendar,
-            commands::get_events_by_time_range,
-            commands::create_event,
-            commands::update_event,
-            commands::delete_event,
-            // 待办事项命令
-            commands::get_todos,
-            commands::get_todos_by_calendar,
-            commands::create_todo,
-            commands::update_todo,
-            commands::delete_todo,
-            // 账号命令（数据库版本）
-            commands::get_all_db_accounts,
-            commands::get_account_by_id,
-            commands::create_account,
-            commands::update_account,
-            commands::delete_db_account,
-            // 同步状态命令
-            commands::get_sync_state,
-            commands::upsert_sync_state,
-            commands::delete_sync_state,
-=======
             // 时钟点击检测命令
             commands::enable_clock_hook,
             commands::disable_clock_hook,
             commands::set_clock_hook_block_popup,
             commands::get_clock_hook_status,
             commands::is_clock_hook_available,
->>>>>>> 77bc4fe (feat(clock-hook): 集成时钟点击检测到 Tauri 命令和托盘)
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
