@@ -58,13 +58,20 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **迁移范围**: 日历、事件、待办、账号、同步状态
 - **详细文档**: 参考 [references/data-layer-migration.md](references/data-layer-migration.md)
 
+### 10. 系统时钟点击唤醒
+- **功能**: 点击 Windows 系统时钟区域唤出/隐藏主窗口，支持多屏、阻止系统弹窗
+- **涉及组件**: WH_MOUSE_LL 钩子、UI Automation、时钟区域缓存更新器
+- **详细文档**: 参考 [references/clock-hook-integration.md](references/clock-hook-integration.md)
+
 ## 快速参考
 
 ### 关键文件路径
 - 更新配置: `src-tauri/tauri.conf.json` (plugins.updater)
 - 更新逻辑: `src-tauri/src/updater.rs`
 - 托盘逻辑: `src-tauri/src/lib.rs`
+- 时钟点击模块: `src-tauri/src/clock_hook/`
 - 前端状态: `src/stores/`
+- 前端事件监听: `src/composables/useWindowToggle.ts`
 - EWS 客户端: `src-tauri/src/ews.rs`
 - CalDAV 客户端: `src-tauri/src/caldav.rs`
 - 同步引擎: `src-tauri/src/sync.rs`
