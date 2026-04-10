@@ -164,10 +164,12 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useTodoStore } from '../stores/todo'
+import { useCalendarStore } from '../stores/calendar'
 import { formatDate } from '../utils/date'
 import type { Todo } from '../types'
 
 const todoStore = useTodoStore()
+const calendarStore = useCalendarStore()
 const titleInput = ref<HTMLInputElement | null>(null)
 
 onMounted(() => {
@@ -179,10 +181,17 @@ const showModal = ref(false)
 const isEditing = ref(false)
 const editingTodoId = ref<string | null>(null)
 
+// 获取第一个可写日历的 ID
+function getFirstWritableCalendarId(): string {
+  const writableCal = calendarStore.calendars.find(cal => !cal.readOnly)
+  return writableCal?.id || 'default'
+}
+
 const formData = ref({
   title: '',
   priority: 'medium' as 'low' | 'medium' | 'high',
-  dueDate: ''
+  dueDate: '',
+  calendarId: getFirstWritableCalendarId()
 })
 
 const priorityLabels = {
@@ -226,7 +235,7 @@ watch(showModal, (show) => {
 function openAddModal() {
   isEditing.value = false
   editingTodoId.value = null
-  formData.value = { title: '', priority: 'medium', dueDate: '' }
+  formData.value = { title: '', priority: 'medium', dueDate: '', calendarId: getFirstWritableCalendarId() }
   showModal.value = true
 }
 
@@ -236,7 +245,8 @@ function openEditModal(todo: Todo) {
   formData.value = {
     title: todo.title,
     priority: todo.priority,
-    dueDate: todo.dueDate ? new Date(todo.dueDate).toISOString().split('T')[0] : ''
+    dueDate: todo.dueDate ? new Date(todo.dueDate).toISOString().split('T')[0] : '',
+    calendarId: todo.calendarId || getFirstWritableCalendarId()
   }
   showModal.value = true
 }
@@ -245,7 +255,7 @@ function closeModal() {
   showModal.value = false
   isEditing.value = false
   editingTodoId.value = null
-  formData.value = { title: '', priority: 'medium', dueDate: '' }
+  formData.value = { title: '', priority: 'medium', dueDate: '', calendarId: getFirstWritableCalendarId() }
 }
 
 async function handleSubmit() {
@@ -266,7 +276,7 @@ async function handleSubmit() {
       priority: formData.value.priority,
       dueDate: formData.value.dueDate ? new Date(formData.value.dueDate).getTime() : undefined,
       completed: false,
-      calendarId: 'default'
+      calendarId: formData.value.calendarId || getFirstWritableCalendarId()
     })
   }
 
