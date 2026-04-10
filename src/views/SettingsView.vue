@@ -175,6 +175,25 @@
       </div>
     </div>
 
+    <!-- 系统集成 -->
+    <div class="settings-section">
+      <h3>系统集成</h3>
+      <div class="setting-item">
+        <label>点击系统时钟唤醒窗口</label>
+        <input type="checkbox" v-model="settings.clockHookEnabled" @change="handleClockHookChange" />
+      </div>
+      <div v-if="settings.clockHookEnabled" class="setting-subsection">
+        <div class="setting-item">
+          <label>阻止系统日历弹窗</label>
+          <input type="checkbox" v-model="settings.clockHookBlockPopup" @change="handleClockHookBlockPopupChange" />
+        </div>
+        <div class="setting-item">
+          <label>当前检测方式</label>
+          <span class="status-value">{{ clockHookDetectionMethod }}</span>
+        </div>
+      </div>
+    </div>
+
     <!-- 日历账户管理 -->
     <div class="settings-section">
       <h3>日历管理</h3>
@@ -296,7 +315,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive, onMounted } from 'vue'
+import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
+import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from '../stores/settings'
 import { useCalendarStore } from '../stores/calendar'
 import {
@@ -315,7 +335,11 @@ import {
   invokeConnectCalDAV,
   invokeSyncCalendar,
   invokeDeleteAccount,
-  invokeGetSyncStatus
+  invokeGetSyncStatus,
+  enableClockHook,
+  disableClockHook,
+  setClockHookBlockPopup,
+  getClockHookStatus,
 } from '../utils/tauri'
 import { saveExternalAccount, getAccountByServerUrl } from '../utils/database'
 
@@ -354,11 +378,29 @@ const syncingIds = ref<string[]>([])
 const showDeleteConfirm = ref(false)
 const deleteTarget = reactive({ id: '', name: '' })
 
+// 时钟点击检测状态
+const clockHookDetectionMethod = ref('未启用')
+
 // 初始化自启动状态
 onMounted(async () => {
   if (isTauri()) {
     const enabled = await getAutostartEnabled()
     settingsStore.updateSettings({ autoStart: enabled })
+
+    // 查询时钟点击检测状态
+    if (settings.value.clockHookEnabled) {
+      clockHookDetectionMethod.value = await getClockHookStatus()
+    }
+
+    // 监听检测方式变化事件
+    const unlistenDetection = await listen<string>('clock-hook-detection-changed', (event) => {
+      if (event.payload) {
+        clockHookDetectionMethod.value = event.payload
+      }
+    })
+    onUnmounted(() => {
+      unlistenDetection.then(fn => fn())
+    })
   }
 })
 
@@ -583,6 +625,36 @@ function addNewMakeupDay() {
 function removeMakeupDay(date: string) {
   removeMakeupDayFn(date)
   makeupDays.value = getAllMakeupDays()
+}
+
+// ==================== 时钟点击检测相关 ====================
+
+// 处理时钟点击检测开关变化
+async function handleClockHookChange() {
+  saveSettings()
+  if (isTauri()) {
+    if (settings.value.clockHookEnabled) {
+      try {
+        const method = await enableClockHook()
+        clockHookDetectionMethod.value = method || '等待中'
+      } catch (e) {
+        // 启用失败，恢复设置
+        settingsStore.updateSettings({ clockHookEnabled: false })
+        clockHookDetectionMethod.value = '未启用'
+      }
+    } else {
+      await disableClockHook()
+      clockHookDetectionMethod.value = '未启用'
+    }
+  }
+}
+
+// 处理阻止系统弹窗开关变化
+async function handleClockHookBlockPopupChange() {
+  saveSettings()
+  if (isTauri()) {
+    await setClockHookBlockPopup(settings.value.clockHookBlockPopup)
+  }
 }
 </script>
 
@@ -1105,5 +1177,17 @@ h2 {
 .copyright {
   font-size: 13px;
   margin-top: 16px !important;
+}
+
+/* 系统集成子设置区域 */
+.setting-subsection {
+  margin-top: 8px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border-color);
+}
+
+.status-value {
+  font-size: 13px;
+  color: var(--text-secondary);
 }
 </style>

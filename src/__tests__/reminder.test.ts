@@ -36,7 +36,9 @@ const mockSettings: AppSettings = {
   allDayReminderHour: 9,
   reminderMode: 'standard',
   customReminderTitle: '',
-  customReminderBody: ''
+  customReminderBody: '',
+  clockHookEnabled: false,
+  clockHookBlockPopup: false
 }
 
 const mockSettingsStore = {

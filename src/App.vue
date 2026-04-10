@@ -68,7 +68,8 @@ import MiniCalendar from './components/calendar/MiniCalendar.vue'
 import ReminderPopup from './components/reminder/ReminderPopup.vue'
 import { checkAndInstallUpdate } from './services/updater'
 import { startReminderService, stopReminderService, onReminderPopup, offReminderPopup, handleSnoozeReminder } from './services/reminder'
-import { isTauri } from './utils/tauri'
+import { isTauri, enableClockHook, setClockHookBlockPopup } from './utils/tauri'
+import { initWindowToggleListener } from './composables/useWindowToggle'
 import type { CalendarEvent, Todo } from './types'
 
 const settingsStore = useSettingsStore()
@@ -118,6 +119,21 @@ onMounted(() => {
 
   // 监听稍后提醒事件
   window.addEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
+
+  // 初始化窗口切换事件监听
+  if (isTauri()) {
+    initWindowToggleListener()
+  }
+
+  // 根据设置决定是否启用时钟 Hook
+  if (isTauri() && settingsStore.settings.clockHookEnabled) {
+    enableClockHook().then(async () => {
+      await setClockHookBlockPopup(settingsStore.settings.clockHookBlockPopup)
+    }).catch((e) => {
+      console.error('时钟点击检测功能启动失败:', e)
+      settingsStore.updateSettings({ clockHookEnabled: false })
+    })
+  }
 })
 
 // 应用关闭时清理定时器
