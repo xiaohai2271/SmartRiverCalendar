@@ -541,3 +541,30 @@ export async function invokeGetSyncStatus(accountId: string) {
 export async function invokeSetSyncInterval(minutes: number) {
   return safeInvoke<void>('set_sync_interval', { minutes })
 }
+
+// ==================== 时钟点击检测相关 ====================
+
+/// 启用时钟点击检测
+export async function enableClockHook(): Promise<string> {
+  return await safeInvoke<string>('enable_clock_hook') ?? ''
+}
+
+/// 禁用时钟点击检测
+export async function disableClockHook(): Promise<void> {
+  await safeInvoke('disable_clock_hook')
+}
+
+/// 设置是否阻止系统日历弹窗
+export async function setClockHookBlockPopup(block: boolean): Promise<void> {
+  await safeInvoke('set_clock_hook_block_popup', { block })
+}
+
+/// 获取时钟点击检测状态（当前检测方式名称）
+export async function getClockHookStatus(): Promise<string> {
+  return await safeInvoke<string>('get_clock_hook_status') ?? '未启用'
+}
+
+/// 检查时钟点击检测功能是否可用
+export async function isClockHookAvailable(): Promise<boolean> {
+  return await safeInvoke<boolean>('is_clock_hook_available') ?? false
+}
