@@ -399,7 +399,7 @@ onMounted(async () => {
       }
     })
     onUnmounted(() => {
-      unlistenDetection.then(fn => fn())
+      unlistenDetection()
     })
   }
 })
