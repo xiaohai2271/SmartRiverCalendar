@@ -208,6 +208,12 @@ const showEventModal = ref(false)
 const isEditingEvent = ref(false)
 const editingEventId = ref<string | null>(null)
 
+// 获取第一个可写日历的 ID
+function getFirstWritableCalendarId(): string {
+  const writableCal = calendarStore.calendars.find(cal => !cal.readOnly)
+  return writableCal?.id || 'default'
+}
+
 const eventFormData = ref({
   title: '',
   allDay: true,
@@ -215,7 +221,7 @@ const eventFormData = ref({
   startTime: '09:00',
   endDate: '',
   endTime: '10:00',
-  calendarId: 'default',
+  calendarId: getFirstWritableCalendarId(),
   description: ''
 })
 
@@ -358,7 +364,7 @@ function openAddEventModal() {
     startTime: '09:00',
     endDate: today,
     endTime: '10:00',
-    calendarId: 'default',
+    calendarId: getFirstWritableCalendarId(),
     description: ''
   }
   showEventModal.value = true
@@ -378,7 +384,7 @@ function openAddEventModalWithDateAndTime(date: Date, startHour: number, endHour
     startTime,
     endDate: dateString,
     endTime,
-    calendarId: 'default',
+    calendarId: getFirstWritableCalendarId(),
     description: ''
   }
   showEventModal.value = true

@@ -7,6 +7,7 @@ import {
   invokeUpdateTodo,
   invokeDeleteTodo
 } from '../utils/tauri'
+import { useCalendarStore } from './calendar'
 
 export const useTodoStore = defineStore('todo', () => {
   const todos = ref<Todo[]>([])
@@ -28,10 +29,36 @@ export const useTodoStore = defineStore('todo', () => {
   const pendingTodos = computed(() => todos.value.filter(t => !t.completed))
   const completedTodos = computed(() => todos.value.filter(t => t.completed))
 
+  /**
+   * 获取有效的日历 ID
+   * 如果传入的 calendarId 无效（无法解析为数字），则从 calendarStore 获取第一个可用日历的 ID
+   */
+  function getValidCalendarId(calendarId: string | undefined): number {
+    if (calendarId) {
+      const parsed = parseInt(calendarId)
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed
+      }
+    }
+    
+    // 从 calendarStore 获取第一个可用日历
+    const calendarStore = useCalendarStore()
+    const firstCalendar = calendarStore.calendars[0]
+    if (firstCalendar) {
+      const parsed = parseInt(firstCalendar.id)
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed
+      }
+    }
+    
+    // 如果仍然无法获取，返回 1（但这可能导致外键约束失败）
+    console.warn('[TodoStore] 无法获取有效的日历 ID，使用默认值 1')
+    return 1
+  }
+
   async function addTodo(todo: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) {
-    // 获取默认日历 ID：解析 calendarId，若无效则使用 1（默认本地日历）
-    const parsedId = todo.calendarId ? parseInt(todo.calendarId) : NaN
-    const calendarId = isNaN(parsedId) ? 1 : parsedId
+    // 获取有效的日历 ID
+    const calendarId = getValidCalendarId(todo.calendarId)
     
     const created = await invokeCreateTodo({
       title: todo.title,

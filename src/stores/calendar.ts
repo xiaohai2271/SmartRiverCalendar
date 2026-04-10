@@ -378,6 +378,32 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   // Actions
+  /**
+   * 获取有效的日历 ID（数字格式）
+   * 如果传入的 calendarId 无效，返回第一个本地日历的 ID
+   */
+  function getValidCalendarId(calendarId: string | undefined): number {
+    if (calendarId) {
+      const parsed = parseInt(calendarId)
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed
+      }
+    }
+    
+    // 获取第一个本地日历
+    const localCalendar = calendars.value.find(c => c.type === 'local')
+    if (localCalendar) {
+      const parsed = parseInt(localCalendar.id)
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed
+      }
+    }
+    
+    // 如果仍然无法获取，返回 1
+    console.warn('[CalendarStore] 无法获取有效的日历 ID，使用默认值 1')
+    return 1
+  }
+
   async function addCalendar(calendar: Omit<Calendar, 'id'>) {
     const created = await invokeCreateCalendar({
       name: calendar.name,
@@ -506,7 +532,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         startTime: event.startTime,
         endTime: event.endTime,
         allDay: event.allDay,
-        calendarId: parseInt(event.calendarId) || 1,
+        calendarId: getValidCalendarId(event.calendarId),
         color: event.color,
         reminder: event.reminder,
         repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
