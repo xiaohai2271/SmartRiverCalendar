@@ -2,10 +2,11 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Todo } from '../types'
 import {
-  getAllTodos,
-  saveTodo,
-  deleteTodo as dbDeleteTodo
-} from '../utils/database'
+  invokeGetTodos,
+  invokeCreateTodo,
+  invokeUpdateTodo,
+  invokeDeleteTodo
+} from '../utils/tauri'
 
 export const useTodoStore = defineStore('todo', () => {
   const todos = ref<Todo[]>([])
@@ -15,7 +16,7 @@ export const useTodoStore = defineStore('todo', () => {
     if (isInitialized.value) return
 
     try {
-      const loadedTodos = await getAllTodos()
+      const loadedTodos = await invokeGetTodos()
       todos.value = loadedTodos
       isInitialized.value = true
       console.log('Todo store initialized:', todos.value.length)
@@ -28,35 +29,59 @@ export const useTodoStore = defineStore('todo', () => {
   const completedTodos = computed(() => todos.value.filter(t => t.completed))
 
   async function addTodo(todo: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) {
-    const now = Date.now()
-    const newTodo: Todo = {
-      ...todo,
-      id: `todo_${now}`,
-      createdAt: now,
-      updatedAt: now
-    }
-    todos.value.push(newTodo)
-
-    try {
-      await saveTodo(newTodo)
-    } catch (error) {
-      console.error('Failed to save todo:', error)
+    // 获取默认日历 ID：解析 calendarId，若无效则使用 1（默认本地日历）
+    const parsedId = todo.calendarId ? parseInt(todo.calendarId) : NaN
+    const calendarId = isNaN(parsedId) ? 1 : parsedId
+    
+    const created = await invokeCreateTodo({
+      title: todo.title,
+      description: todo.description,
+      dueDate: todo.dueDate,
+      completed: todo.completed,
+      priority: todo.priority,
+      calendarId
+    })
+    
+    if (created) {
+      todos.value.push(created)
+      console.log('Todo created:', created.id)
+    } else {
+      console.error('Failed to create todo')
     }
   }
 
   async function updateTodo(id: string, updates: Partial<Todo>) {
     const index = todos.value.findIndex(t => t.id === id)
     if (index !== -1) {
-      todos.value[index] = {
-        ...todos.value[index],
-        ...updates,
-        updatedAt: Date.now()
-      }
-
-      try {
-        await saveTodo(todos.value[index])
-      } catch (error) {
-        console.error('Failed to update todo:', error)
+      const todoId = parseInt(id)
+      
+      if (!isNaN(todoId)) {
+        const updated = await invokeUpdateTodo({
+          id: todoId,
+          title: updates.title,
+          description: updates.description,
+          dueDate: updates.dueDate,
+          completed: updates.completed,
+          priority: updates.priority,
+          calendarId: updates.calendarId ? (() => {
+            const parsed = parseInt(updates.calendarId)
+            return isNaN(parsed) ? undefined : parsed
+          })() : undefined
+        })
+        
+        if (updated) {
+          todos.value[index] = updated
+          console.log('Todo updated:', id)
+        } else {
+          console.error('Failed to update todo:', id)
+        }
+      } else {
+        // 临时 ID，仅更新本地状态
+        todos.value[index] = {
+          ...todos.value[index],
+          ...updates,
+          updatedAt: Date.now()
+        }
       }
     }
   }
@@ -69,13 +94,14 @@ export const useTodoStore = defineStore('todo', () => {
   }
 
   async function deleteTodo(id: string) {
-    todos.value = todos.value.filter(t => t.id !== id)
-
-    try {
-      await dbDeleteTodo(id)
-    } catch (error) {
-      console.error('Failed to delete todo:', error)
+    const todoId = parseInt(id)
+    
+    if (!isNaN(todoId)) {
+      await invokeDeleteTodo(todoId)
     }
+    
+    todos.value = todos.value.filter(t => t.id !== id)
+    console.log('Todo deleted:', id)
   }
 
   return {

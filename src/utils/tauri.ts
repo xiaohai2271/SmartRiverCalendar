@@ -1,6 +1,6 @@
 // Tauri API 工具函数
 import { enable, disable, isEnabled } from '@tauri-apps/plugin-autostart'
-import type { ConnectResult } from '../types'
+import type { ConnectResult, Calendar, CalendarEvent, Todo } from '../types'
 
 // 检测是否在 Tauri 环境中
 export function isTauri(): boolean {
@@ -21,6 +21,370 @@ export async function safeInvoke<T>(command: string, args?: Record<string, any>)
     console.error(`Failed to invoke ${command}:`, error)
     return null
   }
+}
+
+// ============================================================
+// 数据转换工具函数
+// 用于后端 snake_case 与前端 camelCase 的转换
+// ============================================================
+
+/** 后端返回的日历原始数据 */
+interface RawCalendar {
+  id: number
+  name: string
+  color: string
+  type: string
+  account_id: number | null
+  visible: boolean
+  sync_enabled: boolean
+  created_at: number
+  updated_at: number
+}
+
+/** 后端返回的事件原始数据 */
+interface RawEvent {
+  id: number
+  title: string
+  description: string | null
+  start_time: number
+  end_time: number
+  all_day: boolean
+  calendar_id: number
+  color: string | null
+  reminder: number | null
+  repeat_rule: string | null
+  location: string | null
+  external_id: string | null
+  created_at: number
+  updated_at: number
+}
+
+/** 后端返回的待办原始数据 */
+interface RawTodo {
+  id: number
+  title: string
+  description: string | null
+  due_date: number | null
+  completed: boolean
+  priority: string
+  calendar_id: number
+  created_at: number
+  updated_at: number
+}
+
+/** 后端返回的账号原始数据 */
+interface RawAccount {
+  id: number
+  type: string
+  server_url: string
+  username: string
+  encrypted_password: string
+  display_name: string | null
+  enabled: boolean
+  created_at: number
+  updated_at: number
+}
+
+/**
+ * 将后端日历数据转换为前端格式
+ */
+export function transformCalendar(raw: RawCalendar): Calendar {
+  return {
+    id: String(raw.id),
+    name: raw.name,
+    color: raw.color,
+    type: raw.type as 'local' | 'exchange' | 'caldav',
+    accountId: raw.account_id != null ? String(raw.account_id) : undefined,
+    visible: raw.visible,
+    syncEnabled: raw.sync_enabled,
+  }
+}
+
+/**
+ * 将后端事件数据转换为前端格式
+ */
+export function transformEvent(raw: RawEvent): CalendarEvent {
+  let repeatRule = undefined
+  if (raw.repeat_rule) {
+    try {
+      repeatRule = JSON.parse(raw.repeat_rule)
+    } catch {
+      console.warn('Failed to parse repeat_rule:', raw.repeat_rule)
+    }
+  }
+  
+  return {
+    id: String(raw.id),
+    title: raw.title,
+    description: raw.description ?? undefined,
+    startTime: raw.start_time,
+    endTime: raw.end_time,
+    allDay: raw.all_day,
+    calendarId: String(raw.calendar_id),
+    color: raw.color ?? undefined,
+    reminder: raw.reminder ?? undefined,
+    repeatRule,
+    location: raw.location ?? undefined,
+    externalId: raw.external_id ?? undefined,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  }
+}
+
+/**
+ * 将后端待办数据转换为前端格式
+ */
+export function transformTodo(raw: RawTodo): Todo {
+  return {
+    id: String(raw.id),
+    title: raw.title,
+    description: raw.description ?? undefined,
+    dueDate: raw.due_date ?? undefined,
+    completed: raw.completed,
+    priority: raw.priority as 'low' | 'medium' | 'high',
+    calendarId: String(raw.calendar_id),
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  }
+}
+
+/**
+ * 将后端账号数据转换为前端格式
+ */
+export function transformAccount(raw: RawAccount) {
+  return {
+    id: String(raw.id),
+    type: raw.type as 'exchange' | 'caldav',
+    serverUrl: raw.server_url,
+    username: raw.username,
+    encryptedPassword: raw.encrypted_password,
+    displayName: raw.display_name ?? undefined,
+    enabled: raw.enabled,
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+  }
+}
+
+// ============================================================
+// 本地数据操作工具函数
+// ============================================================
+
+/**
+ * 获取所有本地日历
+ */
+export async function invokeGetCalendars(): Promise<Calendar[]> {
+  const result = await safeInvoke<RawCalendar[]>('get_calendars')
+  return result?.map(transformCalendar) ?? []
+}
+
+/**
+ * 创建本地日历
+ */
+export async function invokeCreateCalendar(params: {
+  name: string
+  color: string
+  type: string
+  accountId?: number
+  visible?: boolean
+  syncEnabled?: boolean
+}): Promise<Calendar | null> {
+  const result = await safeInvoke<RawCalendar>('create_calendar', {
+    name: params.name,
+    color: params.color,
+    calendarType: params.type,
+    accountId: params.accountId ?? null,
+    visible: params.visible ?? true,
+    syncEnabled: params.syncEnabled ?? false,
+  })
+  return result ? transformCalendar(result) : null
+}
+
+/**
+ * 更新本地日历
+ */
+export async function invokeUpdateCalendar(params: {
+  id: number
+  name?: string
+  color?: string
+  visible?: boolean
+  syncEnabled?: boolean
+}): Promise<Calendar | null> {
+  const result = await safeInvoke<RawCalendar>('update_calendar', {
+    id: params.id,
+    name: params.name ?? null,
+    color: params.color ?? null,
+    visible: params.visible ?? null,
+    syncEnabled: params.syncEnabled ?? null,
+  })
+  return result ? transformCalendar(result) : null
+}
+
+/**
+ * 删除本地日历
+ */
+export async function invokeDeleteCalendar(id: number): Promise<boolean> {
+  const result = await safeInvoke<void>('delete_calendar', { id })
+  return result !== null
+}
+
+/**
+ * 获取所有本地事件
+ */
+export async function invokeGetEvents(): Promise<CalendarEvent[]> {
+  const result = await safeInvoke<RawEvent[]>('get_events')
+  return result?.map(transformEvent) ?? []
+}
+
+/**
+ * 根据日历 ID 获取事件
+ */
+export async function invokeGetEventsByCalendar(calendarId: number): Promise<CalendarEvent[]> {
+  const result = await safeInvoke<RawEvent[]>('get_events_by_calendar', { calendarId })
+  return result?.map(transformEvent) ?? []
+}
+
+/**
+ * 创建本地事件
+ */
+export async function invokeCreateEvent(params: {
+  title: string
+  description?: string
+  startTime: number
+  endTime: number
+  allDay: boolean
+  calendarId: number
+  color?: string
+  reminder?: number
+  repeatRule?: string
+  location?: string
+  externalId?: string
+}): Promise<CalendarEvent | null> {
+  const result = await safeInvoke<RawEvent>('create_event', {
+    title: params.title,
+    description: params.description ?? null,
+    startTime: params.startTime,
+    endTime: params.endTime,
+    allDay: params.allDay,
+    calendarId: params.calendarId,
+    color: params.color ?? null,
+    reminder: params.reminder ?? null,
+    repeatRule: params.repeatRule ?? null,
+    location: params.location ?? null,
+    externalId: params.externalId ?? null,
+  })
+  return result ? transformEvent(result) : null
+}
+
+/**
+ * 更新本地事件
+ */
+export async function invokeUpdateEvent(params: {
+  id: number
+  title: string
+  description?: string
+  startTime: number
+  endTime: number
+  allDay: boolean
+  calendarId: number
+  color?: string
+  reminder?: number
+  repeatRule?: string
+  location?: string
+  externalId?: string
+}): Promise<CalendarEvent | null> {
+  const result = await safeInvoke<RawEvent>('update_event', {
+    id: params.id,
+    title: params.title,
+    description: params.description ?? null,
+    startTime: params.startTime,
+    endTime: params.endTime,
+    allDay: params.allDay,
+    calendarId: params.calendarId,
+    color: params.color ?? null,
+    reminder: params.reminder ?? null,
+    repeatRule: params.repeatRule ?? null,
+    location: params.location ?? null,
+    externalId: params.externalId ?? null,
+  })
+  return result ? transformEvent(result) : null
+}
+
+/**
+ * 删除本地事件
+ */
+export async function invokeDeleteEvent(id: number): Promise<boolean> {
+  const result = await safeInvoke<boolean>('delete_event', { id })
+  return result ?? false
+}
+
+/**
+ * 获取所有待办事项
+ */
+export async function invokeGetTodos(): Promise<Todo[]> {
+  const result = await safeInvoke<RawTodo[]>('get_todos')
+  return result?.map(transformTodo) ?? []
+}
+
+/**
+ * 创建待办事项
+ */
+export async function invokeCreateTodo(params: {
+  title: string
+  description?: string
+  dueDate?: number
+  completed?: boolean
+  priority?: string
+  calendarId: number
+}): Promise<Todo | null> {
+  const result = await safeInvoke<RawTodo>('create_todo', {
+    title: params.title,
+    description: params.description ?? null,
+    dueDate: params.dueDate ?? null,
+    completed: params.completed ?? null,
+    priority: params.priority ?? null,
+    calendarId: params.calendarId,
+  })
+  return result ? transformTodo(result) : null
+}
+
+/**
+ * 更新待办事项
+ */
+export async function invokeUpdateTodo(params: {
+  id: number
+  title?: string
+  description?: string
+  dueDate?: number
+  completed?: boolean
+  priority?: string
+  calendarId?: number
+}): Promise<Todo | null> {
+  const result = await safeInvoke<RawTodo>('update_todo', {
+    id: params.id,
+    title: params.title ?? null,
+    description: params.description ?? null,
+    dueDate: params.dueDate ?? null,
+    completed: params.completed ?? null,
+    priority: params.priority ?? null,
+    calendarId: params.calendarId ?? null,
+  })
+  return result ? transformTodo(result) : null
+}
+
+/**
+ * 删除待办事项
+ */
+export async function invokeDeleteTodo(id: number): Promise<boolean> {
+  const result = await safeInvoke<boolean>('delete_todo', { id })
+  return result ?? false
+}
+
+/**
+ * 获取所有账号（数据库版本）
+ */
+export async function invokeGetAllDbAccounts(): Promise<ReturnType<typeof transformAccount>[]> {
+  const result = await safeInvoke<RawAccount[]>('get_all_db_accounts')
+  return result?.map(transformAccount) ?? []
 }
 
 // 带错误信息的 Tauri invoke（用于连接命令）
@@ -158,11 +522,9 @@ export async function invokeGetExternalCalendars(account: any) {
   })) ?? null
 }
 
-// 获取所有外部账号
+// 获取所有外部账号（使用 Rust 后端）
 export async function invokeGetAllAccounts() {
-  // 直接从数据库读取账号
-  const { getAllExternalAccounts } = await import('./database')
-  return getAllExternalAccounts()
+  return invokeGetAllDbAccounts()
 }
 
 // 删除外部账号

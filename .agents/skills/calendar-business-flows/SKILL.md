@@ -49,9 +49,14 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
   - 业务流程: [references/external-calendar-integration.md](references/external-calendar-integration.md)
 
 ### 8. 首页时间显示
-- **功能**: 实时时间显示、农历日期、节气、节假日标签、补休班提醒
+- **功能**: 实时时间显示、农历日期、节气、节假日标签，补休班提醒
 - **涉及组件**: TimeDisplay 组件、lunar 工具函数、tyme4ts 库
 - **详细文档**: 参考 [references/home-time-display.md](references/home-time-display.md)
+
+### 9. 数据层迁移（专题）
+- **功能**: 前端数据存储迁移到 Rust 后端 SQLite，统一数据操作接口
+- **迁移范围**: 日历、事件、待办、账号、同步状态
+- **详细文档**: 参考 [references/data-layer-migration.md](references/data-layer-migration.md)
 
 ## 快速参考
 

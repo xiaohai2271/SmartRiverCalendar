@@ -33,7 +33,6 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { formatTime, formatDate } from '@/utils/date'
 import { getLunarInfo, type LunarInfo } from '@/utils/lunar'
 
 // 当前时间（响应式）

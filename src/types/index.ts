@@ -114,6 +114,7 @@ export interface ExternalAccount {
   type: 'exchange' | 'caldav'
   serverUrl: string
   username: string
+  encryptedPassword?: string
   displayName?: string
   enabled: boolean
   lastSyncAt?: number

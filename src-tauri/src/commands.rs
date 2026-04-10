@@ -5,6 +5,23 @@ use tauri::State;
 
 use crate::caldav;
 use crate::crypto;
+use crate::db::connection::DatabaseConnection;
+use crate::db::errors::DatabaseError;
+use crate::db::repositories::account::{
+    AccountRepository, Account as DbAccount, CreateAccountParams, UpdateAccountParams,
+};
+use crate::db::repositories::calendar::{
+    CalendarRepository, Calendar as DbCalendar, CreateCalendarRequest, UpdateCalendarRequest,
+};
+use crate::db::repositories::event::{
+    EventRepository, Event as DbEvent, CreateEvent, UpdateEvent,
+};
+use crate::db::repositories::todo::{
+    TodoRepository, Todo as DbTodo, CreateTodoInput, UpdateTodoInput,
+};
+use crate::db::repositories::sync_state::{
+    SyncStateRepository, SyncState, NewSyncState,
+};
 use crate::ews;
 
 #[derive(Serialize)]
@@ -672,6 +689,488 @@ pub struct ExternalEventResult {
     pub success: bool,
     pub external_id: String,
     pub error: Option<String>,
+}
+
+// ============================================================
+// 本地日历命令
+// ============================================================
+
+/// 获取所有本地日历
+#[tauri::command]
+pub fn get_calendars(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbCalendar>, DatabaseError> {
+    info!("[get_calendars] 获取所有日历");
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = CalendarRepository::new(&db);
+    repo.get_all()
+}
+
+/// 创建本地日历
+#[tauri::command]
+pub fn create_calendar(
+    name: String,
+    color: String,
+    calendar_type: String,
+    account_id: Option<i64>,
+    visible: Option<bool>,
+    sync_enabled: Option<bool>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbCalendar, DatabaseError> {
+    info!("[create_calendar] 创建日历: {}", name);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = CalendarRepository::new(&db);
+    let req = CreateCalendarRequest {
+        name,
+        color,
+        type_: calendar_type,
+        account_id,
+        visible: visible.unwrap_or(true),
+        sync_enabled: sync_enabled.unwrap_or(false),
+    };
+    repo.create(&req)
+}
+
+/// 更新本地日历
+#[tauri::command]
+pub fn update_calendar(
+    id: i64,
+    name: Option<String>,
+    color: Option<String>,
+    visible: Option<bool>,
+    sync_enabled: Option<bool>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbCalendar, DatabaseError> {
+    info!("[update_calendar] 更新日历: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = CalendarRepository::new(&db);
+    let req = UpdateCalendarRequest {
+        id,
+        name,
+        color,
+        visible,
+        sync_enabled,
+    };
+    repo.update(&req)
+}
+
+/// 删除本地日历
+#[tauri::command]
+pub fn delete_calendar(
+    id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), DatabaseError> {
+    info!("[delete_calendar] 删除日历: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = CalendarRepository::new(&db);
+    repo.delete(id)
+}
+
+// ============================================================
+// 本地事件命令
+// ============================================================
+
+/// 获取所有本地事件
+#[tauri::command]
+pub fn get_events(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbEvent>, DatabaseError> {
+    info!("[get_events] 获取所有事件");
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db);
+    repo.get_all()
+}
+
+/// 根据日历 ID 获取事件
+#[tauri::command]
+pub fn get_events_by_calendar(
+    calendar_id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbEvent>, DatabaseError> {
+    info!("[get_events_by_calendar] 获取日历 {} 的事件", calendar_id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db);
+    repo.get_by_calendar_id(calendar_id)
+}
+
+/// 根据时间范围获取事件
+#[tauri::command]
+pub fn get_events_by_time_range(
+    start_time: i64,
+    end_time: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbEvent>, DatabaseError> {
+    info!("[get_events_by_time_range] 获取时间范围内的事件: {} - {}", start_time, end_time);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db);
+    repo.get_by_time_range(start_time, end_time)
+}
+
+/// 创建本地事件
+#[tauri::command]
+pub fn create_event(
+    title: String,
+    description: Option<String>,
+    start_time: i64,
+    end_time: i64,
+    all_day: bool,
+    calendar_id: i64,
+    color: Option<String>,
+    reminder: Option<i32>,
+    repeat_rule: Option<String>,
+    location: Option<String>,
+    external_id: Option<String>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbEvent, DatabaseError> {
+    info!("[create_event] 创建事件: {}", title);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db);
+    let event = CreateEvent {
+        title,
+        description,
+        start_time,
+        end_time,
+        all_day,
+        calendar_id,
+        color,
+        reminder,
+        repeat_rule,
+        location,
+        external_id,
+    };
+    repo.create(&event)
+}
+
+/// 更新本地事件
+#[tauri::command]
+pub fn update_event(
+    id: i64,
+    title: String,
+    description: Option<String>,
+    start_time: i64,
+    end_time: i64,
+    all_day: bool,
+    calendar_id: i64,
+    color: Option<String>,
+    reminder: Option<i32>,
+    repeat_rule: Option<String>,
+    location: Option<String>,
+    external_id: Option<String>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbEvent, DatabaseError> {
+    info!("[update_event] 更新事件: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db);
+    let event = UpdateEvent {
+        id,
+        title,
+        description,
+        start_time,
+        end_time,
+        all_day,
+        calendar_id,
+        color,
+        reminder,
+        repeat_rule,
+        location,
+        external_id,
+    };
+    repo.update(&event)
+}
+
+/// 删除本地事件
+#[tauri::command]
+pub fn delete_event(
+    id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<bool, DatabaseError> {
+    info!("[delete_event] 删除事件: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db);
+    repo.delete(id)
+}
+
+// ============================================================
+// 待办事项命令
+// ============================================================
+
+/// 获取所有待办事项
+#[tauri::command]
+pub fn get_todos(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbTodo>, DatabaseError> {
+    info!("[get_todos] 获取所有待办事项");
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = TodoRepository::new(&db);
+    repo.get_all()
+}
+
+/// 根据日历 ID 获取待办事项
+#[tauri::command]
+pub fn get_todos_by_calendar(
+    calendar_id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbTodo>, DatabaseError> {
+    info!("[get_todos_by_calendar] 获取日历 {} 的待办事项", calendar_id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = TodoRepository::new(&db);
+    repo.get_by_calendar_id(calendar_id)
+}
+
+/// 创建待办事项
+#[tauri::command]
+pub fn create_todo(
+    title: String,
+    description: Option<String>,
+    due_date: Option<i64>,
+    completed: Option<bool>,
+    priority: Option<String>,
+    calendar_id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbTodo, DatabaseError> {
+    info!("[create_todo] 创建待办: {}", title);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = TodoRepository::new(&db);
+    let input = CreateTodoInput {
+        title,
+        description,
+        due_date,
+        completed,
+        priority,
+        calendar_id,
+    };
+    repo.create(&input)
+}
+
+/// 更新待办事项
+#[tauri::command]
+pub fn update_todo(
+    id: i64,
+    title: Option<String>,
+    description: Option<String>,
+    due_date: Option<i64>,
+    completed: Option<bool>,
+    priority: Option<String>,
+    calendar_id: Option<i64>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbTodo, DatabaseError> {
+    info!("[update_todo] 更新待办: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = TodoRepository::new(&db);
+    let input = UpdateTodoInput {
+        id,
+        title,
+        description,
+        due_date,
+        completed,
+        priority,
+        calendar_id,
+    };
+    repo.update(&input)
+}
+
+/// 删除待办事项
+#[tauri::command]
+pub fn delete_todo(
+    id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<bool, DatabaseError> {
+    info!("[delete_todo] 删除待办: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = TodoRepository::new(&db);
+    repo.delete(id)
+}
+
+// ============================================================
+// 账号命令
+// ============================================================
+
+/// 获取所有账号（数据库版本）
+#[tauri::command]
+pub fn get_all_db_accounts(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbAccount>, DatabaseError> {
+    info!("[get_all_db_accounts] 获取所有账号");
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = AccountRepository::new(&db);
+    repo.get_all()
+}
+
+/// 根据 ID 获取账号
+#[tauri::command]
+pub fn get_account_by_id(
+    id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Option<DbAccount>, DatabaseError> {
+    info!("[get_account_by_id] 获取账号: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = AccountRepository::new(&db);
+    repo.get_by_id(id)
+}
+
+/// 创建账号
+#[tauri::command]
+pub fn create_account(
+    account_type: String,
+    server_url: String,
+    username: String,
+    encrypted_password: String,
+    display_name: Option<String>,
+    enabled: Option<bool>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbAccount, DatabaseError> {
+    info!("[create_account] 创建账号: {} ({})", username, account_type);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = AccountRepository::new(&db);
+    let params = CreateAccountParams {
+        type_: account_type,
+        server_url,
+        username,
+        encrypted_password,
+        display_name,
+        enabled: enabled.unwrap_or(true),
+    };
+    repo.create(params)
+}
+
+/// 更新账号
+#[tauri::command]
+pub fn update_account(
+    id: i64,
+    account_type: String,
+    server_url: String,
+    username: String,
+    encrypted_password: String,
+    display_name: Option<String>,
+    enabled: bool,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbAccount, DatabaseError> {
+    info!("[update_account] 更新账号: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = AccountRepository::new(&db);
+    let params = UpdateAccountParams {
+        id,
+        type_: account_type,
+        server_url,
+        username,
+        encrypted_password,
+        display_name,
+        enabled,
+    };
+    repo.update(params)
+}
+
+/// 删除账号（数据库版本）
+#[tauri::command]
+pub fn delete_db_account(
+    id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<usize, DatabaseError> {
+    info!("[delete_db_account] 删除账号: id={}", id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = AccountRepository::new(&db);
+    repo.delete(id)
+}
+
+// ============================================================
+// 同步状态命令
+// ============================================================
+
+/// 获取同步状态
+#[tauri::command]
+pub fn get_sync_state(
+    account_id: i64,
+    calendar_id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Option<SyncState>, DatabaseError> {
+    info!("[get_sync_state] 获取同步状态: account={}, calendar={}", account_id, calendar_id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    SyncStateRepository::get(&conn, account_id, calendar_id).map_err(|e| e.into())
+}
+
+/// 插入或更新同步状态
+#[tauri::command]
+pub fn upsert_sync_state(
+    account_id: i64,
+    calendar_id: i64,
+    sync_token: Option<String>,
+    last_sync_at: Option<i64>,
+    sync_window_start: Option<i64>,
+    sync_window_end: Option<i64>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), DatabaseError> {
+    info!("[upsert_sync_state] 更新同步状态: account={}, calendar={}", account_id, calendar_id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let new_state = NewSyncState {
+        account_id,
+        calendar_id,
+        sync_token,
+        last_sync_at,
+        sync_window_start,
+        sync_window_end,
+    };
+    let conn = db.get_connection();
+    SyncStateRepository::upsert(&conn, &new_state).map_err(|e| e.into())
+}
+
+/// 删除同步状态
+#[tauri::command]
+pub fn delete_sync_state(
+    account_id: i64,
+    calendar_id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<usize, DatabaseError> {
+    info!("[delete_sync_state] 删除同步状态: account={}, calendar={}", account_id, calendar_id);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    SyncStateRepository::delete(&conn, account_id, calendar_id).map_err(|e| e.into())
 }
 
 // ==================== 时钟点击 Hook 相关命令 ====================
