@@ -10,6 +10,9 @@ pub mod caldav;
 mod sync;
 mod updater;
 
+#[cfg(target_os = "windows")]
+mod clock_hook;
+
 pub fn run() {
     // 设置默认日志级别为 info，这样即使不设 RUST_LOG 环境变量也能看到后端日志
     env_logger::Builder::from_env(
@@ -17,6 +20,10 @@ pub fn run() {
     ).init();
 
     let app_state = Mutex::new(commands::AppState::default());
+
+    // 时钟点击检测管理器（仅 Windows）
+    #[cfg(target_os = "windows")]
+    let clock_hook_manager = Mutex::new(clock_hook::ClockHookManager::new());
 
     let mut app_builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -29,6 +36,12 @@ pub fn run() {
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(app_state);
+
+    // 注册时钟点击检测管理器（仅 Windows）
+    #[cfg(target_os = "windows")]
+    {
+        app_builder = app_builder.manage(clock_hook_manager);
+    }
 
     // 仅在调试模式下启用 MCP Bridge 插件
     #[cfg(debug_assertions)]
@@ -119,12 +132,21 @@ pub fn run() {
                                 && button_state == tauri::tray::MouseButtonState::Up
                             {
                                 let app = tray.app_handle();
-                                if let Some(window) = app.get_webview_window("main") {
-                                    if window.is_visible().unwrap_or(false) {
-                                        let _ = window.hide();
-                                    } else {
-                                        let _ = window.show();
-                                        let _ = window.set_focus();
+                                // Windows 平台：通过事件驱动，前端统一调度
+                                #[cfg(target_os = "windows")]
+                                {
+                                    clock_hook::toggle::emit_tray_click(app);
+                                }
+                                // 非 Windows 平台：保持原有直接操作窗口逻辑
+                                #[cfg(not(target_os = "windows"))]
+                                {
+                                    if let Some(window) = app.get_webview_window("main") {
+                                        if window.is_visible().unwrap_or(false) {
+                                            let _ = window.hide();
+                                        } else {
+                                            let _ = window.show();
+                                            let _ = window.set_focus();
+                                        }
                                     }
                                 }
                             }
@@ -138,6 +160,17 @@ pub fn run() {
         })
         .on_window_event(|window, event| {
             match event {
+                tauri::WindowEvent::CloseRequested { .. } => {
+                    // 程序退出时确保清理 Hook（仅 Windows）
+                    #[cfg(target_os = "windows")]
+                    {
+                        use crate::clock_hook::ClockHookManager;
+                        let state = window.app_handle().state::<Mutex<ClockHookManager>>();
+                        if let Ok(mut manager) = state.lock() {
+                            let _ = manager.disable();
+                        };
+                    }
+                }
                 tauri::WindowEvent::Focused(focused) => {
                     // 当窗口失去焦点且启用了自动隐藏时，隐藏窗口
                     if !focused {
@@ -178,6 +211,12 @@ pub fn run() {
             commands::get_external_events,
             commands::update_external_event,
             commands::delete_external_event,
+            // 时钟点击检测命令
+            commands::enable_clock_hook,
+            commands::disable_clock_hook,
+            commands::set_clock_hook_block_popup,
+            commands::get_clock_hook_status,
+            commands::is_clock_hook_available,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
