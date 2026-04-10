@@ -474,7 +474,7 @@ watch(showModal, (show) => {
 })
 
 // 提交表单
-function handleSubmit() {
+async function handleSubmit() {
   const title = formData.value.title.trim()
   if (!title || !editingEventId.value) return
 
@@ -486,7 +486,7 @@ function handleSubmit() {
     ? new Date(formData.value.endDate).getTime() + 86400000
     : new Date(`${formData.value.endDate}T${formData.value.endTime}`).getTime()
 
-  calendarStore.updateEvent(editingEventId.value, {
+  await calendarStore.updateEvent(editingEventId.value, {
     title,
     description: formData.value.description,
     startTime: startDateTime,
@@ -498,9 +498,15 @@ function handleSubmit() {
   closeModal()
 }
 
-// 删除事件
+// 删除事件 - 通过确认气泡
 function handleDeleteEvent(id: string) {
-  calendarStore.deleteEvent(id)
+  // 查找选中的日程并设置确认气泡
+  const event = calendarStore.events.find(e => e.id === id)
+  if (event) {
+    selectedEvent.value = event
+    confirmPopoverVisible.value = true
+  }
+  // 如果编辑弹窗打开，也关闭它
   closeModal()
 }
 

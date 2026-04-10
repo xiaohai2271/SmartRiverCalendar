@@ -387,6 +387,55 @@ export async function invokeGetAllDbAccounts(): Promise<ReturnType<typeof transf
   return result?.map(transformAccount) ?? []
 }
 
+/**
+ * 根据服务器地址和用户名查找账号
+ */
+export async function invokeGetAccountByServerUrl(serverUrl: string, username: string): Promise<ReturnType<typeof transformAccount> | null> {
+  const accounts = await invokeGetAllDbAccounts()
+  return accounts.find(a => a.serverUrl === serverUrl && a.username === username) ?? null
+}
+
+/**
+ * 保存外部账号（创建或更新）
+ */
+export async function invokeSaveAccount(account: {
+  id?: string
+  type: string
+  serverUrl: string
+  username: string
+  encryptedPassword: string
+  displayName?: string
+  enabled: boolean
+}): Promise<ReturnType<typeof transformAccount> | null> {
+  // 如果有 id 且能转换为数字，说明是更新已有账号
+  const existingId = account.id ? parseInt(account.id, 10) : NaN
+  
+  if (!isNaN(existingId) && existingId > 0) {
+    // 更新已有账号
+    const result = await safeInvoke<RawAccount>('update_account', {
+      id: existingId,
+      accountType: account.type,
+      serverUrl: account.serverUrl,
+      username: account.username,
+      encryptedPassword: account.encryptedPassword,
+      displayName: account.displayName ?? null,
+      enabled: account.enabled,
+    })
+    return result ? transformAccount(result) : null
+  } else {
+    // 创建新账号
+    const result = await safeInvoke<RawAccount>('create_account', {
+      accountType: account.type,
+      serverUrl: account.serverUrl,
+      username: account.username,
+      encryptedPassword: account.encryptedPassword,
+      displayName: account.displayName ?? null,
+      enabled: account.enabled,
+    })
+    return result ? transformAccount(result) : null
+  }
+}
+
 // 带错误信息的 Tauri invoke（用于连接命令）
 export async function safeInvokeWithResult(command: string, args?: Record<string, any>): Promise<ConnectResult> {
   if (!isTauri()) {

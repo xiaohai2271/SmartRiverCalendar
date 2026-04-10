@@ -317,7 +317,7 @@ import {
   invokeDeleteAccount,
   invokeGetSyncStatus
 } from '../utils/tauri'
-import { saveExternalAccount, getAccountByServerUrl } from '../utils/database'
+import { invokeSaveAccount, invokeGetAccountByServerUrl } from '../utils/tauri'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
@@ -450,7 +450,7 @@ async function testConnection() {
 
       // 保存或更新账号到数据库
       if (result.account) {
-        const existing = await getAccountByServerUrl(result.account.server_url, result.account.username)
+        const existing = await invokeGetAccountByServerUrl(result.account.server_url, result.account.username)
         const accountToSave = {
           id: existing ? existing.id : result.account.id,
           type: result.account.account_type,
@@ -459,10 +459,8 @@ async function testConnection() {
           encryptedPassword: result.account.encrypted_password,
           displayName: result.account.display_name,
           enabled: existing ? existing.enabled : true,
-          createdAt: existing ? existing.createdAt : Date.now(),
-          updatedAt: Date.now()
         }
-        await saveExternalAccount(accountToSave)
+        await invokeSaveAccount(accountToSave)
       }
     } else {
       connectionError.value = result?.error || '连接失败，请检查服务器地址和凭据'

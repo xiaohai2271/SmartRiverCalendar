@@ -104,7 +104,7 @@
 
         <!-- 待办详情弹窗 -->
         <TodoDetailModal
-          v-model:visible="detailModalVisible"
+          :visible="detailModalVisible"
           :todo="selectedTodo"
           @close="detailModalVisible = false"
         />
@@ -252,13 +252,13 @@ function handleContextMenu(event: MouseEvent, todo: Todo) {
 
 /**
  * 处理编辑操作
- * 首页没有编辑功能，跳转到待办页面
+ * 跳转到待办页面进行编辑
  */
 function handleEdit() {
-  // 首页没有编辑弹窗，可以跳转到待办页面
-  // 这里选择显示提示信息
-  console.log('编辑待办项:', selectedTodo.value?.id)
-  // TODO: 如果需要跳转，可以使用 router.push('/todos')
+  if (!selectedTodo.value) return
+  // 跳转到待办页面，用户可以在待办列表中找到并编辑该待办
+  router.push('/todos')
+  contextMenuVisible.value = false
 }
 
 /**
@@ -330,11 +330,12 @@ function handleEventContextMenu(event: MouseEvent, evt: CalendarEvent) {
 
 /**
  * 处理编辑日程
- * 跳转到日程视图
+ * 跳转到日程页面进行编辑
  */
 function handleEventEdit() {
   if (!selectedEvent.value) return
-  router.push('/calendar')
+  // 跳转到日程页面，用户可以在日程列表中找到并编辑该日程
+  router.push('/schedules')
   eventContextMenuVisible.value = false
 }
 
@@ -363,7 +364,6 @@ async function confirmDeleteEvent() {
   if (!selectedEvent.value) return
   try {
     await calendarStore.deleteEvent(selectedEvent.value.id)
-    console.log('日程删除成功:', selectedEvent.value.title)
   } catch (error) {
     console.error('删除日程失败:', error)
   }
