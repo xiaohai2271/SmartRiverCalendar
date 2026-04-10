@@ -56,6 +56,76 @@ impl ClockRegionCache {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::Foundation::POINT;
+
+    #[test]
+    fn test_point_in_rect_inside() {
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 100,
+            bottom: 50,
+        };
+        assert!(point_in_rect(POINT { x: 50, y: 25 }, &rect));
+    }
+
+    #[test]
+    fn test_point_in_rect_outside() {
+        let rect = RECT {
+            left: 0,
+            top: 0,
+            right: 100,
+            bottom: 50,
+        };
+        assert!(!point_in_rect(POINT { x: 150, y: 25 }, &rect));
+    }
+
+    #[test]
+    fn test_hit_test_primary() {
+        let cache = ClockRegionCache {
+            primary: Some(RECT {
+                left: 0,
+                top: 0,
+                right: 100,
+                bottom: 50,
+            }),
+            secondary: vec![],
+            detection_method: "test".to_string(),
+        };
+        assert_eq!(
+            cache.hit_test(POINT { x: 50, y: 25 }),
+            Some(MonitorType::Primary)
+        );
+    }
+
+    #[test]
+    fn test_hit_test_secondary() {
+        let cache = ClockRegionCache {
+            primary: None,
+            secondary: vec![RECT {
+                left: 200,
+                top: 0,
+                right: 300,
+                bottom: 50,
+            }],
+            detection_method: "test".to_string(),
+        };
+        assert_eq!(
+            cache.hit_test(POINT { x: 250, y: 25 }),
+            Some(MonitorType::Secondary)
+        );
+    }
+
+    #[test]
+    fn test_hit_test_miss() {
+        let cache = ClockRegionCache::default();
+        assert_eq!(cache.hit_test(POINT { x: 50, y: 25 }), None);
+    }
+}
+
 /// 坐标更新器
 pub struct RegionUpdater {
     stop_flag: Arc<AtomicBool>,
