@@ -61,7 +61,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch, provide } from 'vue'
+import { onMounted, onUnmounted, watch, provide, ref } from 'vue'
+import { getCurrentWindow } from '@tauri-apps/api/window'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { useRouter } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
@@ -70,10 +74,14 @@ import { checkAndInstallUpdate } from './services/updater'
 import { startReminderService, stopReminderService, onReminderPopup, offReminderPopup, handleSnoozeReminder } from './services/reminder'
 import { isTauri, enableClockHook, setClockHookBlockPopup } from './utils/tauri'
 import { initWindowToggleListener } from './composables/useWindowToggle'
-import type { CalendarEvent, Todo } from './types'
+import type { CalendarEvent, Todo, PopupNavigationPayload } from './types'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
+const router = useRouter()
+
+// popup-navigate 事件监听器取消函数
+const unlistenPopupNavigate = ref<UnlistenFn | null>(null)
 
 // 提醒事件总线
 const reminderBus = {
@@ -110,7 +118,65 @@ function handleSnoozeEvent(event: CustomEvent) {
   handleSnoozeReminder(itemId, snoozeTime)
 }
 
-onMounted(() => {
+// 处理弹出窗口导航事件
+async function handlePopupNavigate(payload: PopupNavigationPayload) {
+  try {
+    // 显示并聚焦主窗口
+    const mainWindow = await WebviewWindow.getByLabel('main')
+    if (mainWindow) {
+      await mainWindow.show()
+      await mainWindow.setFocus()
+    }
+    
+    // 根据动作类型处理
+    switch (payload.action) {
+      case 'createEvent':
+        // 切换到日历页，创建事件（预填日期）
+        await router.push('/calendar')
+        // TODO: 打开事件创建弹窗，预填日期
+        break
+      case 'viewEvents':
+        // 切换到日历页，定位到该日
+        await router.push('/calendar')
+        // TODO: 切换到日视图，定位到该日期
+        break
+      case 'viewEventDetail':
+        // 切换到日历页，打开事件详情
+        await router.push('/calendar')
+        // TODO: 打开事件详情弹窗
+        break
+      case 'createTodo':
+        // 切换到待办页，创建待办
+        await router.push('/todos')
+        // TODO: 打开待办创建弹窗，预填日期
+        break
+      case 'viewTodos':
+        // 切换到待办页，查看当日截止待办
+        await router.push('/todos')
+        // TODO: 过滤当日截止待办
+        break
+      case 'openMain':
+        // 仅打开主窗口
+        await router.push('/')
+        break
+    }
+  } catch (error) {
+    console.error('[App] 处理弹出窗口导航失败:', error)
+  }
+}
+
+onMounted(async () => {
+  // 获取窗口标签
+  const windowLabel = getCurrentWindow().label
+  
+  // 弹出窗口只做最小化初始化
+  if (windowLabel === 'calendar-popup') {
+    calendarStore.initialize()
+    applyTheme()
+    return
+  }
+  
+  // 主窗口完整初始化
   calendarStore.initialize()
   applyTheme()
   checkForUpdatesOnStartup()
@@ -134,6 +200,13 @@ onMounted(() => {
       settingsStore.updateSettings({ clockHookEnabled: false })
     })
   }
+
+  // 监听弹出窗口导航事件
+  if (isTauri()) {
+    unlistenPopupNavigate.value = await listen<PopupNavigationPayload>('popup-navigate', (event) => {
+      handlePopupNavigate(event.payload)
+    })
+  }
 })
 
 // 应用关闭时清理定时器
@@ -141,6 +214,10 @@ onUnmounted(() => {
   stopReminderService()
   // 移除事件监听
   window.removeEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
+  // 取消 popup-navigate 事件监听
+  if (unlistenPopupNavigate.value) {
+    unlistenPopupNavigate.value()
+  }
 })
 
 // 应用主题到 :root

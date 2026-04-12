@@ -81,6 +81,7 @@ pub fn run() {
             Some(vec!["--minimized"]),
         ))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_positioner::init())
         .manage(app_state)
         .manage(db);
 
@@ -169,7 +170,10 @@ pub fn run() {
                         }
                         _ => {}
                     })
-                    .on_tray_icon_event(|tray, event| match event {
+                    .on_tray_icon_event(|tray, event| {
+                        // 让 positioner 插件处理托盘事件
+                        tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
+                        match event {
                         tauri::tray::TrayIconEvent::Click {
                             button,
                             button_state,
@@ -199,6 +203,7 @@ pub fn run() {
                             }
                         }
                         _ => {}
+                        }
                     })
                     .build(app)?;
             }
@@ -206,21 +211,29 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
+            let label = window.label();
             match event {
-                tauri::WindowEvent::CloseRequested { .. } => {
-                    // 程序退出时确保清理 Hook（仅 Windows）
-                    #[cfg(target_os = "windows")]
-                    {
-                        use crate::clock_hook::ClockHookManager;
-                        let state = window.app_handle().state::<Mutex<ClockHookManager>>();
-                        if let Ok(mut manager) = state.lock() {
-                            let _ = manager.disable();
-                        };
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if label == "calendar-popup" {
+                        // calendar-popup 窗口：阻止关闭，改为隐藏
+                        api.prevent_close();
+                        let _ = window.hide();
+                    } else {
+                        // main 窗口：程序退出时确保清理 Hook（仅 Windows）
+                        #[cfg(target_os = "windows")]
+                        {
+                            use crate::clock_hook::ClockHookManager;
+                            let state = window.app_handle().state::<Mutex<ClockHookManager>>();
+                            if let Ok(mut manager) = state.lock() {
+                                let _ = manager.disable();
+                            };
+                        }
                     }
                 }
                 tauri::WindowEvent::Focused(focused) => {
-                    // 当窗口失去焦点且启用了自动隐藏时，隐藏窗口
-                    if !focused {
+                    // main 窗口：当窗口失去焦点且启用了自动隐藏时，隐藏窗口
+                    // calendar-popup 窗口的失焦隐藏由前端控制
+                    if !focused && label == "main" {
                         let app = window.app_handle();
                         let state = app.state::<Mutex<commands::AppState>>();
                         let auto_hide = {
@@ -264,6 +277,7 @@ pub fn run() {
             commands::set_clock_hook_block_popup,
             commands::get_clock_hook_status,
             commands::is_clock_hook_available,
+            commands::set_popup_window_rect,
             // 本地日历命令
             commands::get_calendars,
             commands::create_calendar,

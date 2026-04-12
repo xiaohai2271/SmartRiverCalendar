@@ -1231,6 +1231,31 @@ pub fn is_clock_hook_available(
     manager.is_available()
 }
 
+/// 弹出窗口区域结构（用于前端传递）
+#[cfg(target_os = "windows")]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PopupRect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+/// 设置弹出窗口区域跟踪
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub fn set_popup_window_rect(rect: Option<PopupRect>) -> Result<(), String> {
+    use crate::clock_hook::hook::set_popup_window_rect as set_rect;
+    let rect = rect.map(|r| windows::Win32::Foundation::RECT {
+        left: r.left,
+        top: r.top,
+        right: r.right,
+        bottom: r.bottom,
+    });
+    set_rect(rect);
+    Ok(())
+}
+
 // 非 Windows 平台的 stub 函数
 
 #[cfg(not(target_os = "windows"))]
@@ -1261,6 +1286,22 @@ pub fn get_clock_hook_status() -> String {
 #[tauri::command]
 pub fn is_clock_hook_available() -> bool {
     false
+}
+
+/// 弹出窗口区域结构（非 Windows 平台占位）
+#[cfg(not(target_os = "windows"))]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PopupRect {
+    pub left: i32,
+    pub top: i32,
+    pub right: i32,
+    pub bottom: i32,
+}
+
+#[cfg(not(target_os = "windows"))]
+#[tauri::command]
+pub fn set_popup_window_rect(_rect: Option<PopupRect>) -> Result<(), String> {
+    Err("此功能仅在 Windows 平台可用".to_string())
 }
 
 #[cfg(test)]

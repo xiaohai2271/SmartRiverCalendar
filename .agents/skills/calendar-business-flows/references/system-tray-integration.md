@@ -6,7 +6,8 @@
 3. [菜单结构](#菜单结构)
 4. [事件处理](#事件处理)
 5. [窗口管理](#窗口管理)
-6. [状态管理](#状态管理)
+6. [弹出窗口](#弹出窗口)
+7. [状态管理](#状态管理)
 
 ## 概述
 
@@ -15,6 +16,7 @@
 - 右键菜单交互
 - 窗口显示/隐藏控制
 - 系统级功能集成
+- **精简日历弹出窗口**（点击系统时钟区域唤醒）
 
 ## 托盘功能
 
@@ -23,6 +25,7 @@
 2. **功能快捷方式**: 检查更新、设置等
 3. **状态切换**: 始终置顶、自动隐藏
 4. **退出应用**: 完全关闭应用
+5. **精简日历**: 点击系统时钟区域显示弹出窗口
 
 ## 菜单结构
 
@@ -167,8 +170,164 @@ pub struct AppState {
 2. **自动隐藏**: `toggle_auto_hide`
 3. **获取状态**: `get_always_on_top`, `get_auto_hide`
 
-## 相关文件
+## 弹出窗口
+
+### 功能概述
+
+精简日历弹出窗口（calendar-popup）是一个轻量级日历界面，通过点击 Windows 系统时钟区域唤醒。主要功能：
+- 快速查看日历月份视图
+- 显示农历、节假日信息
+- 双击日期创建事件
+- 右键菜单快捷操作
+- 键盘快捷键支持
+
+### 窗口配置
+
+弹出窗口在 `tauri.conf.json` 中定义：
+```json
+{
+  "label": "calendar-popup",
+  "title": "精简日历",
+  "url": "calendar-popup",
+  "width": 320,
+  "height": 420,
+  "resizable": false,
+  "decorations": false,
+  "transparent": false,
+  "visible": false,
+  "focus": true,
+  "skipTaskbar": true
+}
+```
+
+### 权限配置
+
+弹出窗口需要在 `capabilities/default.json` 中配置权限：
+```json
+{
+  "windows": ["main", "calendar-popup"],
+  "permissions": [
+    "core:window:allow-set-position",
+    "positioner:default"
+  ]
+}
+```
+
+**关键权限说明：**
+- `core:window:allow-set-position`: 允许设置窗口位置
+- `positioner:default`: 允许使用 positioner 插件定位窗口
+- `windows` 数组必须包含 `calendar-popup`
+
+### 窗口定位逻辑
+
+弹出窗口定位流程：
+
+1. **优先使用 positioner 插件**（推荐）
+   ```typescript
+   // 使用 tauri-plugin-positioner 定位
+   await moveWindowConstrained(window, Position.TrayBottomRight)
+   ```
+
+2. **回退到手动定位**
+   ```typescript
+   // 根据时钟区域和显示器信息计算位置
+   const position = calculatePopupPosition(monitor, clockRect)
+   await window.setPosition(new PhysicalPosition(position.x, position.y))
+   ```
+
+### 前端组件结构
+
+```
+src/
+├── views/
+│   └── CalendarPopupView.vue      # 弹出窗口主视图
+├── components/popup/
+│   ├── PopupDateInfo.vue          # 日期信息区域
+│   ├── PopupMonthNav.vue          # 月份导航
+│   ├── PopupCalendarGrid.vue      # 日历网格
+│   ├── PopupYearMonthPicker.vue   # 年月选择器
+│   └── PopupContextMenu.vue       # 右键菜单
+├── composables/
+│   ├── useCalendarPopup.ts        # 弹出窗口控制逻辑
+│   └── useWindowToggle.ts         # 窗口切换监听
+└── stores/
+    └── popupSettings.ts           # 弹出窗口设置
+```
+
+### 事件流程
+
+```
+用户点击时钟区域
+       ↓
+WH_MOUSE_LL 钩子捕获
+       ↓
+Rust 后端发送 ClockArea 事件
+       ↓
+前端 useWindowToggle 监听事件
+       ↓
+调用 toggleCalendarPopup()
+       ↓
+显示/隐藏弹出窗口
+```
+
+### 键盘快捷键
+
+| 快捷键 | 功能 |
+|--------|------|
+| `Escape` | 关闭弹出窗口（或关闭菜单/选择器） |
+| `←` / `→` | 选中日期减/加一天 |
+| `↑` / `↓` | 选中日期减/加一周 |
+| `Enter` | 确认选中日期，跳转主窗口创建事件 |
+
+### 失焦隐藏
+
+弹出窗口支持失焦自动隐藏，但有以下例外：
+- 右键菜单打开时不隐藏
+- 年月选择器打开时不隐藏
+
+实现方式：
+```typescript
+// 延迟检查，给菜单关闭事件处理时间
+setTimeout(async () => {
+  if (!isContextMenuOpen.value) {
+    await window.hide()
+  }
+}, 100)
+```
+
+### 常见问题
+
+#### 1. 弹出窗口不显示
+
+**症状**: 点击时钟区域，弹出窗口不出现
+
+**排查步骤**:
+1. 检查控制台日志是否有权限错误：
+   ```
+   window.set_position not allowed. Permissions associated with this command: core:window:allow-set-position
+   ```
+2. 确认 `capabilities/default.json` 中：
+   - `windows` 数组包含 `calendar-popup`
+   - 包含 `core:window:allow-set-position` 权限
+   - 包含 `positioner:default` 权限
+3. 重启 Tauri 开发服务器
+
+#### 2. 弹出窗口位置错误
+
+**症状**: 弹出窗口出现在错误位置
+
+**排查步骤**:
+1. 检查显示器检测日志
+2. 确认 positioner 插件正确配置
+3. 验证时钟区域坐标传递正确
+
+### 相关文件
 
 - 托盘逻辑: `src-tauri/src/lib.rs`
 - 窗口命令: `src-tauri/src/commands.rs`
 - 应用状态: `src-tauri/src/commands.rs` (AppState)
+- 弹出窗口控制: `src/composables/useCalendarPopup.ts`
+- 窗口切换监听: `src/composables/useWindowToggle.ts`
+- 弹出窗口视图: `src/views/CalendarPopupView.vue`
+- 弹出窗口设置: `src/stores/popupSettings.ts`
+- 权限配置: `src-tauri/capabilities/default.json`

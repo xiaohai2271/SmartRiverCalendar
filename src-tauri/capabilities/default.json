@@ -1,8 +1,8 @@
 {
   "$schema": "./schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
-  "windows": ["main"],
+  "description": "Capability for the main window and calendar popup",
+  "windows": ["main", "calendar-popup"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",
@@ -11,6 +11,7 @@
     "core:window:allow-is-visible",
     "core:window:allow-set-always-on-top",
     "core:window:allow-start-dragging",
+    "core:window:allow-set-position",
     "shell:default",
     "sql:default",
     "sql:allow-load",
@@ -23,6 +24,7 @@
     "autostart:allow-disable",
     "autostart:allow-is-enabled",
     "global-shortcut:default",
+    "positioner:default",
     "mcp-bridge:default"
   ]
 }

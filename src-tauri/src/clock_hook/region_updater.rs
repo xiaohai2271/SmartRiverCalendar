@@ -1,6 +1,7 @@
 // 多屏时钟区域缓存与坐标更新器
 // 被 region_updater 写入，被 hook 回调读取
 
+use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -8,13 +9,27 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter};
 use windows::Win32::Foundation::RECT;
 
+/// 显示器类型
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub enum MonitorType {
+    Primary,
+    Secondary,
+}
+
+/// 带屏幕类型的时钟区域
+#[derive(Debug, Clone, PartialEq)]
+pub struct ClockRegion {
+    pub rect: RECT,
+    pub monitor_type: MonitorType,
+}
+
 /// 多屏时钟区域缓存
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ClockRegionCache {
     /// 主屏时钟区域
-    pub primary: Option<RECT>,
+    pub primary: Option<ClockRegion>,
     /// 所有副屏时钟区域
-    pub secondary: Vec<RECT>,
+    pub secondary: Vec<ClockRegion>,
     /// 当前使用的检测方式名称（用于前端展示）
     pub detection_method: String,
 }
@@ -27,29 +42,22 @@ pub static CLOCK_REGIONS: RwLock<ClockRegionCache> = RwLock::new(ClockRegionCach
     detection_method: String::new(),
 });
 
-/// 显示器类型
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum MonitorType {
-    Primary,
-    Secondary,
-}
-
 /// 判断点是否在矩形区域内
 fn point_in_rect(pt: windows::Win32::Foundation::POINT, rect: &RECT) -> bool {
     pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom
 }
 
 impl ClockRegionCache {
-    /// 判断点击是否落在任一屏幕的时钟区域
-    pub fn hit_test(&self, pt: windows::Win32::Foundation::POINT) -> Option<MonitorType> {
-        if let Some(rect) = &self.primary {
-            if point_in_rect(pt, rect) {
-                return Some(MonitorType::Primary);
+    /// 判断点击是否落在任一屏幕的时钟区域，返回命中的区域信息
+    pub fn hit_test(&self, pt: windows::Win32::Foundation::POINT) -> Option<&ClockRegion> {
+        if let Some(region) = &self.primary {
+            if point_in_rect(pt, &region.rect) {
+                return Some(region);
             }
         }
-        for rect in &self.secondary {
-            if point_in_rect(pt, rect) {
-                return Some(MonitorType::Secondary);
+        for region in &self.secondary {
+            if point_in_rect(pt, &region.rect) {
+                return Some(region);
             }
         }
         None
@@ -86,37 +94,41 @@ mod tests {
     #[test]
     fn test_hit_test_primary() {
         let cache = ClockRegionCache {
-            primary: Some(RECT {
-                left: 0,
-                top: 0,
-                right: 100,
-                bottom: 50,
+            primary: Some(ClockRegion {
+                rect: RECT {
+                    left: 0,
+                    top: 0,
+                    right: 100,
+                    bottom: 50,
+                },
+                monitor_type: MonitorType::Primary,
             }),
             secondary: vec![],
             detection_method: "test".to_string(),
         };
-        assert_eq!(
-            cache.hit_test(POINT { x: 50, y: 25 }),
-            Some(MonitorType::Primary)
-        );
+        let result = cache.hit_test(POINT { x: 50, y: 25 });
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().monitor_type, MonitorType::Primary);
     }
 
     #[test]
     fn test_hit_test_secondary() {
         let cache = ClockRegionCache {
             primary: None,
-            secondary: vec![RECT {
-                left: 200,
-                top: 0,
-                right: 300,
-                bottom: 50,
+            secondary: vec![ClockRegion {
+                rect: RECT {
+                    left: 200,
+                    top: 0,
+                    right: 300,
+                    bottom: 50,
+                },
+                monitor_type: MonitorType::Secondary,
             }],
             detection_method: "test".to_string(),
         };
-        assert_eq!(
-            cache.hit_test(POINT { x: 250, y: 25 }),
-            Some(MonitorType::Secondary)
-        );
+        let result = cache.hit_test(POINT { x: 250, y: 25 });
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().monitor_type, MonitorType::Secondary);
     }
 
     #[test]
@@ -227,14 +239,23 @@ impl RegionUpdater {
         // Win10: Shell_TrayWnd → TrayNotifyWnd → TrayClockWClass
         // Win11 22H2: Shell_TrayWnd → TrayNotifyWnd → ClockButton
         if let Some(primary_rect) = super::clock_finder::find_clock_window_rect() {
-            cache.primary = Some(primary_rect);
+            cache.primary = Some(ClockRegion {
+                rect: primary_rect,
+                monitor_type: MonitorType::Primary,
+            });
             cache.detection_method = "窗口句柄查找".to_string();
         }
 
         // 查找副屏任务栏时钟
         let secondary_rects = super::clock_finder::find_secondary_clock_rects();
         if !secondary_rects.is_empty() {
-            cache.secondary = secondary_rects;
+            cache.secondary = secondary_rects
+                .into_iter()
+                .map(|rect| ClockRegion {
+                    rect,
+                    monitor_type: MonitorType::Secondary,
+                })
+                .collect();
         }
 
         // 主屏找到就返回

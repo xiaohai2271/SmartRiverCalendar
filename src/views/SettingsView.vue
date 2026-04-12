@@ -2,6 +2,70 @@
   <div class="settings-view">
     <h2>设置</h2>
 
+    <!-- 精简日历面板设置 -->
+    <div class="settings-section">
+      <h3>精简日历面板</h3>
+      <div class="setting-item">
+        <label>显示农历</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowLunar"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示农历节日</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowLunarFestival"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示节气</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowSolarTerm"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示节假日/调休</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowHoliday"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示日程事件</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowEvents"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>日历面板显示农历</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupCalendarShowLunar"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>日历面板节假日颜色</label>
+        <select
+          v-model="popupSettingsStore.settings.popupCalendarHolidayColor"
+          @change="savePopupSettings"
+        >
+          <option value="default">默认</option>
+          <option value="soft">柔和</option>
+          <option value="high-contrast">高对比</option>
+        </select>
+      </div>
+    </div>
+
     <!-- 外观设置 -->
     <div class="settings-section">
       <h3>外观</h3>
@@ -319,6 +383,7 @@ import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from '../stores/settings'
 import { useCalendarStore } from '../stores/calendar'
+import { usePopupSettingsStore } from '../stores/popupSettings'
 import {
   getAllHolidays,
   getAllMakeupDays,
@@ -345,6 +410,7 @@ import { saveExternalAccount, getAccountByServerUrl } from '../utils/database'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
+const popupSettingsStore = usePopupSettingsStore()
 
 const settings = computed(() => settingsStore.settings)
 
@@ -406,6 +472,11 @@ onMounted(async () => {
 
 async function saveSettings() {
   settingsStore.saveSettings()
+}
+
+// 保存精简日历面板设置
+function savePopupSettings() {
+  popupSettingsStore.savePopupSettings()
 }
 
 // 处理自启动设置变化

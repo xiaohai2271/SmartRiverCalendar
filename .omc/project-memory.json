@@ -1,0 +1,217 @@
+{
+  "version": "1.0.0",
+  "lastScanned": 1775989617004,
+  "projectRoot": "C:\\Users\\zheng\\WebstormProjects\\SmartRiverCalender",
+  "techStack": {
+    "languages": [
+      {
+        "name": "JavaScript/TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "package.json"
+        ]
+      },
+      {
+        "name": "TypeScript",
+        "version": null,
+        "confidence": "high",
+        "markers": [
+          "tsconfig.json"
+        ]
+      }
+    ],
+    "frameworks": [
+      {
+        "name": "vue",
+        "version": "3.5.30",
+        "category": "frontend"
+      },
+      {
+        "name": "esbuild",
+        "version": "0.27.4",
+        "category": "build"
+      },
+      {
+        "name": "vite",
+        "version": "8.0.5",
+        "category": "build"
+      },
+      {
+        "name": "vitest",
+        "version": "4.1.0",
+        "category": "testing"
+      }
+    ],
+    "packageManager": "pnpm",
+    "runtime": null
+  },
+  "build": {
+    "buildCommand": "pnpm build",
+    "testCommand": "pnpm test",
+    "lintCommand": null,
+    "devCommand": "pnpm dev",
+    "scripts": {
+      "dev": "vite",
+      "build": "vue-tsc -b && vite build",
+      "preview": "vite preview",
+      "tauri": "tauri",
+      "tauri:dev": "tauri dev",
+      "tauri:build": "tauri build",
+      "test": "vitest",
+      "test:run": "vitest run",
+      "test:coverage": "vitest run --coverage"
+    }
+  },
+  "conventions": {
+    "namingStyle": null,
+    "importStyle": "ES modules",
+    "testPattern": null,
+    "fileOrganization": "type-based"
+  },
+  "structure": {
+    "isMonorepo": false,
+    "workspaces": [],
+    "mainDirectories": [
+      "public",
+      "src"
+    ],
+    "gitBranches": {
+      "defaultBranch": "main",
+      "branchingStrategy": null
+    }
+  },
+  "customNotes": [],
+  "directoryMap": {
+    "coverage": {
+      "path": "coverage",
+      "purpose": null,
+      "fileCount": 9,
+      "lastAccessed": 1775989616952,
+      "keyFiles": [
+        "base.css",
+        "block-navigation.js",
+        "coverage-final.json",
+        "favicon.png",
+        "index.html"
+      ]
+    },
+    "dist": {
+      "path": "dist",
+      "purpose": "Distribution/build output",
+      "fileCount": 3,
+      "lastAccessed": 1775989616953,
+      "keyFiles": [
+        "favicon.svg",
+        "icons.svg",
+        "index.html"
+      ]
+    },
+    "public": {
+      "path": "public",
+      "purpose": "Public files",
+      "fileCount": 2,
+      "lastAccessed": 1775989616981,
+      "keyFiles": [
+        "favicon.svg",
+        "icons.svg"
+      ]
+    },
+    "src": {
+      "path": "src",
+      "purpose": "Source code",
+      "fileCount": 3,
+      "lastAccessed": 1775989616982,
+      "keyFiles": [
+        "App.vue",
+        "main.ts",
+        "style.css"
+      ]
+    },
+    "src-tauri": {
+      "path": "src-tauri",
+      "purpose": null,
+      "fileCount": 4,
+      "lastAccessed": 1775989616982,
+      "keyFiles": [
+        "build.rs",
+        "Cargo.lock",
+        "Cargo.toml",
+        "tauri.conf.json"
+      ]
+    },
+    "coverage\\components": {
+      "path": "coverage\\components",
+      "purpose": "UI components",
+      "fileCount": 0,
+      "lastAccessed": 1775989616983,
+      "keyFiles": []
+    },
+    "dist\\assets": {
+      "path": "dist\\assets",
+      "purpose": "Static assets",
+      "fileCount": 15,
+      "lastAccessed": 1775989616984,
+      "keyFiles": [
+        "CalendarPopupView-DOzMZRdt.js",
+        "CalendarPopupView-Dvab6XEI.css",
+        "CalendarView-BWYJq4Zp.css"
+      ]
+    },
+    "src\\assets": {
+      "path": "src\\assets",
+      "purpose": "Static assets",
+      "fileCount": 3,
+      "lastAccessed": 1775989616985,
+      "keyFiles": [
+        "hero.png",
+        "vite.svg",
+        "vue.svg"
+      ]
+    },
+    "src\\components": {
+      "path": "src\\components",
+      "purpose": "UI components",
+      "fileCount": 1,
+      "lastAccessed": 1775989616985,
+      "keyFiles": [
+        "HelloWorld.vue"
+      ]
+    },
+    "src\\services": {
+      "path": "src\\services",
+      "purpose": "Business logic services",
+      "fileCount": 3,
+      "lastAccessed": 1775989616985,
+      "keyFiles": [
+        "reminder.ts",
+        "sync.ts",
+        "updater.ts"
+      ]
+    },
+    "src-tauri\\src": {
+      "path": "src-tauri\\src",
+      "purpose": "Source code",
+      "fileCount": 8,
+      "lastAccessed": 1775989616986,
+      "keyFiles": [
+        "caldav.rs",
+        "commands.rs",
+        "crypto.rs"
+      ]
+    },
+    "src-tauri\\tests": {
+      "path": "src-tauri\\tests",
+      "purpose": "Test files",
+      "fileCount": 3,
+      "lastAccessed": 1775989616986,
+      "keyFiles": [
+        "caldav_integration.rs",
+        "ews_integration.rs",
+        "feishu_caldav_test.rs"
+      ]
+    }
+  },
+  "hotPaths": [],
+  "userDirectives": []
+}

@@ -1,0 +1,1006 @@
+/**
+ * popup.scss - 弹出窗口样式
+ * 遵循 Fluent Design System 规范
+ * 
+ * 设计原则：
+ * - 光影 (Light): 微妙阴影表达层次
+ * - 深度 (Depth): z-index 和阴影创建层次
+ * - 动效 (Motion): 平滑过渡动画
+ * - 材质 (Material): 亚克力效果背景
+ * - 缩放 (Scale): 响应式适配 320px 宽度
+ */
+
+/* ==================== CSS 变量定义 ==================== */
+
+/* 浅色主题变量 */
+:root,
+:root.light {
+  /* 背景色 */
+  --popup-bg-primary: rgba(255, 255, 255, 0.85);
+  --popup-bg-secondary: rgba(255, 255, 255, 0.95);
+  --popup-bg-tertiary: rgba(243, 243, 243, 0.9);
+  --popup-bg-hover: rgba(0, 0, 0, 0.04);
+  --popup-bg-active: rgba(0, 0, 0, 0.08);
+  --popup-bg-overlay: rgba(0, 0, 0, 0.4);
+
+  /* 文本色 */
+  --popup-text-primary: #1a1a1a;
+  --popup-text-secondary: #5c5c5c;
+  --popup-text-tertiary: #8a8a8a;
+  --popup-text-disabled: #a0a0a0;
+
+  /* 边框色 */
+  --popup-border-color: rgba(0, 0, 0, 0.08);
+  --popup-border-strong: rgba(0, 0, 0, 0.12);
+  --popup-border-focus: rgba(0, 120, 212, 0.4);
+
+  /* 强调色 */
+  --popup-accent-color: #0078d4;
+  --popup-accent-light: rgba(0, 120, 212, 0.1);
+  --popup-accent-hover: #006cbd;
+  --popup-accent-active: #005a9e;
+
+  /* 语义颜色 - 成功 */
+  --popup-success-color: #28a745;
+  --popup-success-light: rgba(40, 167, 69, 0.1);
+  --popup-success-bg: rgba(40, 167, 69, 0.15);
+
+  /* 语义颜色 - 警告 */
+  --popup-warning-color: #ffc107;
+  --popup-warning-light: rgba(255, 193, 7, 0.1);
+  --popup-warning-bg: rgba(255, 193, 7, 0.15);
+
+  /* 语义颜色 - 错误 */
+  --popup-error-color: #dc3545;
+  --popup-error-light: rgba(220, 53, 69, 0.1);
+  --popup-error-bg: rgba(220, 53, 69, 0.15);
+
+  /* 阴影系统 */
+  --popup-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --popup-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.06), 0 4px 8px rgba(0, 0, 0, 0.04);
+  --popup-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.08), 0 16px 32px rgba(0, 0, 0, 0.04);
+  --popup-shadow-fluent: 0 2px 6px rgba(0, 0, 0, 0.04), 0 8px 16px rgba(0, 0, 0, 0.08);
+  --popup-shadow-menu: 0 8px 32px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* 深色主题变量 */
+:root.dark {
+  /* 背景色 */
+  --popup-bg-primary: rgba(32, 32, 32, 0.85);
+  --popup-bg-secondary: rgba(45, 45, 45, 0.95);
+  --popup-bg-tertiary: rgba(55, 55, 55, 0.9);
+  --popup-bg-hover: rgba(255, 255, 255, 0.06);
+  --popup-bg-active: rgba(255, 255, 255, 0.1);
+  --popup-bg-overlay: rgba(0, 0, 0, 0.6);
+
+  /* 文本色 */
+  --popup-text-primary: #ffffff;
+  --popup-text-secondary: #b3b3b3;
+  --popup-text-tertiary: #808080;
+  --popup-text-disabled: #666666;
+
+  /* 边框色 */
+  --popup-border-color: rgba(255, 255, 255, 0.08);
+  --popup-border-strong: rgba(255, 255, 255, 0.14);
+  --popup-border-focus: rgba(96, 205, 255, 0.4);
+
+  /* 强调色 */
+  --popup-accent-color: #60cdff;
+  --popup-accent-light: rgba(96, 205, 255, 0.15);
+  --popup-accent-hover: #4dc3ff;
+  --popup-accent-active: #7dd4ff;
+
+  /* 语义颜色 - 成功 */
+  --popup-success-color: #4ade80;
+  --popup-success-light: rgba(74, 222, 128, 0.15);
+  --popup-success-bg: rgba(74, 222, 128, 0.2);
+
+  /* 语义颜色 - 警告 */
+  --popup-warning-color: #fbbf24;
+  --popup-warning-light: rgba(251, 191, 36, 0.15);
+  --popup-warning-bg: rgba(251, 191, 36, 0.2);
+
+  /* 语义颜色 - 错误 */
+  --popup-error-color: #f87171;
+  --popup-error-light: rgba(248, 113, 113, 0.15);
+  --popup-error-bg: rgba(248, 113, 113, 0.2);
+
+  /* 阴影系统 */
+  --popup-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --popup-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 4px 8px rgba(0, 0, 0, 0.2);
+  --popup-shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.3), 0 16px 32px rgba(0, 0, 0, 0.2);
+  --popup-shadow-fluent: 0 2px 6px rgba(0, 0, 0, 0.2), 0 8px 16px rgba(0, 0, 0, 0.3);
+  --popup-shadow-menu: 0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ==================== 圆角规范 ==================== */
+:root {
+  --popup-radius-sm: 4px;
+  --popup-radius-md: 8px;
+  --popup-radius-lg: 12px;
+  --popup-radius-xl: 16px;
+  --popup-radius-full: 9999px;
+}
+
+/* ==================== 间距系统 ==================== */
+:root {
+  --popup-space-xs: 4px;
+  --popup-space-sm: 8px;
+  --popup-space-md: 12px;
+  --popup-space-lg: 16px;
+  --popup-space-xl: 24px;
+}
+
+/* ==================== 动画规范 ==================== */
+:root {
+  --popup-transition-fast: 100ms ease-out;
+  --popup-transition-normal: 200ms ease-out;
+  --popup-transition-smooth: 250ms cubic-bezier(0.1, 0.9, 0.2, 1);
+  --popup-transition-bounce: 300ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* ==================== 节假日颜色体系 ==================== */
+:root {
+  /* 节假日 - 红色/暖色系 */
+  --popup-holiday-text: #ef4444;
+  --popup-holiday-text-dark: #f87171;
+  --popup-holiday-bg: rgba(239, 68, 68, 0.1);
+  --popup-holiday-bg-soft: rgba(239, 68, 68, 0.05);
+  --popup-holiday-border: rgba(239, 68, 68, 0.3);
+  --popup-holiday-accent: #f97316;
+
+  /* 调休/补班 - 黄色/橙色系 */
+  --popup-workday-text: #d97706;
+  --popup-workday-text-dark: #fbbf24;
+  --popup-workday-bg: rgba(217, 119, 6, 0.1);
+  --popup-workday-bg-soft: rgba(217, 119, 6, 0.05);
+  --popup-workday-border: rgba(217, 119, 6, 0.3);
+  --popup-workday-accent: #f59e0b;
+
+  /* 节气 - 蓝色系 */
+  --popup-solar-term-text: #3b82f6;
+  --popup-solar-term-text-dark: #60a5fa;
+  --popup-solar-term-bg: rgba(59, 130, 246, 0.1);
+  --popup-solar-term-accent: #0ea5e9;
+
+  /* 传统节日 - 深红色 */
+  --popup-festival-text: #dc2626;
+  --popup-festival-text-dark: #f87171;
+}
+
+/* ==================== 基础样式 ==================== */
+
+/* 弹出窗口整体容器 */
+.popup-container {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
+  min-width: 320px;
+  max-width: 380px;
+  overflow: hidden;
+  position: relative;
+
+  /* 字体设置 */
+  font-family: 'Segoe UI Variable', 'Segoe UI', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--popup-text-primary);
+
+  /* 亚克力效果背景 */
+  background: var(--popup-bg-primary);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+
+  /* 边框和阴影 */
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius-lg);
+  box-shadow: var(--popup-shadow-fluent);
+
+  /* 动画 */
+  transition: box-shadow var(--popup-transition-normal);
+}
+
+/* ==================== 三段式布局 ==================== */
+
+/* 通用区块样式 */
+.popup-section {
+  flex-shrink: 0;
+  width: 100%;
+}
+
+/* 日期信息区域 */
+.date-info-section {
+  padding: var(--popup-space-md);
+  background: transparent;
+}
+
+/* 月份导航区域 */
+.month-nav-section {
+  padding: var(--popup-space-sm) var(--popup-space-md);
+  background: transparent;
+}
+
+/* 日历面板区域 */
+.calendar-grid-section {
+  flex: 1;
+  padding: var(--popup-space-sm) var(--popup-space-md) var(--popup-space-md);
+  overflow: auto;
+  background: transparent;
+}
+
+/* ==================== 日期信息组件样式 ==================== */
+
+.popup-date-info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--popup-space-sm);
+  padding: var(--popup-space-md);
+  background: var(--popup-bg-secondary);
+  border-radius: var(--popup-radius-lg);
+  border: 1px solid var(--popup-border-color);
+  box-shadow: var(--popup-shadow-sm);
+}
+
+.date-section {
+  display: flex;
+  align-items: center;
+  gap: var(--popup-space-sm);
+}
+
+.current-date {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--popup-text-primary);
+  letter-spacing: -0.2px;
+}
+
+.weekday {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--popup-accent-color);
+  padding: 3px 10px;
+  background: var(--popup-accent-light);
+  border-radius: var(--popup-radius-full);
+  transition: all var(--popup-transition-fast);
+}
+
+.lunar-section {
+  display: flex;
+  align-items: center;
+  gap: var(--popup-space-sm);
+  flex-wrap: wrap;
+}
+
+.lunar-date {
+  font-size: 13px;
+  color: var(--popup-text-secondary);
+}
+
+.solar-term {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--popup-solar-term-text);
+  padding: 2px 8px;
+  background: var(--popup-solar-term-bg);
+  border-radius: var(--popup-radius-md);
+  transition: all var(--popup-transition-fast);
+}
+
+.lunar-festival {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--popup-text-secondary);
+  padding: 2px 8px;
+  background: var(--popup-bg-hover);
+  border-radius: var(--popup-radius-md);
+}
+
+.holiday-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: var(--popup-holiday-bg);
+  border-radius: var(--popup-radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--popup-holiday-text);
+  border: 1px solid var(--popup-holiday-border);
+  transition: all var(--popup-transition-fast);
+}
+
+.holiday-tag:hover {
+  background: var(--popup-holiday-bg-soft);
+  transform: translateY(-1px);
+}
+
+.workday-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: var(--popup-workday-bg);
+  border-radius: var(--popup-radius-full);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--popup-workday-text);
+  border: 1px solid var(--popup-workday-border);
+  transition: all var(--popup-transition-fast);
+}
+
+.workday-tag:hover {
+  background: var(--popup-workday-bg-soft);
+  transform: translateY(-1px);
+}
+
+/* ==================== 月份导航组件样式 ==================== */
+
+.popup-month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 44px;
+  padding: 0 var(--popup-space-sm);
+  background: var(--popup-bg-secondary);
+  border-radius: var(--popup-radius-lg);
+  border: 1px solid var(--popup-border-color);
+  box-shadow: var(--popup-shadow-sm);
+  user-select: none;
+}
+
+.popup-month-nav:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--popup-border-focus);
+}
+
+.nav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-radius: var(--popup-radius-md);
+  transition: all var(--popup-transition-fast);
+  color: var(--popup-text-primary);
+}
+
+.nav-btn:hover {
+  background: var(--popup-bg-hover);
+}
+
+.nav-btn:active {
+  background: var(--popup-bg-active);
+  transform: scale(0.95);
+}
+
+.nav-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--popup-border-focus);
+}
+
+.arrow {
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1;
+  color: inherit;
+}
+
+.month-label {
+  flex: 1;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--popup-text-primary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: var(--popup-radius-md);
+  transition: all var(--popup-transition-fast);
+}
+
+.month-label:hover {
+  background: var(--popup-bg-hover);
+  color: var(--popup-accent-color);
+}
+
+.month-label:active {
+  transform: scale(0.98);
+}
+
+.month-label:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--popup-border-focus);
+}
+
+/* ==================== 日历网格组件样式 ==================== */
+
+.popup-calendar-grid {
+  user-select: none;
+}
+
+/* 星期头部 */
+.weekday-header {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: var(--popup-space-xs);
+}
+
+.weekday {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--popup-text-secondary);
+  padding: var(--popup-space-xs) 0;
+}
+
+/* 日期网格 */
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 1px;
+  background: var(--popup-border-color);
+  border-radius: var(--popup-radius-md);
+  overflow: hidden;
+}
+
+/* 日期单元格 */
+.day-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: 4px 2px;
+  min-height: 42px;
+  background: var(--popup-bg-secondary);
+  cursor: pointer;
+  transition: all var(--popup-transition-fast);
+  position: relative;
+}
+
+.day-cell:hover {
+  background: var(--popup-bg-hover);
+}
+
+.day-cell.other-month {
+  background: var(--popup-bg-tertiary);
+}
+
+.day-cell.other-month .day-number,
+.day-cell.other-month .lunar-text {
+  color: var(--popup-text-tertiary);
+}
+
+/* 周末样式 */
+.day-cell.weekend:not(.holiday):not(.workday) {
+  background: rgba(255, 237, 213, 0.3);
+}
+
+/* 节假日样式 - 默认模式 */
+.day-cell.holiday {
+  background: rgba(254, 226, 226, 0.5);
+  border-left: 2px solid var(--popup-holiday-text);
+}
+
+/* 节假日样式 - 柔和模式 */
+.day-cell.holiday.holiday-mode-soft {
+  background: rgba(254, 226, 226, 0.25);
+}
+
+/* 节假日样式 - 高对比度模式 */
+.day-cell.holiday.holiday-mode-high-contrast {
+  background: rgba(239, 68, 68, 0.2);
+  border-left: 3px solid var(--popup-holiday-text);
+}
+
+/* 补班日样式 - 默认模式 */
+.day-cell.workday {
+  background: rgba(254, 243, 199, 0.5);
+  border-left: 2px solid var(--popup-workday-text);
+}
+
+/* 补班日样式 - 柔和模式 */
+.day-cell.workday.holiday-mode-soft {
+  background: rgba(254, 243, 199, 0.25);
+}
+
+/* 补班日样式 - 高对比度模式 */
+.day-cell.workday.holiday-mode-high-contrast {
+  background: rgba(217, 119, 6, 0.2);
+  border-left: 3px solid var(--popup-workday-text);
+}
+
+/* 今天样式 */
+.day-cell.today {
+  background: var(--popup-accent-light);
+}
+
+.day-cell.today .day-number {
+  background: var(--popup-accent-color);
+  color: white;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  box-shadow: var(--popup-shadow-sm);
+}
+
+/* 选中样式 */
+.day-cell.selected:not(.today) {
+  box-shadow: inset 0 0 0 2px var(--popup-accent-color);
+  border-radius: var(--popup-radius-sm);
+}
+
+/* 日期内容 */
+.day-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 100%;
+}
+
+.day-number {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--popup-text-primary);
+  line-height: 1.2;
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lunar-text {
+  font-size: 9px;
+  color: var(--popup-text-secondary);
+  line-height: 1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lunar-text.festival {
+  color: var(--popup-festival-text);
+  font-weight: 500;
+}
+
+/* 事件圆点 */
+.event-dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  margin-top: 2px;
+  flex-wrap: wrap;
+  max-width: 100%;
+}
+
+.event-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform var(--popup-transition-fast);
+  flex-shrink: 0;
+}
+
+.event-dot:hover {
+  transform: scale(1.8);
+}
+
+.more-dots {
+  font-size: 8px;
+  color: var(--popup-text-secondary);
+  background: var(--popup-bg-tertiary);
+  padding: 0 3px;
+  border-radius: 3px;
+  cursor: pointer;
+  line-height: 1.2;
+  transition: all var(--popup-transition-fast);
+}
+
+.more-dots:hover {
+  background: var(--popup-bg-hover);
+  color: var(--popup-text-primary);
+}
+
+/* ==================== 右键菜单样式 ==================== */
+
+.popup-context-menu {
+  position: fixed;
+  z-index: 9999;
+  min-width: 180px;
+  max-width: 260px;
+  background: var(--popup-bg-secondary);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius-lg);
+  box-shadow: var(--popup-shadow-menu);
+  padding: var(--popup-space-xs) 0;
+  outline: none;
+  user-select: none;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  animation: contextMenuEnter var(--popup-transition-normal) ease-out;
+}
+
+@keyframes contextMenuEnter {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: all var(--popup-transition-fast);
+  position: relative;
+}
+
+.menu-item:hover,
+.menu-item.focused {
+  background: var(--popup-bg-hover);
+}
+
+.menu-item:active {
+  transform: scale(0.98);
+}
+
+.menu-item.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.menu-item.hint {
+  opacity: 0.7;
+}
+
+.menu-icon {
+  font-size: 16px;
+  margin-right: 12px;
+  width: 20px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.menu-text {
+  flex: 1;
+  font-size: 14px;
+  color: var(--popup-text-primary);
+  font-weight: 400;
+}
+
+.menu-hint {
+  font-size: 11px;
+  color: var(--popup-text-tertiary);
+  margin-left: 8px;
+  font-style: italic;
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--popup-border-color);
+  margin: var(--popup-space-xs) var(--popup-space-sm);
+}
+
+/* ==================== 年月选择器样式 ==================== */
+
+.year-month-picker {
+  position: fixed;
+  z-index: 1000;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 280px;
+  max-width: 90vw;
+  background: var(--popup-bg-secondary);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius-lg);
+  box-shadow: var(--popup-shadow-lg);
+  padding: var(--popup-space-md);
+  font-size: 14px;
+  animation: pickerEnter var(--popup-transition-smooth);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+@keyframes pickerEnter {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+.picker-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--popup-bg-overlay);
+  z-index: 999;
+  animation: fadeIn var(--popup-transition-normal);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.picker-header {
+  padding-bottom: var(--popup-space-sm);
+  border-bottom: 1px solid var(--popup-border-color);
+  margin-bottom: var(--popup-space-md);
+}
+
+.picker-title {
+  font-weight: 600;
+  color: var(--popup-text-primary);
+  font-size: 15px;
+}
+
+.picker-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--popup-space-md);
+  margin-bottom: var(--popup-space-md);
+}
+
+.picker-field {
+  display: flex;
+  align-items: center;
+  gap: var(--popup-space-sm);
+}
+
+.field-label {
+  flex-shrink: 0;
+  width: 40px;
+  color: var(--popup-text-secondary);
+  font-size: 14px;
+}
+
+.field-select {
+  flex: 1;
+  height: 36px;
+  padding: 0 var(--popup-space-sm);
+  border: 1px solid var(--popup-border-color);
+  border-radius: var(--popup-radius-md);
+  background: var(--popup-bg-tertiary);
+  color: var(--popup-text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition: all var(--popup-transition-fast);
+  outline: none;
+}
+
+.field-select:hover {
+  border-color: var(--popup-accent-color);
+}
+
+.field-select:focus {
+  border-color: var(--popup-accent-color);
+  box-shadow: 0 0 0 2px var(--popup-border-focus);
+}
+
+.picker-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--popup-space-sm);
+  padding-top: var(--popup-space-md);
+  border-top: 1px solid var(--popup-border-color);
+}
+
+.picker-btn {
+  height: 36px;
+  padding: 0 var(--popup-space-lg);
+  border: none;
+  border-radius: var(--popup-radius-md);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--popup-transition-fast);
+  outline: none;
+}
+
+.picker-btn:focus {
+  box-shadow: 0 0 0 2px var(--popup-border-focus);
+}
+
+.picker-btn-cancel {
+  background: var(--popup-bg-tertiary);
+  color: var(--popup-text-secondary);
+}
+
+.picker-btn-cancel:hover {
+  background: var(--popup-bg-hover);
+  color: var(--popup-text-primary);
+}
+
+.picker-btn-confirm {
+  background: var(--popup-accent-color);
+  color: white;
+}
+
+.picker-btn-confirm:hover {
+  background: var(--popup-accent-hover);
+}
+
+/* ==================== 滚动条样式 ==================== */
+
+.calendar-grid-section::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.calendar-grid-section::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.calendar-grid-section::-webkit-scrollbar-thumb {
+  background: var(--popup-border-strong);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+.calendar-grid-section::-webkit-scrollbar-thumb:hover {
+  background: var(--popup-text-tertiary);
+  background-clip: content-box;
+}
+
+/* ==================== 深色主题适配 ==================== */
+
+:root.dark .weekday {
+  color: var(--popup-text-secondary);
+}
+
+:root.dark .day-cell.weekend:not(.holiday):not(.workday) {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root.dark .day-cell.holiday {
+  background: rgba(239, 68, 68, 0.15);
+}
+
+:root.dark .day-cell.holiday.holiday-mode-high-contrast {
+  background: rgba(239, 68, 68, 0.25);
+}
+
+:root.dark .day-cell.workday {
+  background: rgba(217, 119, 6, 0.15);
+}
+
+:root.dark .day-cell.workday.holiday-mode-high-contrast {
+  background: rgba(217, 119, 6, 0.25);
+}
+
+:root.dark .lunar-text.festival {
+  color: var(--popup-festival-text-dark);
+}
+
+:root.dark .holiday-tag {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--popup-holiday-text-dark);
+}
+
+:root.dark .workday-tag {
+  background: rgba(217, 119, 6, 0.2);
+  color: var(--popup-workday-text-dark);
+}
+
+:root.dark .solar-term {
+  color: var(--popup-solar-term-text-dark);
+}
+
+:root.dark .weekday {
+  background: var(--popup-accent-light);
+}
+
+/* ==================== 加载状态 ==================== */
+
+.loading-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  width: 100%;
+  background: var(--popup-bg-primary);
+}
+
+.loading-text {
+  font-size: 14px;
+  color: var(--popup-text-secondary);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* ==================== 响应式适配 ==================== */
+
+@media (max-width: 360px) {
+  .popup-container {
+    min-width: 280px;
+  }
+  
+  .current-date {
+    font-size: 16px;
+  }
+  
+  .month-label {
+    font-size: 14px;
+  }
+  
+  .day-cell {
+    min-height: 38px;
+    padding: 3px 1px;
+  }
+  
+  .day-number {
+    font-size: 12px;
+  }
+  
+  .lunar-text {
+    font-size: 8px;
+  }
+  
+  .year-month-picker {
+    width: 260px;
+  }
+}
+
+/* ==================== 工具类 ==================== */
+
+.text-primary {
+  color: var(--popup-text-primary);
+}
+
+.text-secondary {
+  color: var(--popup-text-secondary);
+}
+
+.text-tertiary {
+  color: var(--popup-text-tertiary);
+}
+
+.bg-primary {
+  background: var(--popup-bg-primary);
+}
+
+.bg-secondary {
+  background: var(--popup-bg-secondary);
+}
+
+.bg-tertiary {
+  background: var(--popup-bg-tertiary);
+}

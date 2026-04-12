@@ -1,7 +1,7 @@
 // 时钟区域查找工具
 // 三种数据来源：FindWindow → UI Automation → 任务栏位置估算
 
-use crate::clock_hook::region_updater::ClockRegionCache;
+use crate::clock_hook::region_updater::{ClockRegion, ClockRegionCache, MonitorType};
 use windows::core::w;
 use windows::Win32::Foundation::*;
 use windows::Win32::Graphics::Gdi::*;
@@ -182,11 +182,17 @@ pub fn find_clock_via_automation() -> Option<ClockRegionCache> {
             };
 
             if element_monitor == primary_monitor {
-                cache.primary = Some(rect);
+                cache.primary = Some(ClockRegion {
+                    rect,
+                    monitor_type: MonitorType::Primary,
+                });
                 found = true;
             } else if element_monitor != HMONITOR::default() {
                 // 非主屏但有有效显示器 → 副屏时钟
-                cache.secondary.push(rect);
+                cache.secondary.push(ClockRegion {
+                    rect,
+                    monitor_type: MonitorType::Secondary,
+                });
                 found = true;
             }
             // element_monitor 为空 → 元素不在任何显示器上，忽略
@@ -214,13 +220,20 @@ pub fn estimate_clock_regions() -> Option<ClockRegionCache> {
     let primary_monitor = get_primary_monitor_rect();
 
     // 估算主屏时钟区域
-    cache.primary = estimate_clock_from_taskbar(&taskbar_rect, &primary_monitor);
+    cache.primary =
+        estimate_clock_from_taskbar(&taskbar_rect, &primary_monitor).map(|rect| ClockRegion {
+            rect,
+            monitor_type: MonitorType::Primary,
+        });
 
     // 获取副屏任务栏并估算
     let secondary_bars = get_secondary_taskbar_rects();
     for bar_rect in secondary_bars {
         if let Some(clock_rect) = estimate_clock_from_taskbar_simple(&bar_rect) {
-            cache.secondary.push(clock_rect);
+            cache.secondary.push(ClockRegion {
+                rect: clock_rect,
+                monitor_type: MonitorType::Secondary,
+            });
         }
     }
 

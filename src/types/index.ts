@@ -170,3 +170,43 @@ export interface ConnectResult {
   account?: AccountInfo
   calendars?: CalDavCalendarInfo[]
 }
+
+// 弹出面板设置
+export interface PopupSettings {
+  popupShowLunar: boolean // 显示农历
+  popupShowLunarFestival: boolean // 显示农历节日
+  popupShowSolarTerm: boolean // 显示节气
+  popupShowHoliday: boolean // 显示法定节假日
+  popupShowEvents: boolean // 显示事件
+  popupCalendarShowLunar: boolean // 日历网格显示农历
+  popupCalendarHolidayColor: 'default' | 'soft' | 'high-contrast' // 节假日颜色模式
+}
+
+// 弹出面板右键菜单动作类型
+export type PopupContextMenuAction =
+  | 'createEvent' // 创建事件
+  | 'viewEvents' // 查看事件列表
+  | 'viewEventDetail' // 查看事件详情
+  | 'createTodo' // 创建待办
+  | 'viewTodos' // 查看待办列表
+  | 'openMain' // 在主界面打开
+
+// 弹出面板导航载荷
+export interface PopupNavigationPayload {
+  action: PopupContextMenuAction
+  date: string // ISO 日期字符串
+  eventId?: string // 事件 ID（用于查看详情）
+}
+
+// 窗口切换请求
+export interface WindowToggleRequest {
+  source: string // 请求来源窗口标识
+  monitorType?: string // 显示器类型
+  clockRect?: {
+    // 时钟区域坐标
+    left: number
+    top: number
+    right: number
+    bottom: number
+  }
+}
