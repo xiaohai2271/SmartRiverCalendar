@@ -47,7 +47,7 @@ function handleKeydown(e: KeyboardEvent) {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 44px;
+  height: 36px;
   padding: 0 var(--popup-space-sm);
   background: var(--popup-bg-secondary);
   border-radius: var(--popup-radius-lg);

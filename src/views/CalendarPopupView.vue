@@ -29,6 +29,11 @@ const popupSettings = usePopupSettingsStore()
 // 弹出窗口独立的当前日期状态（不使用 calendarStore.currentDate）
 const currentDate = ref(new Date())
 
+// 点击追踪：记录最近一次窗口内点击的时间戳
+// 用于判断失焦是否由窗口内点击引起
+let lastClickInWindow = 0
+const CLICK_COOLDOWN = 500 // 点击后 500ms 内的失焦不隐藏窗口
+
 // 选中的日期
 const selectedDate = ref<Date | undefined>(undefined)
 
@@ -165,23 +170,106 @@ async function navigateToMain(payload: PopupNavigationPayload) {
 
 // ==================== 失焦隐藏控制 ====================
 
-async function handleWindowBlur() {
-  // 如果右键菜单打开，不隐藏窗口
-  if (isContextMenuOpen.value) {
+/// 记录最近一次失焦时间，用于判断是否应该隐藏
+let lastBlurTime = 0
+/// 焦点恢复等待时间（毫秒）
+const FOCUS_RECOVERY_WAIT = 300
+
+/**
+ * 处理窗口级失焦事件（Tauri 窗口焦点变化）
+ * 仅当窗口真正失去焦点时隐藏（如点击了窗口外部）
+ * 注意：在 Windows 上点击窗口内部某些元素可能会短暂触发失焦，
+ * 所以需要等待一段时间确认窗口没有重新获得焦点
+ */
+async function handleWindowFocusLost() {
+  const now = Date.now()
+  lastBlurTime = now
+
+  console.log('[CalendarPopup] handleWindowFocusLost 触发', {
+    isContextMenuOpen: isContextMenuOpen.value,
+    yearMonthPickerVisible: yearMonthPickerVisible.value,
+    timestamp: new Date().toISOString(),
+    timeSinceLastClick: now - lastClickInWindow
+  })
+
+  // 如果最近有窗口内点击（500ms 内），不隐藏窗口
+  // 这是为了处理 Windows 上点击窗口内部元素导致焦点短暂丢失的问题
+  if (now - lastClickInWindow < CLICK_COOLDOWN) {
+    console.log('[CalendarPopup] 最近有窗口内点击，跳过隐藏')
+    // 尝试重新获取焦点
+    try {
+      const win = getCurrentWindow()
+      await win.setFocus()
+      console.log('[CalendarPopup] 已重新获取焦点')
+    } catch (e) {
+      console.error('[CalendarPopup] 重新获取焦点失败:', e)
+    }
     return
   }
-  
-  // 延迟检查，给菜单关闭事件处理时间
+
+  // 如果右键菜单打开，不隐藏窗口
+  if (isContextMenuOpen.value) {
+    console.log('[CalendarPopup] 右键菜单打开，不隐藏窗口')
+    return
+  }
+
+  // 如果年月选择器打开，不隐藏窗口
+  if (yearMonthPickerVisible.value) {
+    console.log('[CalendarPopup] 年月选择器打开，不隐藏窗口')
+    return
+  }
+
+  // 等待一段时间，看窗口是否会重新获得焦点
+  // Windows 上点击窗口内部元素可能会短暂触发失焦再获焦
+  await new Promise(resolve => setTimeout(resolve, FOCUS_RECOVERY_WAIT))
+
+  // 检查是否在等待期间重新获得了焦点
+  const win = getCurrentWindow()
+  const isFocused = await win.isFocused()
+
+  console.log('[CalendarPopup] 等待后检查焦点状态', {
+    isFocused,
+    blurDuration: Date.now() - now
+  })
+
+  // 如果已经重新获得焦点，不隐藏
+  if (isFocused) {
+    console.log('[CalendarPopup] 窗口已重新获得焦点，不隐藏')
+    return
+  }
+
+  // 如果在等待期间又有新的失焦事件，跳过本次处理
+  if (lastBlurTime !== now) {
+    console.log('[CalendarPopup] 有新的失焦事件，跳过本次处理')
+    return
+  }
+
+  // 延迟检查：给子组件（菜单等）关闭事件处理时间
   setTimeout(async () => {
-    if (!isContextMenuOpen.value) {
-      try {
-        const window = getCurrentWindow()
-        await window.hide()
-      } catch (error) {
-        console.error('[CalendarPopup] 隐藏窗口失败:', error)
-      }
+    console.log('[CalendarPopup] 延迟检查开始', {
+      isContextMenuOpen: isContextMenuOpen.value,
+      yearMonthPickerVisible: yearMonthPickerVisible.value
+    })
+
+    if (isContextMenuOpen.value || yearMonthPickerVisible.value) {
+      console.log('[CalendarPopup] 延迟检查：菜单/选择器打开，取消隐藏')
+      return
     }
-  }, 100)
+
+    try {
+      // 最终确认窗口确实没有焦点
+      const focused = await win.isFocused()
+      console.log('[CalendarPopup] 延迟检查：窗口焦点状态', { focused })
+      if (!focused) {
+        console.log('[CalendarPopup] 延迟检查：窗口无焦点，执行隐藏')
+        await win.hide()
+      } else {
+        console.log('[CalendarPopup] 延迟检查：窗口有焦点，不隐藏')
+      }
+    } catch (error) {
+      console.error('[CalendarPopup] 隐藏窗口失败:', error)
+    }
+  }, 200)
 }
 
 // ==================== 键盘事件 ====================
@@ -290,31 +378,57 @@ async function loadData() {
 
 // ==================== 生命周期 ====================
 
+/**
+ * 处理窗口内点击事件
+ * 记录点击时间，用于失焦判断
+ */
+function handleWindowClick(event: MouseEvent) {
+  lastClickInWindow = Date.now()
+  console.log('[CalendarPopup] 窗口内点击', {
+    timestamp: new Date().toISOString(),
+    target: (event.target as HTMLElement)?.tagName
+  })
+}
+
 onMounted(async () => {
   // 加载数据
   await loadData()
-  
-  // 添加事件监听
-  window.addEventListener('blur', handleWindowBlur)
+
+  // 添加键盘事件监听
   window.addEventListener('keydown', handleKeydown)
-  
+
+  // 添加点击事件监听（捕获阶段，确保在所有元素之前触发）
+  document.addEventListener('click', handleWindowClick, true)
+
   // 每次显示时重置为当前月（确保信息时效性）
   currentDate.value = new Date()
 })
 
 onUnmounted(() => {
   // 移除事件监听
-  window.removeEventListener('blur', handleWindowBlur)
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('click', handleWindowClick, true)
 })
 
-// 监听窗口显示事件，重新加载数据
-// 注意：这需要 Tauri 的窗口事件支持
+// 监听窗口焦点变化事件（Tauri 窗口级，比 DOM blur 更可靠）
 const currentWindow = getCurrentWindow()
 currentWindow.onFocusChanged(({ payload: focused }) => {
+  console.log('[CalendarPopup] onFocusChanged 事件触发', {
+    focused,
+    timestamp: new Date().toISOString(),
+    isContextMenuOpen: isContextMenuOpen.value,
+    yearMonthPickerVisible: yearMonthPickerVisible.value
+  })
+
   if (focused) {
-    // 窗口获得焦点时重新加载数据
+    // 窗口获得焦点时，重置失焦时间（取消任何待处理的隐藏操作）
+    lastBlurTime = 0
+    console.log('[CalendarPopup] 窗口获得焦点，重新加载数据，重置失焦时间')
     loadData()
+  } else {
+    // 窗口失去焦点时，延迟检查是否需要隐藏
+    console.log('[CalendarPopup] 窗口失去焦点，调用 handleWindowFocusLost')
+    handleWindowFocusLost()
   }
 })
 </script>
@@ -407,18 +521,18 @@ currentWindow.onFocusChanged(({ payload: focused }) => {
 }
 
 .date-info-section {
-  padding: 12px;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
 }
 
 .month-nav-section {
-  padding: 8px 12px;
+  padding: 4px 10px;
   border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
 }
 
 .calendar-grid-section {
   flex: 1;
-  padding: 12px;
-  overflow: auto;
+  padding: 6px 10px 8px;
+  overflow: hidden;
 }
 </style>

@@ -64,8 +64,8 @@ const lunarInfo = computed<LunarInfo>(() => {
 .popup-date-info {
   display: flex;
   flex-direction: column;
-  gap: var(--popup-space-sm);
-  padding: var(--popup-space-md);
+  gap: 4px;
+  padding: 8px 10px;
   background: var(--popup-bg-secondary);
   border-radius: var(--popup-radius-lg);
   border: 1px solid var(--popup-border-color);
@@ -79,7 +79,7 @@ const lunarInfo = computed<LunarInfo>(() => {
 }
 
 .current-date {
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--popup-text-primary);
   letter-spacing: -0.2px;

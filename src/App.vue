@@ -1,7 +1,14 @@
 <template>
+  <!-- 弹出窗口：只渲染独立视图 -->
+  <template v-if="isPopupWindow">
+    <router-view />
+  </template>
+
+  <!-- 主窗口：完整布局 -->
+  <template v-else>
   <!-- 顶部拖动区域 -->
   <div class="titlebar" data-tauri-drag-region></div>
-  
+
   <div class="app-container">
     <!-- Sidebar - Fluent Design -->
     <aside class="sidebar fluent-card">
@@ -58,6 +65,7 @@
 
   <!-- 提醒弹窗组件 -->
   <ReminderPopup />
+  </template>
 </template>
 
 <script setup lang="ts">
@@ -79,6 +87,9 @@ import type { CalendarEvent, Todo, PopupNavigationPayload } from './types'
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
 const router = useRouter()
+
+// 检测当前是否为弹出窗口
+const isPopupWindow = getCurrentWindow().label === 'calendar-popup'
 
 // popup-navigate 事件监听器取消函数
 const unlistenPopupNavigate = ref<UnlistenFn | null>(null)

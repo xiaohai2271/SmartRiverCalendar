@@ -27,8 +27,8 @@
       {
         "label": "calendar-popup",
         "title": "精简日历",
-        "width": 320,
-        "height": 420,
+        "width": 340,
+        "height": 480,
         "decorations": false,
         "transparent": false,
         "resizable": false,

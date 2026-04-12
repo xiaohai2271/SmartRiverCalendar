@@ -14,6 +14,7 @@ const mockShow = vi.fn()
 const mockHide = vi.fn()
 const mockSetFocus = vi.fn()
 const mockGetByLabel = vi.fn()
+const mockIsVisible = vi.fn()
 
 vi.mock('@tauri-apps/api/webviewWindow', () => ({
   WebviewWindow: {
@@ -35,15 +36,37 @@ vi.mock('@tauri-apps/api/window', () => ({
       size: { width: 1920, height: 1080 },
     },
   ]),
-}))
-
-// 模拟 positioner 插件
-vi.mock('@tauri-apps/plugin-positioner', () => ({
-  moveWindowConstrained: () => Promise.resolve(),
-  Position: {
-    TrayBottomRight: 'TrayBottomRight',
+  PhysicalPosition: class PhysicalPosition {
+    x: number
+    y: number
+    constructor(x: number, y: number) {
+      this.x = x
+      this.y = y
+    }
   },
 }))
+
+/**
+ * 创建模拟的弹出窗口对象
+ * @param options 配置选项
+ * @param options.visible 窗口初始可见状态（默认 false）
+ */
+function createMockPopupWindow(options: { visible?: boolean } = {}) {
+  let visible = options.visible ?? false
+  mockIsVisible.mockImplementation(() => Promise.resolve(visible))
+  mockShow.mockImplementation(async () => { visible = true })
+  mockHide.mockImplementation(async () => { visible = false })
+  // 更新 isVisible 以反映 show/hide 后的状态
+  mockIsVisible.mockImplementation(() => Promise.resolve(visible))
+
+  return {
+    show: mockShow,
+    hide: mockHide,
+    setFocus: mockSetFocus,
+    isVisible: mockIsVisible,
+    setPosition: vi.fn(),
+  }
+}
 
 describe('弹出窗口防抖和竞态保护', () => {
   beforeEach(async () => {
@@ -61,15 +84,11 @@ describe('弹出窗口防抖和竞态保护', () => {
 
   describe('防抖功能', () => {
     it('快速连续点击只触发一次切换', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { toggleCalendarPopup } = await import('../composables/useCalendarPopup')
-      
+
       // 快速连续调用 3 次
       toggleCalendarPopup()
       toggleCalendarPopup()
@@ -86,40 +105,31 @@ describe('弹出窗口防抖和竞态保护', () => {
     })
 
     it('防抖延迟期间使用最新参数', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-        setPosition: vi.fn(),
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { showCalendarPopup, hideCalendarPopup, isPopupVisible } = await import('../composables/useCalendarPopup')
-      
+
       // 先显示窗口
       await showCalendarPopup()
       await vi.advanceTimersByTimeAsync(200)
-      expect(isPopupVisible()).toBe(true)
-      
+      expect(await isPopupVisible()).toBe(true)
+
       // 隐藏窗口
       await hideCalendarPopup()
       await vi.advanceTimersByTimeAsync(200)
-      expect(isPopupVisible()).toBe(false)
+      expect(await isPopupVisible()).toBe(false)
 
       // 重置 mock
       mockShow.mockClear()
     })
 
     it('防抖延迟后再次调用会重新开始计时', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { toggleCalendarPopup } = await import('../composables/useCalendarPopup')
-      
+
       // 第一次调用 - 显示
       toggleCalendarPopup()
       await vi.advanceTimersByTimeAsync(300)
@@ -139,7 +149,7 @@ describe('弹出窗口防抖和竞态保护', () => {
 
     it('hasPendingDebounce 返回正确的防抖状态', async () => {
       const { toggleCalendarPopup, hasPendingDebounce } = await import('../composables/useCalendarPopup')
-      
+
       // 初始没有待处理的防抖
       expect(hasPendingDebounce()).toBe(false)
 
@@ -155,15 +165,11 @@ describe('弹出窗口防抖和竞态保护', () => {
 
   describe('竞态保护', () => {
     it('过渡期间忽略新的切换请求', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { toggleCalendarPopup, isPopupTransitioning } = await import('../composables/useCalendarPopup')
-      
+
       // 第一次调用
       toggleCalendarPopup()
       await vi.advanceTimersByTimeAsync(300)
@@ -176,22 +182,18 @@ describe('弹出窗口防抖和竞态保护', () => {
     })
 
     it('show 过渡期间忽略重复的 show 请求', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { showCalendarPopup, isPopupVisible } = await import('../composables/useCalendarPopup')
-      
+
       // 显示窗口
       await showCalendarPopup()
-      expect(isPopupVisible()).toBe(true)
-      
+      expect(await isPopupVisible()).toBe(true)
+
       // 等待动画完成
       await vi.advanceTimersByTimeAsync(200)
-      
+
       // 重置 mock
       mockShow.mockClear()
 
@@ -201,30 +203,26 @@ describe('弹出窗口防抖和竞态保护', () => {
     })
 
     it('hide 过渡期间忽略重复的 hide 请求', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { showCalendarPopup, hideCalendarPopup, isPopupVisible } = await import('../composables/useCalendarPopup')
-      
+
       // 先显示窗口
       await showCalendarPopup()
-      expect(isPopupVisible()).toBe(true)
+      expect(await isPopupVisible()).toBe(true)
 
       // 等待动画完成
       await vi.advanceTimersByTimeAsync(200)
 
       // 隐藏窗口
       await hideCalendarPopup()
-      
+
       // 等待动画完成
       await vi.advanceTimersByTimeAsync(200)
-      
-      expect(isPopupVisible()).toBe(false)
-      
+
+      expect(await isPopupVisible()).toBe(false)
+
       // 重置 mock
       mockHide.mockClear()
 
@@ -234,99 +232,85 @@ describe('弹出窗口防抖和竞态保护', () => {
     })
 
     it('isPopupTransitioning 返回正确的过渡状态', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { showCalendarPopup, isPopupTransitioning } = await import('../composables/useCalendarPopup')
-      
+
       // 初始不在过渡中
       expect(isPopupTransitioning()).toBe(false)
 
       // 开始显示
       const showPromise = showCalendarPopup()
-      
+
       // 在动画完成前应该处于过渡中
       expect(isPopupTransitioning()).toBe(true)
 
       // 等待完成
       await showPromise
       await vi.advanceTimersByTimeAsync(200)
-      
+
       // 动画完成后不再过渡中
       expect(isPopupTransitioning()).toBe(false)
     })
   })
 
   describe('状态重置', () => {
-    it('resetPopupState 清除所有状态', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+    it('resetPopupState 清除过渡和防抖状态', async () => {
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { showCalendarPopup, resetPopupState, isPopupVisible, isPopupTransitioning, hasPendingDebounce } = await import('../composables/useCalendarPopup')
-      
+
       // 显示窗口
       await showCalendarPopup()
-      expect(isPopupVisible()).toBe(true)
+      // isPopupVisible 现在实时查询窗口状态
+      expect(await isPopupVisible()).toBe(true)
 
       // 重置状态
       resetPopupState()
 
-      // 所有状态应该重置
-      expect(isPopupVisible()).toBe(false)
+      // 过渡和防抖状态应该重置
       expect(isPopupTransitioning()).toBe(false)
       expect(hasPendingDebounce()).toBe(false)
+      // isPopupVisible 查询真实窗口状态，窗口仍然可见
+      expect(await isPopupVisible()).toBe(true)
     })
 
     it('重置状态后可以正常操作', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { showCalendarPopup, hideCalendarPopup, resetPopupState, isPopupVisible } = await import('../composables/useCalendarPopup')
-      
+
       // 显示并重置
       await showCalendarPopup()
       resetPopupState()
 
       // 重置后应该可以正常显示
       await showCalendarPopup()
-      expect(isPopupVisible()).toBe(true)
+      expect(await isPopupVisible()).toBe(true)
 
       // 等待动画完成
       await vi.advanceTimersByTimeAsync(200)
 
       // 应该可以正常隐藏
       await hideCalendarPopup()
-      
+
       // 等待动画完成
       await vi.advanceTimersByTimeAsync(200)
-      
-      expect(isPopupVisible()).toBe(false)
+
+      expect(await isPopupVisible()).toBe(false)
     })
   })
 
   describe('综合场景', () => {
     it('防抖 + 竞态组合：快速连续调用最终只执行一次', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { toggleCalendarPopup } = await import('../composables/useCalendarPopup')
-      
+
       // 模拟快速点击
       for (let i = 0; i < 10; i++) {
         toggleCalendarPopup()
@@ -340,21 +324,17 @@ describe('弹出窗口防抖和竞态保护', () => {
     })
 
     it('主窗口可见时弹出弹出窗口正常工作', async () => {
-      const mockWindow = {
-        show: mockShow,
-        hide: mockHide,
-        setFocus: mockSetFocus,
-      }
+      const mockWindow = createMockPopupWindow()
       mockGetByLabel.mockResolvedValue(mockWindow)
 
       const { toggleCalendarPopup, isPopupVisible } = await import('../composables/useCalendarPopup')
-      
+
       // 调用切换（模拟主窗口可见时的场景）
       toggleCalendarPopup()
       await vi.advanceTimersByTimeAsync(300)
 
       // 弹出窗口应该正常显示
-      expect(isPopupVisible()).toBe(true)
+      expect(await isPopupVisible()).toBe(true)
       expect(mockShow).toHaveBeenCalled()
     })
   })

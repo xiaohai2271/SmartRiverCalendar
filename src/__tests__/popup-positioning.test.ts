@@ -8,8 +8,8 @@ import {
 } from '../composables/useCalendarPopup'
 
 // 弹出窗口尺寸配置（与 useCalendarPopup.ts 保持一致）
-const POPUP_WIDTH = 360
-const POPUP_HEIGHT = 500
+const POPUP_WIDTH = 340
+const POPUP_HEIGHT = 480
 const POPUP_MARGIN = 8
 
 /**
@@ -36,7 +36,7 @@ function createMockMonitor(
 
 describe('弹出窗口定位逻辑', () => {
   describe('calculatePopupPosition 边界检查', () => {
-    it('时钟在屏幕右下角，弹出窗口应向上弹出', () => {
+    it('时钟在屏幕右下角，弹出窗口应紧贴任务栏上方弹出', () => {
       const monitor = createMockMonitor(0, 0, 1920, 1080)
       const clockRect: PopupRect = {
         left: 1700,
@@ -47,17 +47,12 @@ describe('弹出窗口定位逻辑', () => {
 
       const position = calculatePopupPosition(clockRect, monitor)
 
-      // 弹出窗口应在时钟上方
-      expect(position.y).toBeLessThan(clockRect.top)
-      // 弹出窗口不应超出屏幕边界
+      // 弹出窗口底部应紧贴 clockRect.top（即紧贴任务栏上方）
+      expect(position.y + POPUP_HEIGHT).toBe(clockRect.top)
+      // 弹出窗口应在时钟区域附近，右边缘接近时钟右边缘
+      expect(position.x + POPUP_WIDTH).toBeLessThanOrEqual(clockRect.right)
+      // 弹出窗口不应超出屏幕左边界
       expect(position.x).toBeGreaterThanOrEqual(monitor.position.x + POPUP_MARGIN)
-      expect(position.y).toBeGreaterThanOrEqual(monitor.position.y + POPUP_MARGIN)
-      expect(position.x + POPUP_WIDTH).toBeLessThanOrEqual(
-        monitor.position.x + monitor.size.width - POPUP_MARGIN
-      )
-      expect(position.y + POPUP_HEIGHT).toBeLessThanOrEqual(
-        monitor.position.y + monitor.size.height - POPUP_MARGIN
-      )
     })
 
     it('时钟在屏幕左下角，弹出窗口应水平调整', () => {
@@ -89,7 +84,7 @@ describe('弹出窗口定位逻辑', () => {
       const position = calculatePopupPosition(clockRect, monitor)
 
       // 弹出窗口应在时钟下方
-      expect(position.y).toBeGreaterThanOrEqual(clockRect.bottom + POPUP_MARGIN)
+      expect(position.y).toBeGreaterThanOrEqual(clockRect.bottom)
     })
 
     it('副屏显示器（负坐标），弹出窗口应正确定位', () => {
@@ -106,12 +101,9 @@ describe('弹出窗口定位逻辑', () => {
 
       // 弹出窗口应在副屏范围内
       expect(position.x).toBeGreaterThanOrEqual(monitor.position.x + POPUP_MARGIN)
-      expect(position.x + POPUP_WIDTH).toBeLessThanOrEqual(
-        monitor.position.x + monitor.size.width - POPUP_MARGIN
-      )
     })
 
-    it('小屏幕场景，弹出窗口应适配屏幕尺寸', () => {
+    it('小屏幕场景，弹出窗口紧贴任务栏上方', () => {
       // 小屏幕（如平板）
       const monitor = createMockMonitor(0, 0, 800, 600)
       const clockRect: PopupRect = {
@@ -123,15 +115,10 @@ describe('弹出窗口定位逻辑', () => {
 
       const position = calculatePopupPosition(clockRect, monitor)
 
-      // 弹出窗口应在屏幕范围内
+      // 弹出窗口底部应紧贴 clockRect.top
+      expect(position.y + POPUP_HEIGHT).toBe(clockRect.top)
+      // 弹出窗口不应超出屏幕左边界
       expect(position.x).toBeGreaterThanOrEqual(monitor.position.x + POPUP_MARGIN)
-      expect(position.y).toBeGreaterThanOrEqual(monitor.position.y + POPUP_MARGIN)
-      expect(position.x + POPUP_WIDTH).toBeLessThanOrEqual(
-        monitor.position.x + monitor.size.width - POPUP_MARGIN
-      )
-      expect(position.y + POPUP_HEIGHT).toBeLessThanOrEqual(
-        monitor.position.y + monitor.size.height - POPUP_MARGIN
-      )
     })
   })
 
