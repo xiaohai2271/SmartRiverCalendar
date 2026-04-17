@@ -1,0 +1,59 @@
+schema: spec-driven
+
+# 项目上下文 — AI 创建制品时的参考信息
+context: |
+  项目名称: 小河日历 (SmartRiverCalendar)
+  项目描述: 跨平台桌面日历应用
+  目标平台: Windows / Android
+
+  技术栈:
+  - 前端: Vue 3 + TypeScript + Vite
+  - 后端: Tauri 2.x (Rust)
+  - 状态管理: Pinia (Composition API / Setup Store 风格)
+  - 数据库: SQLite (tauri-plugin-sql)
+  - UI 组件库: Fluent UI Web Components (遵循 Microsoft Fluent Design)
+  - 测试: Vitest + Vue Test Utils
+  - 包管理: pnpm
+  - 农历/节假日: tyme4ts
+
+  项目约定:
+  - Vue 组件使用 <script setup lang="ts"> 风格
+  - 类型定义集中在 src/types/index.ts，使用 import type 语法
+  - 组件文件名 PascalCase，工具/Store 文件名 camelCase
+  - 所有注释和文档使用中文
+  - 遵循 Fluent Design 规范（圆角、阴影、动效、亚克力效果）
+  - 异步操作必须 try-catch
+  - 禁止 as any / @ts-ignore / @ts-expect-error
+  - 测试覆盖率目标 60%-70%
+  - Git 分支: feature/* / bugfix/*，main 受保护
+  - Conventional Commits 格式
+
+  目录结构:
+  - src/components/calendar/ — 日历视图组件 (DayView, WeekView, MonthView, YearView)
+  - src/components/settings/ — 设置组件
+  - src/components/todo/ — 待办组件
+  - src/views/ — 页面视图
+  - src/stores/ — Pinia Store
+  - src/types/ — TypeScript 类型
+  - src/utils/ — 工具函数 (date, database, lunar, holiday)
+  - src/services/ — 业务逻辑服务
+  - src-tauri/ — Rust 后端
+
+# 制品级别规则
+rules:
+  proposal:
+    - 提案必须包含"非目标"章节，明确不在范围内的事项
+    - 提案需评估对现有日历视图、系统托盘、数据存储的影响
+    - 如涉及 Tauri IPC 调用，需说明前后端交互方案
+  specs:
+    - 需求描述使用 EARS 风格（系统 SHALL/MUST/SHOULD...）
+    - 每个需求至少包含一个场景（GIVEN-WHEN-THEN 格式）
+    - 场景需考虑中文本地化场景（农历、节假日、调休）
+  design:
+    - 技术方案需说明前端 (Vue) 和后端 (Rust/Tauri) 各自的职责
+    - 涉及数据库变更需说明 SQLite schema 变更
+    - UI 变更需说明 Fluent Design 规范的遵循方式
+  tasks:
+    - 任务粒度控制在 2 小时以内
+    - 每个任务需标注涉及的文件或模块路径
+    - 涉及新功能时，同步标注需要编写的测试用例
