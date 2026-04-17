@@ -48,6 +48,9 @@ Desktop.ini
 # Sisyphus 工作状态
 .sisyphus/
 
+# OMC 工作状态
+.omc/
+
 # 临时文件
 *.tmp
 *.temp
