@@ -262,9 +262,9 @@ function handleViewEvent(event: CalendarEvent) {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding: 4px 2px;
-  min-height: 42px;
+  justify-content: center;
+  padding: var(--day-cell-padding, 3px 1px);
+  min-height: var(--day-cell-min-height, 36px);
   background: var(--popup-bg-secondary);
   cursor: pointer;
   transition: all var(--popup-transition-fast);

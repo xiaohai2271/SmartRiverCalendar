@@ -176,8 +176,7 @@
   flex-direction: column;
   width: 100%;
   height: 100vh;
-  min-width: 300px;
-  max-width: 380px;
+  min-width: 280px; // 支持小尺寸窗口
   overflow: hidden;
   position: relative;
 
@@ -225,7 +224,10 @@
 .calendar-grid-section {
   flex: 1;
   padding: var(--popup-space-sm) var(--popup-space-md) var(--popup-space-md);
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: transparent;
 }
 
@@ -421,6 +423,10 @@
 
 .popup-calendar-grid {
   user-select: none;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* 星期头部 */
@@ -442,10 +448,12 @@
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
   gap: 1px;
   background: var(--popup-border-color);
   border-radius: var(--popup-radius-md);
   overflow: hidden;
+  flex: 1;
 }
 
 /* 日期单元格 */
@@ -453,9 +461,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
-  padding: 3px 1px;
-  min-height: 36px;
+  justify-content: center;
+  padding: var(--day-cell-padding, 3px 1px);
+  min-height: var(--day-cell-min-height, 36px);
   background: var(--popup-bg-secondary);
   cursor: pointer;
   transition: all var(--popup-transition-fast);
@@ -1003,4 +1011,128 @@
 
 .bg-tertiary {
   background: var(--popup-bg-tertiary);
+}
+
+/* ==================== 尺寸响应式变量系统 ==================== */
+
+/**
+ * 动态 CSS 变量系统 - 基于 data-size 属性
+ * 支持三种尺寸：small(紧凑), medium(标准), large(宽松)
+ */
+
+/* 小尺寸 - 紧凑模式 */
+.popup-container[data-size="small"] {
+  /* 日历网格间距 */
+  --calendar-grid-gap: 1px;
+
+  /* 日期单元格内边距 */
+  --day-cell-padding: 2px 1px;
+  --day-cell-min-height: 30px;
+
+  /* 字体大小 */
+  --day-number-font-size: 12px;
+  --lunar-text-font-size: 8px;
+  --weekday-header-font-size: 10px;
+
+  /* 区域间距 */
+  --date-info-section-padding: 8px 10px;
+  --month-nav-section-padding: 6px 10px;
+  --calendar-grid-section-padding: 8px 10px;
+}
+
+/* 中尺寸 - 标准模式 (默认) */
+.popup-container[data-size="medium"] {
+  /* 日历网格间距 */
+  --calendar-grid-gap: 2px;
+
+  /* 日期单元格内边距 */
+  --day-cell-padding: 3px 1px;
+  --day-cell-min-height: 36px;
+
+  /* 字体大小 */
+  --day-number-font-size: 13px;
+  --lunar-text-font-size: 9px;
+  --weekday-header-font-size: 11px;
+
+  /* 区域间距 */
+  --date-info-section-padding: 10px 12px;
+  --month-nav-section-padding: 8px 12px;
+  --calendar-grid-section-padding: 10px 12px;
+}
+
+/* 大尺寸 - 宽松模式 */
+.popup-container[data-size="large"] {
+  /* 日历网格间距 */
+  --calendar-grid-gap: 3px;
+
+  /* 日期单元格内边距 */
+  --day-cell-padding: 4px 2px;
+  --day-cell-min-height: 42px;
+
+  /* 字体大小 */
+  --day-number-font-size: 15px;
+  --lunar-text-font-size: 10px;
+  --weekday-header-font-size: 12px;
+
+  /* 区域间距 */
+  --date-info-section-padding: 12px 16px;
+  --month-nav-section-padding: 10px 16px;
+  --calendar-grid-section-padding: 12px 16px;
+}
+
+/* ==================== 尺寸响应式样式应用 ==================== */
+
+/* 应用区域间距 */
+.popup-container[data-size="small"] .date-info-section,
+.popup-container[data-size="medium"] .date-info-section,
+.popup-container[data-size="large"] .date-info-section {
+  padding: var(--date-info-section-padding);
+}
+
+.popup-container[data-size="small"] .month-nav-section,
+.popup-container[data-size="medium"] .month-nav-section,
+.popup-container[data-size="large"] .month-nav-section {
+  padding: var(--month-nav-section-padding);
+}
+
+.popup-container[data-size="small"] .calendar-grid-section,
+.popup-container[data-size="medium"] .calendar-grid-section,
+.popup-container[data-size="large"] .calendar-grid-section {
+  padding: var(--calendar-grid-section-padding);
+}
+
+/* 应用日历网格间距 */
+.popup-container[data-size="small"] .calendar-grid,
+.popup-container[data-size="medium"] .calendar-grid,
+.popup-container[data-size="large"] .calendar-grid {
+  gap: var(--calendar-grid-gap);
+}
+
+/* 应用日期单元格样式 */
+.popup-container[data-size="small"] .day-cell,
+.popup-container[data-size="medium"] .day-cell,
+.popup-container[data-size="large"] .day-cell {
+  padding: var(--day-cell-padding);
+  min-height: var(--day-cell-min-height);
+}
+
+/* 应用星期头部字体大小 */
+.popup-container[data-size="small"] .weekday-header .weekday,
+.popup-container[data-size="medium"] .weekday-header .weekday,
+.popup-container[data-size="large"] .weekday-header .weekday {
+  font-size: var(--weekday-header-font-size);
+}
+
+/* 应用日期数字字体大小 */
+.popup-container[data-size="small"] .day-number,
+.popup-container[data-size="medium"] .day-number,
+.popup-container[data-size="large"] .day-number {
+  font-size: var(--day-number-font-size);
+}
+
+/* 应用农历文字字体大小 */
+.popup-container[data-size="small"] .lunar-text,
+.popup-container[data-size="medium"] .lunar-text,
+.popup-container[data-size="large"] .lunar-text {
+  font-size: var(--lunar-text-font-size);
 }
