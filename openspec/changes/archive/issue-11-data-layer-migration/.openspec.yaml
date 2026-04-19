@@ -18,7 +18,6 @@ metadata:
 
 # 关联资源
 references:
-  - .sisyphus/drafts/data-layer-migration.md
   - .agents/skills/calendar-business-flows/references/data-layer-migration.md
 
 # 变更范围

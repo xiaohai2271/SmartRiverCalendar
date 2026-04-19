@@ -21,7 +21,6 @@ metadata:
 
 # 关联资源
 references:
-  - .sisyphus/plans/caldav-bugfix.md
   - .agents/skills/calendar-business-flows/references/external-calendar-integration.md
 
 # 变更范围
