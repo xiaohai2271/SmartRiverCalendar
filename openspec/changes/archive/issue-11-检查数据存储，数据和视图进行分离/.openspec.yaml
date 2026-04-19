@@ -1,0 +1,8 @@
+schema: spec-driven
+name: issue-11-检查数据存储，数据和视图进行分离
+status: archived
+category: refactor
+created: 2026-04-19T06:51:49.177Z
+source:
+  issue: 11
+  pr: 14

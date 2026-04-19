@@ -1,0 +1,8 @@
+schema: spec-driven
+name: issue-19-系统时钟区域唤醒精简日历窗口
+status: active
+category: feature
+created: 2026-04-19T06:51:49.171Z
+source:
+  issue: 19
+  pr: 20

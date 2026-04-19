@@ -1,0 +1,8 @@
+schema: spec-driven
+name: issue-5-关闭所有页面的默认右键菜单，并根据模块功能开启对应的右键菜单
+status: active
+category: feature
+created: 2026-04-19T06:51:49.178Z
+source:
+  issue: 5
+  pr: 13

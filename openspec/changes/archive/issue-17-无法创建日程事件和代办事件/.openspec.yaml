@@ -1,0 +1,8 @@
+schema: spec-driven
+name: issue-17-无法创建日程事件和代办事件
+status: archived
+category: bugfix
+created: 2026-04-19T06:51:49.175Z
+source:
+  issue: 17
+  pr: 18
