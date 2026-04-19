@@ -1,0 +1,10 @@
+schema: spec-driven
+name: issue-4-home-time-display
+status: archived
+category: feature
+created: 2026-03-28
+completed: 2026-03-30
+github:
+  issue: 4
+  pr: 9
+summary: 首页展示当前的实时时间、日期、农历、节气、节假日和补休班提醒信息

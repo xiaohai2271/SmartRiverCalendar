@@ -1,0 +1,27 @@
+schema: spec-driven
+name: issue-5-context-menu
+status: active
+category: feature
+version: 1.0.0
+created: 2026-03-30
+updated: 2026-04-19
+
+metadata:
+  issue: 5
+  pr: 13
+  branch: feature/context-menu
+  labels:
+    - bug
+    - enhancement
+
+references:
+  - title: "GitHub Issue #5"
+    url: https://github.com/xiaohai2271/SmartRiverCalender/issues/5
+  - title: "GitHub PR #13"
+    url: https://github.com/xiaohai2271/SmartRiverCalender/pull/13
+
+metrics:
+  additions: 9429
+  deletions: 811
+  files_changed: 35
+  tests_passed: 171

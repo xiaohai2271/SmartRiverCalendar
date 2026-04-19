@@ -1,0 +1,40 @@
+# OpenSpec v1.3.0 变更配置
+# 小河日历 - 飞书 CalDAV 日历同步修复
+
+schema: spec-driven
+name: pr-8-caldav-feishu-fix
+version: 1.0.0
+status: archived
+category: bugfix
+
+# 变更元信息
+metadata:
+  pr: 8
+  issue: null
+  author: xiaohai2271
+  created_at: 2026-03-30
+  merged_at: 2026-03-30
+  labels:
+    - caldav
+    - feishu
+    - bugfix
+
+# 关联资源
+references:
+  - .agents/skills/calendar-business-flows/references/external-calendar-integration.md
+
+# 变更范围
+scope:
+  - src-tauri/src/caldav.rs
+  - src-tauri/src/commands.rs
+  - src-tauri/tests/feishu_caldav_test.rs
+  - src/utils/database.ts
+
+# 统计信息
+stats:
+  files_changed: 7
+  commits: 3
+  additions: 2547
+  deletions: 129
+  rust_tests: 31
+  frontend_tests: 0
