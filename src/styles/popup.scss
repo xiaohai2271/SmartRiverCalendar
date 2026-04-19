@@ -1035,15 +1035,15 @@
   --weekday-header-font-size: 10px;
 
   /* 区域间距 */
-  --date-info-section-padding: 8px 10px;
-  --month-nav-section-padding: 6px 10px;
-  --calendar-grid-section-padding: 8px 10px;
+  --date-info-section-padding: 8px 10px 4px 10px;
+  --month-nav-section-padding: 1px 10px;
+  --calendar-grid-section-padding: 4px 10px 8px 10px;
 }
 
 /* 中尺寸 - 标准模式 (默认) */
 .popup-container[data-size="medium"] {
   /* 日历网格间距 */
-  --calendar-grid-gap: 2px;
+  --calendar-grid-gap: 1px;
 
   /* 日期单元格内边距 */
   --day-cell-padding: 3px 1px;
@@ -1055,15 +1055,15 @@
   --weekday-header-font-size: 11px;
 
   /* 区域间距 */
-  --date-info-section-padding: 10px 12px;
-  --month-nav-section-padding: 8px 12px;
-  --calendar-grid-section-padding: 10px 12px;
+  --date-info-section-padding: 10px 12px 3px 12px;
+  --month-nav-section-padding: 2px 12px;
+  --calendar-grid-section-padding: 3px 12px 10px 12px;
 }
 
 /* 大尺寸 - 宽松模式 */
 .popup-container[data-size="large"] {
   /* 日历网格间距 */
-  --calendar-grid-gap: 3px;
+  --calendar-grid-gap: 1px;
 
   /* 日期单元格内边距 */
   --day-cell-padding: 4px 2px;
@@ -1075,9 +1075,9 @@
   --weekday-header-font-size: 12px;
 
   /* 区域间距 */
-  --date-info-section-padding: 12px 16px;
-  --month-nav-section-padding: 10px 16px;
-  --calendar-grid-section-padding: 12px 16px;
+  --date-info-section-padding: 12px 16px 4px 16px;
+  --month-nav-section-padding: 3px 16px;
+  --calendar-grid-section-padding: 4px 16px 12px 16px;
 }
 
 /* ==================== 尺寸响应式样式应用 ==================== */

@@ -51,7 +51,6 @@ function handleKeydown(e: KeyboardEvent) {
   padding: 0 var(--popup-space-sm);
   background: var(--popup-bg-secondary);
   border-radius: var(--popup-radius-lg);
-  border: 1px solid var(--popup-border-color);
   box-shadow: var(--popup-shadow-sm);
   user-select: none;
 }

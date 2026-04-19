@@ -51,15 +51,26 @@ vi.mock('@tauri-apps/api/window', () => ({
       this.y = y
     }
   },
+  // 模拟 LogicalSize 类
+  LogicalSize: class LogicalSize {
+    width: number
+    height: number
+    constructor(width: number, height: number) {
+      this.width = width
+      this.height = height
+    }
+  },
 }))
 
 /**
  * 创建模拟的弹出窗口对象
  * @param options 配置选项
  * @param options.visible 窗口初始可见状态（默认 false）
+ * @param options.position 窗口初始位置（默认 { x: 0, y: 0 }）
  */
-function createMockPopupWindow(options: { visible?: boolean } = {}) {
+function createMockPopupWindow(options: { visible?: boolean; position?: { x: number; y: number } } = {}) {
   let visible = options.visible ?? false
+  const position = options.position ?? { x: 0, y: 0 }
   mockIsVisible.mockImplementation(() => Promise.resolve(visible))
   mockShow.mockImplementation(async () => { visible = true })
   mockHide.mockImplementation(async () => { visible = false })
@@ -72,6 +83,8 @@ function createMockPopupWindow(options: { visible?: boolean } = {}) {
     setFocus: mockSetFocus,
     isVisible: mockIsVisible,
     setPosition: vi.fn(),
+    setSize: vi.fn(),
+    innerPosition: vi.fn().mockResolvedValue(position),
   }
 }
 
@@ -337,6 +350,15 @@ describe('useWindowToggle 事件处理', () => {
           this.y = y
         }
       },
+      // 模拟 LogicalSize 类
+      LogicalSize: class LogicalSize {
+        width: number
+        height: number
+        constructor(width: number, height: number) {
+          this.width = width
+          this.height = height
+        }
+      },
     }))
 
     vi.doMock('@tauri-apps/plugin-positioner', () => ({
@@ -385,5 +407,459 @@ describe('useWindowToggle 事件处理', () => {
     // 验证参数传递
     expect(await isPopupVisible()).toBe(true)
     expect(mockShow).toHaveBeenCalled()
+  })
+})
+
+describe('setPopupWindowSize', () => {
+  it('设置窗口为小尺寸', async () => {
+    const mockWindow = createMockPopupWindow()
+    mockGetByLabel.mockResolvedValue(mockWindow)
+    const setSizeMock = mockWindow.setSize as ReturnType<typeof vi.fn>
+    const setPositionMock = mockWindow.setPosition as ReturnType<typeof vi.fn>
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    await setPopupWindowSize('small')
+
+    // 检查 setSize 被调用
+    expect(setSizeMock).toHaveBeenCalled()
+    // 检查是否传入了正确的 LogicalSize
+    const logicalSizeArg = setSizeMock.mock.calls[0][0]
+    expect(logicalSizeArg).toBeInstanceOf(Object)
+    expect(logicalSizeArg.width).toBe(280)
+    expect(logicalSizeArg.height).toBe(400)
+    // 检查 setPosition 被调用（窗口重新定位到右下角）
+    expect(setPositionMock).toHaveBeenCalled()
+    // 检查日志输出
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('窗口已调整到右下角位置')
+    )
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('280x400')
+    )
+  })
+
+  it('设置窗口为中等尺寸', async () => {
+    const mockWindow = createMockPopupWindow()
+    mockGetByLabel.mockResolvedValue(mockWindow)
+    const setSizeMock = mockWindow.setSize as ReturnType<typeof vi.fn>
+    const setPositionMock = mockWindow.setPosition as ReturnType<typeof vi.fn>
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    await setPopupWindowSize('medium')
+
+    expect(setSizeMock).toHaveBeenCalled()
+    const logicalSizeArg = setSizeMock.mock.calls[0][0]
+    expect(logicalSizeArg.width).toBe(340)
+    expect(logicalSizeArg.height).toBe(480)
+    // 检查 setPosition 被调用
+    expect(setPositionMock).toHaveBeenCalled()
+    // 检查日志输出
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('窗口已调整到右下角位置')
+    )
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('340x480')
+    )
+  })
+
+  it('设置窗口为大尺寸', async () => {
+    const mockWindow = createMockPopupWindow()
+    mockGetByLabel.mockResolvedValue(mockWindow)
+    const setSizeMock = mockWindow.setSize as ReturnType<typeof vi.fn>
+    const setPositionMock = mockWindow.setPosition as ReturnType<typeof vi.fn>
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    await setPopupWindowSize('large')
+
+    expect(setSizeMock).toHaveBeenCalled()
+    const logicalSizeArg = setSizeMock.mock.calls[0][0]
+    expect(logicalSizeArg.width).toBe(400)
+    expect(logicalSizeArg.height).toBe(560)
+    // 检查 setPosition 被调用
+    expect(setPositionMock).toHaveBeenCalled()
+    // 检查日志输出
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('窗口已调整到右下角位置')
+    )
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('400x560')
+    )
+  })
+
+  it('窗口不存在时打印警告', async () => {
+    mockGetByLabel.mockResolvedValue(null)
+    const consoleSpy = vi.spyOn(console, 'warn')
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    await setPopupWindowSize('medium')
+
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[useCalendarPopup] 弹出窗口不存在，无法设置大小'
+    )
+  })
+
+  it('设置窗口大小时发生错误', async () => {
+    const mockWindow = createMockPopupWindow()
+    mockWindow.setSize = vi.fn().mockRejectedValue(new Error('设置失败'))
+    mockGetByLabel.mockResolvedValue(mockWindow)
+    const consoleSpy = vi.spyOn(console, 'error')
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    await expect(setPopupWindowSize('medium')).rejects.toThrow('设置失败')
+    expect(consoleSpy).toHaveBeenCalledWith(
+      '[useCalendarPopup] 设置窗口大小失败:',
+      expect.any(Error)
+    )
+  })
+})
+
+describe('checkWindowBounds', () => {
+  // 定义测试用显示器
+  const testMonitor = {
+    position: { x: 0, y: 0 },
+    size: { width: 1920, height: 1080 },
+  }
+
+  it('窗口在安全范围内不需要调整', async () => {
+    const { checkWindowBounds } = await import('../composables/useCalendarPopup')
+
+    const result = checkWindowBounds(
+      { x: 100, y: 100 },
+      { width: 340, height: 480 },
+      testMonitor as any
+    )
+
+    expect(result.needsAdjustment).toBe(false)
+    expect(result.x).toBe(100)
+    expect(result.y).toBe(100)
+  })
+
+  it('窗口超出左边界需要调整', async () => {
+    const { checkWindowBounds } = await import('../composables/useCalendarPopup')
+
+    const result = checkWindowBounds(
+      { x: 0, y: 100 }, // 窗口左边缘在显示器左边缘
+      { width: 340, height: 480 },
+      testMonitor as any
+    )
+
+    expect(result.needsAdjustment).toBe(true)
+    expect(result.x).toBe(8) // POPUP_MARGIN = 8
+    expect(result.y).toBe(100)
+  })
+
+  it('窗口超出右边界需要调整', async () => {
+    const { checkWindowBounds } = await import('../composables/useCalendarPopup')
+
+    const result = checkWindowBounds(
+      { x: 1600, y: 100 }, // 窗口右边缘 1600 + 340 = 1940 > 1920 - 8
+      { width: 340, height: 480 },
+      testMonitor as any
+    )
+
+    expect(result.needsAdjustment).toBe(true)
+    expect(result.x).toBe(1920 - 340 - 8) // 1572
+    expect(result.y).toBe(100)
+  })
+
+  it('窗口超出上边界需要调整', async () => {
+    const { checkWindowBounds } = await import('../composables/useCalendarPopup')
+
+    const result = checkWindowBounds(
+      { x: 100, y: 0 }, // 窗口上边缘在显示器上边缘
+      { width: 340, height: 480 },
+      testMonitor as any
+    )
+
+    expect(result.needsAdjustment).toBe(true)
+    expect(result.x).toBe(100)
+    expect(result.y).toBe(8) // POPUP_MARGIN = 8
+  })
+
+  it('窗口超出下边界需要调整', async () => {
+    const { checkWindowBounds } = await import('../composables/useCalendarPopup')
+
+    const result = checkWindowBounds(
+      { x: 100, y: 620 }, // 窗口下边缘 620 + 480 = 1100 > 1080 - 8
+      { width: 340, height: 480 },
+      testMonitor as any
+    )
+
+    expect(result.needsAdjustment).toBe(true)
+    expect(result.x).toBe(100)
+    expect(result.y).toBe(1080 - 480 - 8) // 592
+  })
+
+  it('大尺寸窗口超出多边界需要调整', async () => {
+    const { checkWindowBounds } = await import('../composables/useCalendarPopup')
+
+    const result = checkWindowBounds(
+      { x: 0, y: 0 }, // 同时超出左边界和上边界
+      { width: 400, height: 560 }, // large 尺寸
+      testMonitor as any
+    )
+
+    expect(result.needsAdjustment).toBe(true)
+    expect(result.x).toBe(8)
+    expect(result.y).toBe(8)
+  })
+
+  it('处理负坐标位置', async () => {
+    const { checkWindowBounds } = await import('../composables/useCalendarPopup')
+
+    const result = checkWindowBounds(
+      { x: -100, y: -50 },
+      { width: 340, height: 480 },
+      testMonitor as any
+    )
+
+    expect(result.needsAdjustment).toBe(true)
+    expect(result.x).toBe(8)
+    expect(result.y).toBe(8)
+  })
+})
+
+describe('findWindowMonitor', () => {
+  // 定义多显示器配置
+  const multiMonitors = [
+    {
+      position: { x: 0, y: 0 },
+      size: { width: 1920, height: 1080 },
+    },
+    {
+      position: { x: 1920, y: 0 },
+      size: { width: 1920, height: 1080 },
+    },
+  ]
+
+  it('窗口在主显示器上', async () => {
+    const { findWindowMonitor } = await import('../composables/useCalendarPopup')
+
+    const monitor = findWindowMonitor(
+      { x: 500, y: 300 },
+      multiMonitors as any
+    )
+
+    expect(monitor).not.toBeNull()
+    expect(monitor!.position.x).toBe(0)
+    expect(monitor!.position.y).toBe(0)
+  })
+
+  it('窗口在副显示器上', async () => {
+    const { findWindowMonitor } = await import('../composables/useCalendarPopup')
+
+    const monitor = findWindowMonitor(
+      { x: 2200, y: 300 }, // 副显示器中心区域
+      multiMonitors as any
+    )
+
+    expect(monitor).not.toBeNull()
+    expect(monitor!.position.x).toBe(1920)
+    expect(monitor!.position.y).toBe(0)
+  })
+
+  it('窗口位置不在任何显示器上，返回主显示器', async () => {
+    const { findWindowMonitor, getPrimaryMonitor } = await import('../composables/useCalendarPopup')
+
+    // 窗口位置在显示器范围外
+    const monitor = findWindowMonitor(
+      { x: -100, y: -100 },
+      multiMonitors as any
+    )
+
+    // 应返回主显示器
+    const primary = getPrimaryMonitor(multiMonitors as any)
+    expect(monitor).toEqual(primary)
+  })
+})
+
+describe('setPopupWindowSize 边界检查集成', () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    const { resetPopupState } = await import('../composables/useCalendarPopup')
+    resetPopupState()
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('窗口大小变更后重新定位到右下角', async () => {
+    // 创建模拟窗口，位置靠近右边界
+    const mockWindow = {
+      ...createMockPopupWindow(),
+      innerPosition: vi.fn().mockResolvedValue({ x: 1600, y: 100 }),
+      setPosition: vi.fn(),
+    }
+    mockGetByLabel.mockResolvedValue(mockWindow)
+
+    // 模拟 availableMonitors 返回显示器信息
+    vi.doMock('@tauri-apps/api/window', () => ({
+      getCurrentWindow: () => ({
+        isVisible: () => Promise.resolve(false),
+        show: mockShow,
+        hide: mockHide,
+        setFocus: mockSetFocus,
+      }),
+      availableMonitors: () => Promise.resolve([
+        {
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+        },
+      ]),
+      PhysicalPosition: class PhysicalPosition {
+        x: number
+        y: number
+        constructor(x: number, y: number) {
+          this.x = x
+          this.y = y
+        }
+      },
+      LogicalSize: class LogicalSize {
+        width: number
+        height: number
+        constructor(width: number, height: number) {
+          this.width = width
+          this.height = height
+        }
+      },
+    }))
+
+    vi.resetModules()
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    await setPopupWindowSize('medium')
+
+    // 检查 setSize 被调用
+    expect(mockWindow.setSize).toHaveBeenCalled()
+
+    // 检查 setPosition 被调用（窗口重新定位到右下角）
+    expect(mockWindow.setPosition).toHaveBeenCalled()
+
+    // 检查日志输出（窗口已调整到右下角位置）
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('窗口已调整到右下角位置')
+    )
+  })
+
+  it('窗口大小变更后重新定位到右下角（原位置在安全范围内）', async () => {
+    // 创建模拟窗口，位置在安全范围内
+    const mockWindow = {
+      ...createMockPopupWindow(),
+      innerPosition: vi.fn().mockResolvedValue({ x: 100, y: 100 }),
+      setPosition: vi.fn(),
+    }
+    mockGetByLabel.mockResolvedValue(mockWindow)
+
+    // 模拟 availableMonitors 返回显示器信息（必须在 vi.resetModules 后重新设置）
+    vi.doMock('@tauri-apps/api/window', () => ({
+      getCurrentWindow: () => ({
+        isVisible: () => Promise.resolve(false),
+        show: mockShow,
+        hide: mockHide,
+        setFocus: mockSetFocus,
+      }),
+      availableMonitors: () => Promise.resolve([
+        {
+          position: { x: 0, y: 0 },
+          size: { width: 1920, height: 1080 },
+        },
+      ]),
+      PhysicalPosition: class PhysicalPosition {
+        x: number
+        y: number
+        constructor(x: number, y: number) {
+          this.x = x
+          this.y = y
+        }
+      },
+      LogicalSize: class LogicalSize {
+        width: number
+        height: number
+        constructor(width: number, height: number) {
+          this.width = width
+          this.height = height
+        }
+      },
+    }))
+
+    vi.resetModules()
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    const consoleSpy = vi.spyOn(console, 'log')
+
+    await setPopupWindowSize('medium')
+
+    // 检查 setSize 被调用
+    expect(mockWindow.setSize).toHaveBeenCalled()
+
+    // 检查 setPosition 被调用（窗口重新定位到右下角，无论原位置如何）
+    expect(mockWindow.setPosition).toHaveBeenCalled()
+
+    // 检查日志输出（窗口已调整到右下角位置）
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('窗口已调整到右下角位置')
+    )
+    // 不应包含位置调整的日志
+    expect(consoleSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('窗口位置已调整')
+    )
+  })
+
+  it('未检测到显示器时仅设置窗口大小', async () => {
+    const mockWindow = {
+      ...createMockPopupWindow(),
+      innerPosition: vi.fn().mockResolvedValue({ x: 100, y: 100 }),
+      setPosition: vi.fn(),
+    }
+    mockGetByLabel.mockResolvedValue(mockWindow)
+
+    // 模拟无显示器情况
+    vi.doMock('@tauri-apps/api/window', () => ({
+      getCurrentWindow: () => ({
+        isVisible: () => Promise.resolve(false),
+        show: mockShow,
+        hide: mockHide,
+        setFocus: mockSetFocus,
+      }),
+      availableMonitors: () => Promise.resolve([]),
+      PhysicalPosition: class PhysicalPosition {
+        x: number
+        y: number
+        constructor(x: number, y: number) {
+          this.x = x
+          this.y = y
+        }
+      },
+      LogicalSize: class LogicalSize {
+        width: number
+        height: number
+        constructor(width: number, height: number) {
+          this.width = width
+          this.height = height
+        }
+      },
+    }))
+
+    vi.resetModules()
+
+    const { setPopupWindowSize } = await import('../composables/useCalendarPopup')
+    const consoleWarnSpy = vi.spyOn(console, 'warn')
+
+    await setPopupWindowSize('medium')
+
+    // 检查警告日志
+    expect(consoleWarnSpy).toHaveBeenCalledWith(
+      '[useCalendarPopup] 未检测到显示器，仅设置窗口大小'
+    )
+    // setPosition 不应被调用
+    expect(mockWindow.setPosition).not.toHaveBeenCalled()
   })
 })

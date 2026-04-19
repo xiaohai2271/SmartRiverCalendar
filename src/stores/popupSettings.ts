@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, watch } from 'vue'
-import type { PopupSettings } from '../types'
+import type { PopupSettings, PopupWindowSize } from '../types'
 import { broadcastSettingsChange } from '../utils/broadcast'
 
 // 弹出面板默认设置
@@ -11,7 +11,8 @@ const DEFAULT_POPUP_SETTINGS: PopupSettings = {
   popupShowHoliday: true,
   popupShowEvents: true,
   popupCalendarShowLunar: true,
-  popupCalendarHolidayColor: 'default'
+  popupCalendarHolidayColor: 'default',
+  popupWindowSize: 'medium'
 }
 
 // localStorage 存储键名
@@ -61,7 +62,8 @@ export const usePopupSettingsStore = defineStore('popupSettings', () => {
     // 广播每个变更的设置项
     for (const key of Object.keys(updates) as (keyof PopupSettings)[]) {
       const newValue = updates[key]
-      if (newValue !== undefined && newValue !== oldValues[key]) {
+      const oldValue = oldValues[key]
+      if (newValue !== undefined && newValue !== oldValue) {
         broadcastSettingsChange(key, newValue)
       }
     }
@@ -78,6 +80,21 @@ export const usePopupSettingsStore = defineStore('popupSettings', () => {
     console.log('[PopupSettings] 设置已重置为默认值')
   }
 
+  /**
+   * 更新弹出窗口尺寸
+   * @param size 窗口尺寸（small | medium | large）
+   */
+  function updateWindowSize(size: PopupWindowSize): void {
+    const oldSize = settings.value.popupWindowSize
+    if (oldSize === size) {
+      console.log('[PopupSettings] 窗口尺寸未改变，跳过更新:', size)
+      return
+    }
+
+    updatePopupSettings({ popupWindowSize: size })
+    console.log('[PopupSettings] 窗口尺寸已更新:', size)
+  }
+
   // 初始化时加载设置
   loadPopupSettings()
 
@@ -89,6 +106,7 @@ export const usePopupSettingsStore = defineStore('popupSettings', () => {
     loadPopupSettings,
     savePopupSettings,
     updatePopupSettings,
-    resetPopupSettings
+    resetPopupSettings,
+    updateWindowSize
   }
 })

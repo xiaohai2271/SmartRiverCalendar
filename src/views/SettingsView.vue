@@ -243,6 +243,14 @@
     <div class="settings-section">
       <h3>系统集成</h3>
       <div class="setting-item">
+        <label>窗口大小</label>
+        <select v-model="popupSettingsStore.settings.popupWindowSize" @change="handleWindowSizeChange">
+          <option value="small">紧凑</option>
+          <option value="medium">默认</option>
+          <option value="large">宽松</option>
+        </select>
+      </div>
+      <div class="setting-item">
         <label>点击系统时钟唤醒窗口</label>
         <input type="checkbox" v-model="settings.clockHookEnabled" @change="handleClockHookChange" />
       </div>
@@ -406,7 +414,10 @@ import {
   setClockHookBlockPopup,
   getClockHookStatus,
 } from '../utils/tauri'
+import { setPopupWindowSize } from '../composables/useCalendarPopup'
 import { saveExternalAccount, getAccountByServerUrl } from '../utils/database'
+import { broadcastSettingsChange } from '../utils/broadcast'
+import type { PopupWindowSize } from '../types'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
@@ -477,6 +488,27 @@ async function saveSettings() {
 // 保存精简日历面板设置
 function savePopupSettings() {
   popupSettingsStore.savePopupSettings()
+}
+
+// 处理窗口大小变更
+async function handleWindowSizeChange(event: Event) {
+  const select = event.target as HTMLSelectElement
+  const newSize = select.value as PopupWindowSize
+  console.log('[Settings] 窗口大小变更:', newSize)
+  
+  // 保存到 localStorage (v-model 已经更新了 settings)
+  popupSettingsStore.savePopupSettings()
+  
+  // 广播变更通知精简窗口
+  broadcastSettingsChange('popupWindowSize', newSize)
+  console.log('[Settings] 已广播窗口大小变更:', newSize)
+  
+  // 直接调用窗口调整函数，使弹出窗口实时生效
+  try {
+    await setPopupWindowSize(newSize)
+  } catch (error) {
+    console.error('[Settings] 设置窗口大小失败:', error)
+  }
 }
 
 // 处理自启动设置变化

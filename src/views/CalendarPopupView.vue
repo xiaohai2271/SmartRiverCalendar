@@ -8,11 +8,13 @@
  * 
  * 注意：窗口显示和隐藏由外部（系统托盘/主窗口）手动控制
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCalendarStore } from '@/stores/calendar'
 import { usePopupSettingsStore } from '@/stores/popupSettings'
 import { emit as tauriEmit } from '@tauri-apps/api/event'
+import { setPopupWindowSize } from '@/composables/useCalendarPopup'
+import { onSettingsChange } from '@/utils/broadcast'
 import type { PopupNavigationPayload, CalendarEvent } from '@/types'
 
 // 子组件
@@ -45,7 +47,13 @@ const contextMenuDate = ref('')
 // 年月选择器状态
 const yearMonthPickerVisible = ref(false)
 
+// 当前窗口尺寸（用于设置 data-size 属性）
+const currentSize = ref(popupSettings.settings.popupWindowSize)
+
 // ==================== 计算属性 ====================
+
+// 今天日期（固定显示今天的信息，不受月份导航影响）
+const today = computed(() => new Date())
 
 // 当前日期是否有事件
 const hasEventsOnSelectedDate = computed(() => {
@@ -73,6 +81,38 @@ function formatDateToString(date: Date): string {
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
 }
+
+// ==================== 尺寸响应 ====================
+
+/**
+ * 应用窗口尺寸设置
+ * 设置 data-size 属性触发 CSS 变量切换
+ * 调用 Tauri API 调整实际窗口大小
+ * @param size 可选的尺寸值，如果不提供则从设置中读取
+ */
+async function applyWindowSize(size?: string): Promise<void> {
+  const targetSize = size || popupSettings.settings.popupWindowSize || 'medium'
+  currentSize.value = targetSize
+
+  try {
+    await setPopupWindowSize(targetSize)
+    // key 属性会自动触发组件重新渲染，无需额外强制重绘
+    console.log(`[CalendarPopup] 已应用窗口尺寸: ${targetSize}`)
+  } catch (error) {
+    console.error('[CalendarPopup] 应用窗口尺寸失败:', error)
+  }
+}
+
+// 监听 popupWindowSize 设置变更，实时响应
+watch(
+  () => popupSettings.settings.popupWindowSize,
+  async (newSize) => {
+    if (newSize !== currentSize.value) {
+      console.log(`[CalendarPopup] 窗口尺寸设置变更: ${newSize}`)
+      await applyWindowSize()
+    }
+  }
+)
 
 // ==================== 月份导航 ====================
 
@@ -270,9 +310,15 @@ async function loadData() {
 // 焦点变化监听器清理函数
 let unlistenFocus: (() => void) | null = null
 
+// 设置变更监听器清理函数
+let unlistenSettings: (() => void) | null = null
+
 onMounted(async () => {
   // 加载数据
   await loadData()
+
+  // 应用初始窗口尺寸
+  await applyWindowSize()
 
   // 添加键盘事件监听
   window.addEventListener('keydown', handleKeydown)
@@ -280,12 +326,29 @@ onMounted(async () => {
   // 每次显示时重置为当前月（确保信息时效性）
   currentDate.value = new Date()
 
-  // 监听窗口焦点变化事件，用于在获得焦点时刷新数据
+  // 监听窗口焦点变化事件，用于在获得焦点时刷新数据和应用尺寸
   const win = getCurrentWebviewWindow()
-  unlistenFocus = await win.onFocusChanged(({ payload: focused }) => {
+  unlistenFocus = await win.onFocusChanged(async ({ payload: focused }) => {
     if (focused) {
-      // 窗口获得焦点时，重新加载数据
+      // 确保窗口正确聚焦
+      await win.setFocus()
+      // 窗口获得焦点时，重新加载数据和应用尺寸设置
       loadData()
+      // 应用最新尺寸设置（响应主窗口可能的设置变更）
+      applyWindowSize()
+    }
+  })
+
+  // 监听设置变更广播（实时响应主窗口的设置修改）
+  unlistenSettings = onSettingsChange((key, value) => {
+    console.log(`[CalendarPopup] 收到设置变更广播: ${key} =`, value)
+    
+    // 处理窗口尺寸变更
+    if (key === 'popupWindowSize' && typeof value === 'string') {
+      // 同步更新 store 中的设置，避免后续 loadPopupSettings() 覆盖
+      popupSettings.settings.popupWindowSize = value
+      // 应用窗口尺寸
+      applyWindowSize(value)
     }
   })
 })
@@ -299,11 +362,18 @@ onUnmounted(() => {
     unlistenFocus()
     unlistenFocus = null
   }
+
+  // 清理设置变更监听器
+  if (unlistenSettings) {
+    unlistenSettings()
+    unlistenSettings = null
+  }
 })
 </script>
 
 <template>
-  <div class="popup-container">
+  <div class="popup-container" :class="'popup-container-'+currentSize" :data-size="currentSize">
+
     <!-- 加载状态 -->
     <div v-if="isLoading" class="loading-overlay">
       <span class="loading-text">加载中...</span>
@@ -313,7 +383,7 @@ onUnmounted(() => {
     <template v-else>
       <!-- 日期信息区域 -->
       <div class="popup-section date-info-section">
-        <PopupDateInfo :date="currentDate" />
+        <PopupDateInfo :date="today" />
       </div>
       
       <!-- 月份导航区域 -->
@@ -329,6 +399,7 @@ onUnmounted(() => {
       <!-- 日历面板区域 -->
       <div class="popup-section calendar-grid-section">
         <PopupCalendarGrid
+          :key="currentSize"
           :current-date="currentDate"
           :selected-date="selectedDate"
           @select-date="handleSelectDate"
@@ -390,18 +461,19 @@ onUnmounted(() => {
 }
 
 .date-info-section {
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
+  /* padding 由 popup.scss 的 CSS 变量系统控制 */
 }
 
 .month-nav-section {
-  padding: 4px 10px;
-  border-bottom: 1px solid var(--border-color, rgba(128, 128, 128, 0.2));
+  /* padding 由 popup.scss 的 CSS 变量系统控制 */
 }
 
 .calendar-grid-section {
   flex: 1;
-  padding: 6px 10px 8px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow: hidden;
+  /* padding 由 popup.scss 的 CSS 变量系统控制 */
 }
 </style>

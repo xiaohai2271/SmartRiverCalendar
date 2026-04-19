@@ -8,11 +8,11 @@
 
     <!-- 农历信息区域 -->
     <div v-if="popupSettings.settings.popupShowLunar" class="lunar-section">
-      <span class="lunar-date">{{ lunarInfo.lunarDate }}</span>
-      <span v-if="popupSettings.settings.popupShowSolarTerm && lunarInfo.solarTerm" class="solar-term">
+      <span class="lunar-badge lunar-date">{{ lunarInfo.lunarDate }}</span>
+      <span v-if="popupSettings.settings.popupShowSolarTerm && lunarInfo.solarTerm" class="lunar-badge solar-term">
         {{ lunarInfo.solarTerm }}
       </span>
-      <span v-if="popupSettings.settings.popupShowLunarFestival && lunarInfo.lunarFestival" class="lunar-festival">
+      <span v-if="popupSettings.settings.popupShowLunarFestival && lunarInfo.lunarFestival" class="lunar-badge lunar-festival">
         {{ lunarInfo.lunarFestival }}
       </span>
     </div>
@@ -68,7 +68,6 @@ const lunarInfo = computed<LunarInfo>(() => {
   padding: 8px 10px;
   background: var(--popup-bg-secondary);
   border-radius: var(--popup-radius-lg);
-  border: 1px solid var(--popup-border-color);
   box-shadow: var(--popup-shadow-sm);
 }
 
@@ -98,32 +97,35 @@ const lunarInfo = computed<LunarInfo>(() => {
 .lunar-section {
   display: flex;
   align-items: center;
-  gap: var(--popup-space-sm);
+  gap: 6px;
   flex-wrap: wrap;
 }
 
+/* 统一的农历徽标样式 */
+.lunar-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: var(--popup-radius-md);
+  transition: all var(--popup-transition-fast);
+  white-space: nowrap;
+}
+
 .lunar-date {
-  font-size: 13px;
   color: var(--popup-text-secondary);
+  background: var(--popup-bg-hover);
 }
 
 .solar-term {
-  font-size: 12px;
-  font-weight: 500;
   color: var(--popup-solar-term-text);
-  padding: 2px 8px;
   background: var(--popup-solar-term-bg);
-  border-radius: var(--popup-radius-md);
-  transition: all var(--popup-transition-fast);
 }
 
 .lunar-festival {
-  font-size: 12px;
-  font-weight: 500;
   color: var(--popup-text-secondary);
-  padding: 2px 8px;
   background: var(--popup-bg-hover);
-  border-radius: var(--popup-radius-md);
 }
 
 .holiday-tag {

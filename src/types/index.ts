@@ -171,6 +171,16 @@ export interface ConnectResult {
   calendars?: CalDavCalendarInfo[]
 }
 
+// 弹出面板窗口尺寸
+export type PopupWindowSize = 'small' | 'medium' | 'large'
+
+// 弹出面板窗口尺寸常量
+export const POPUP_WINDOW_SIZES = {
+  small: { width: 280, height: 400 },
+  medium: { width: 340, height: 480 },
+  large: { width: 400, height: 560 }
+} as const
+
 // 弹出面板设置
 export interface PopupSettings {
   popupShowLunar: boolean // 显示农历
@@ -180,6 +190,7 @@ export interface PopupSettings {
   popupShowEvents: boolean // 显示事件
   popupCalendarShowLunar: boolean // 日历网格显示农历
   popupCalendarHolidayColor: 'default' | 'soft' | 'high-contrast' // 节假日颜色模式
+  popupWindowSize?: PopupWindowSize // 弹出窗口尺寸
 }
 
 // 弹出面板右键菜单动作类型

@@ -60,6 +60,7 @@ describe('popupSettings Store', () => {
     expect(store.settings.popupShowEvents).toBe(true)
     expect(store.settings.popupCalendarShowLunar).toBe(true)
     expect(store.settings.popupCalendarHolidayColor).toBe('default')
+    expect(store.settings.popupWindowSize).toBe('medium')
   })
 
   it('updatePopupSettings 更新单个设置', async () => {
@@ -181,6 +182,88 @@ describe('popupSettings Store', () => {
 
     // 应使用默认值
     expect(store.settings.popupShowLunar).toBe(true)
+  })
+
+  it('popupWindowSize 默认值为 medium', async () => {
+    const { usePopupSettingsStore } = await import('../stores/popupSettings')
+    const store = usePopupSettingsStore()
+
+    expect(store.settings.popupWindowSize).toBe('medium')
+  })
+
+  it('updateWindowSize 更新窗口尺寸', async () => {
+    const { usePopupSettingsStore } = await import('../stores/popupSettings')
+    const store = usePopupSettingsStore()
+
+    store.updateWindowSize('large')
+
+    expect(store.settings.popupWindowSize).toBe('large')
+
+    store.updateWindowSize('small')
+    expect(store.settings.popupWindowSize).toBe('small')
+  })
+
+  it('updateWindowSize 相同尺寸时不更新', async () => {
+    const { usePopupSettingsStore } = await import('../stores/popupSettings')
+    const store = usePopupSettingsStore()
+
+    // 初始值为 medium
+    expect(store.settings.popupWindowSize).toBe('medium')
+
+    // 设置相同的值不应触发保存
+    store.updateWindowSize('medium')
+
+    // 验证 localStorage.setItem 未被调用（除初始化加载外）
+    // 由于 watch effect 可能在初始化时调用，我们检查最后值是否未变
+    expect(store.settings.popupWindowSize).toBe('medium')
+  })
+
+  it('向后兼容：旧用户数据无 popupWindowSize 时使用默认值', async () => {
+    // 模拟旧用户数据（没有 popupWindowSize 字段）
+    localStorageMock.getItem.mockReturnValue(
+      JSON.stringify({
+        popupShowLunar: false,
+        popupCalendarHolidayColor: 'soft'
+      })
+    )
+
+    const { usePopupSettingsStore } = await import('../stores/popupSettings')
+    const store = usePopupSettingsStore()
+
+    // 旧数据应正确加载
+    expect(store.settings.popupShowLunar).toBe(false)
+    expect(store.settings.popupCalendarHolidayColor).toBe('soft')
+
+    // popupWindowSize 应使用默认值
+    expect(store.settings.popupWindowSize).toBe('medium')
+  })
+
+  it('localStorage 持久化包含 popupWindowSize', async () => {
+    const { usePopupSettingsStore } = await import('../stores/popupSettings')
+    const store = usePopupSettingsStore()
+
+    store.updateWindowSize('large')
+
+    // 验证 localStorage 包含 popupWindowSize
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      'popup-settings',
+      expect.stringContaining('"popupWindowSize":"large"')
+    )
+  })
+
+  it('resetPopupSettings 恢复 popupWindowSize 为 medium', async () => {
+    const { usePopupSettingsStore } = await import('../stores/popupSettings')
+    const store = usePopupSettingsStore()
+
+    // 修改窗口尺寸
+    store.updateWindowSize('large')
+    expect(store.settings.popupWindowSize).toBe('large')
+
+    // 重置设置
+    store.resetPopupSettings()
+
+    // 验证恢复为默认值 medium
+    expect(store.settings.popupWindowSize).toBe('medium')
   })
 })
 

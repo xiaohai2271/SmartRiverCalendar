@@ -3,7 +3,16 @@
 // 包含防抖和竞态保护机制
 
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { availableMonitors, type Monitor, PhysicalPosition } from '@tauri-apps/api/window'
+import { availableMonitors, type Monitor, PhysicalPosition, LogicalSize } from '@tauri-apps/api/window'
+import type { PopupWindowSize } from '@/types'
+import { POPUP_WINDOW_SIZES } from '@/types'
+
+/// 窗口边界检查结果
+export interface BoundsCheckResult {
+  needsAdjustment: boolean // 是否需要调整位置
+  x: number // 调整后的 X 坐标
+  y: number // 调整后的 Y 坐标
+}
 
 /// 弹出窗口定位矩形
 export interface PopupRect {
@@ -382,5 +391,156 @@ export function resetPopupState(): void {
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
+  }
+}
+
+/**
+ * 根据窗口位置查找窗口所在的显示器
+ * @param windowPosition 窗口当前位置
+ * @param monitors 可用显示器列表
+ * @returns 窗口所在的显示器，如果未找到则返回主显示器
+ */
+export function findWindowMonitor(
+  windowPosition: { x: number; y: number },
+  monitors: Monitor[]
+): Monitor | null {
+  // 查找包含窗口位置的显示器
+  for (const monitor of monitors) {
+    const monitorLeft = monitor.position.x
+    const monitorTop = monitor.position.y
+    const monitorRight = monitor.position.x + monitor.size.width
+    const monitorBottom = monitor.position.y + monitor.size.height
+
+    // 检查窗口中心点是否在显示器范围内
+    if (
+      windowPosition.x >= monitorLeft &&
+      windowPosition.x <= monitorRight &&
+      windowPosition.y >= monitorTop &&
+      windowPosition.y <= monitorBottom
+    ) {
+      return monitor
+    }
+  }
+
+  // 未找到匹配的显示器，返回主显示器
+  return getPrimaryMonitor(monitors)
+}
+
+/**
+ * 检查窗口边界并计算调整后的位置
+ * 确保窗口在调整大小后仍然完全可见
+ * @param windowPosition 窗口当前位置
+ * @param windowSize 窗口当前大小
+ * @param monitor 目标显示器
+ * @returns 边界检查结果，包含是否需要调整和调整后的位置
+ */
+export function checkWindowBounds(
+  windowPosition: { x: number; y: number },
+  windowSize: { width: number; height: number },
+  monitor: Monitor
+): BoundsCheckResult {
+  let { x, y } = windowPosition
+  let needsAdjustment = false
+
+  // 计算显示器边界
+  const monitorLeft = monitor.position.x
+  const monitorTop = monitor.position.y
+  const monitorRight = monitor.position.x + monitor.size.width
+  const monitorBottom = monitor.position.y + monitor.size.height
+
+  // 左边界检查
+  if (x < monitorLeft + POPUP_MARGIN) {
+    x = monitorLeft + POPUP_MARGIN
+    needsAdjustment = true
+  }
+
+  // 右边界检查
+  if (x + windowSize.width > monitorRight - POPUP_MARGIN) {
+    x = monitorRight - windowSize.width - POPUP_MARGIN
+    needsAdjustment = true
+  }
+
+  // 上边界检查
+  if (y < monitorTop + POPUP_MARGIN) {
+    y = monitorTop + POPUP_MARGIN
+    needsAdjustment = true
+  }
+
+  // 下边界检查
+  if (y + windowSize.height > monitorBottom - POPUP_MARGIN) {
+    y = monitorBottom - windowSize.height - POPUP_MARGIN
+    needsAdjustment = true
+  }
+
+  return { needsAdjustment, x, y }
+}
+
+/**
+ * 设置弹出窗口大小
+ * 设置窗口大小后自动检查边界，确保窗口完全可见
+ * @param size 窗口尺寸类型（'small' | 'medium' | 'large'）
+ */
+export async function setPopupWindowSize(size: PopupWindowSize): Promise<void> {
+  try {
+    const popupWindow = await WebviewWindow.getByLabel(CALENDAR_POPUP_LABEL)
+
+    if (!popupWindow) {
+      console.warn('[useCalendarPopup] 弹出窗口不存在，无法设置大小')
+      return
+    }
+
+    // 从类型定义文件中获取尺寸配置
+    const dimensions = POPUP_WINDOW_SIZES[size]
+
+    if (!dimensions) {
+      console.error(`[useCalendarPopup] 不支持的窗口尺寸: ${size}`)
+      return
+    }
+
+    // 获取窗口当前位置
+    const currentPosition = await popupWindow.innerPosition()
+
+    // 获取所有可用显示器
+    const monitors = await availableMonitors()
+
+    if (monitors.length === 0) {
+      console.warn('[useCalendarPopup] 未检测到显示器，仅设置窗口大小')
+      await popupWindow.setSize(new LogicalSize(dimensions.width, dimensions.height))
+      return
+    }
+
+    // 查找窗口所在的显示器
+    const targetMonitor = findWindowMonitor(
+      { x: currentPosition.x, y: currentPosition.y },
+      monitors
+    )
+
+    if (!targetMonitor) {
+      console.warn('[useCalendarPopup] 无法确定目标显示器，仅设置窗口大小')
+      await popupWindow.setSize(new LogicalSize(dimensions.width, dimensions.height))
+      return
+    }
+
+    // 在设置大小后，重新定位窗口到右下角
+    // 获取窗口所在的显示器
+    const monitorRight = targetMonitor.position.x + targetMonitor.size.width
+    const monitorBottom = targetMonitor.position.y + targetMonitor.size.height
+
+    // 估算任务栏高度（Windows 通常约 40-48 逻辑像素）
+    const estimatedTaskbarHeight = 48
+
+    // 新位置：窗口右边缘距离显示器右边缘 POPUP_MARGIN，底部紧贴任务栏上方
+    const newX = monitorRight - dimensions.width - POPUP_MARGIN
+    const newY = monitorBottom - estimatedTaskbarHeight - dimensions.height
+
+    // 设置窗口大小
+    await popupWindow.setSize(new LogicalSize(dimensions.width, dimensions.height))
+
+    // 设置窗口位置
+    await popupWindow.setPosition(new PhysicalPosition(newX, newY))
+    console.log(`[useCalendarPopup] 窗口已调整到右下角位置: (${newX}, ${newY}), 大小: ${dimensions.width}x${dimensions.height}`)
+  } catch (error) {
+    console.error('[useCalendarPopup] 设置窗口大小失败:', error)
+    throw error
   }
 }

@@ -13,6 +13,9 @@ const emit = defineEmits<{
   confirm: [year: number, month: number]
 }>()
 
+// 弹窗引用
+const pickerRef = ref<HTMLElement | null>(null)
+
 // 选中的年份
 const selectedYear = ref(props.currentDate.getFullYear())
 // 选中的月份
@@ -56,6 +59,15 @@ const cancel = () => {
   close()
 }
 
+// 跳转到今天
+const goToToday = () => {
+  const today = new Date()
+  selectedYear.value = today.getFullYear()
+  selectedMonth.value = today.getMonth() + 1
+  emit('confirm', selectedYear.value, selectedMonth.value)
+  close()
+}
+
 // 键盘事件处理：Escape 键取消
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape' && props.modelValue) {
@@ -75,7 +87,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="modelValue" class="year-month-picker">
+  <!-- 遮罩层 -->
+  <div v-if="modelValue" class="picker-overlay" @click="close"></div>
+  
+  <!-- 弹出层 -->
+  <div v-if="modelValue" class="year-month-picker" ref="pickerRef">
     <div class="picker-header">
       <span class="picker-title">跳转到指定年月</span>
     </div>
@@ -103,6 +119,8 @@ onUnmounted(() => {
     </div>
 
     <div class="picker-footer">
+      <button class="btn btn-today" @click="goToToday">回到今天</button>
+      <div class="footer-spacer"></div>
       <button class="btn btn-cancel" @click="cancel">取消</button>
       <button class="btn btn-confirm" @click="confirm">确认</button>
     </div>
@@ -110,6 +128,27 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* 遮罩层 */
+.picker-overlay {
+  position: fixed;
+  z-index: 999;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: transparent;
+  animation: overlayEnter var(--popup-transition-fast);
+}
+
+@keyframes overlayEnter {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 .year-month-picker {
   position: fixed;
   z-index: 1000;
@@ -236,5 +275,22 @@ onUnmounted(() => {
 
 .btn-confirm:hover {
   background: var(--popup-accent-hover);
+}
+
+/* 今天按钮样式 */
+.btn-today {
+  background: transparent;
+  color: var(--popup-accent-color);
+  border: 1px solid var(--popup-accent-color);
+}
+
+.btn-today:hover {
+  background: var(--popup-accent-color);
+  color: white;
+}
+
+/* 弹窗底部间距 */
+.footer-spacer {
+  flex: 1;
 }
 </style>

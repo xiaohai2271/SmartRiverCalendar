@@ -171,8 +171,11 @@ function getLunarDisplay(day: Date): string {
   if (info.lunarFestival) return info.lunarFestival
   if (info.solarTerm) return info.solarTerm
 
-  // 显示农历日期
-  return info.lunarDate
+  // 显示农历日期：初一显示月份，其他日期显示日期
+  if (info.lunarDay === '初一') {
+    return info.lunarMonth
+  }
+  return info.lunarDay
 }
 
 // 获取日期单元格的类名
@@ -245,6 +248,7 @@ function handleViewEvent(event: CalendarEvent) {
   font-weight: 600;
   color: var(--popup-text-secondary);
   padding: var(--popup-space-xs) 0;
+  background: transparent;
 }
 
 /* 日期网格 */
