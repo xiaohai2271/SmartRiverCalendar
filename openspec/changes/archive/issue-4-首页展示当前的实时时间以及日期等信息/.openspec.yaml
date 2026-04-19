@@ -1,8 +1,0 @@
-schema: spec-driven
-name: issue-4-首页展示当前的实时时间以及日期等信息
-status: archived
-category: feature
-created: 2026-04-19T06:51:49.180Z
-source:
-  issue: 4
-  pr: 9

@@ -8,6 +8,12 @@
         "-y",
         "@hypothesi/tauri-mcp-server"
       ]
+    },
+    "windows-mcp": {
+      "type": "local",
+      "command": [
+        "C:\\Users\\zheng\\.local\\bin\\windows-mcp.exe"
+      ]
     }
   }
 }

@@ -1,8 +1,0 @@
-schema: spec-driven
-name: pr-8-(caldav)-修复飞书-CalDAV-日历同步问题
-status: archived
-category: bugfix
-created: 2026-04-19T06:51:49.187Z
-source:
-
-  pr: 8
