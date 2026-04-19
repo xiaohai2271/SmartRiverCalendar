@@ -1,78 +1,85 @@
-# GitHub Issue/PR 到 OpenSpec 迁移指南
+# GitHub Issue/PR 到 OpenSpec 迁移记录
 
 ## 背景
 
-在项目接入 OpenSpec 规格驱动开发框架之前，所有需求和变更都通过 GitHub Issue + PR 的方式进行记录。为了保持历史记录的完整性，并让后续开发能够追溯历史变更，我们创建了迁移脚本将这些历史记录转换为 OpenSpec 文档格式。
+在项目接入 OpenSpec 规格驱动开发框架之前，所有需求和变更都通过 GitHub Issue + PR 的方式进行记录。为了保持历史记录的完整性，我们分析了有价值的 Issue/PR，转换为符合 OpenSpec v1.3.0 规范的高质量文档。
 
-## 迁移统计
+## 迁移策略
 
-| 类型 | 数量 |
+### 两阶段迁移
+
+1. **初版（已废弃）**：使用脚本自动化迁移，生成的文档为空洞模板，无实际价值
+2. **最终版**：使用子 agent 分析 Issue/PR 内容，结合项目参考文档生成高质量文档
+
+### 选型标准
+
+仅保留有实质内容的 Issue/PR：
+
+| 标准 | 说明 |
 |------|------|
-| 总 Issue 数 | 8 |
-| 总 PR 数 | 14 |
-| Dependabot PR（跳过） | 5 |
-| 已归档变更 | 7 |
-| 活跃变更 | 5 |
+| 有明确需求描述 | Issue body 包含具体功能需求 |
+| 有技术设计记录 | PR body 或项目文档中有实现方案 |
+| 有测试验证记录 | PR 包含测试结果或覆盖率数据 |
+| 有学习价值 | 变更过程中有可复用的经验 |
+
+## 迁移结果
+
+### 活跃变更
+
+| 变更名称 | Issue | PR | 说明 |
+|----------|-------|-----|------|
+| issue-19-simplified-calendar-popup | #19 | #20 | 精简日历弹出窗口（85% 进度） |
+| issue-5-context-menu | #5 | #13 | 右键菜单功能实现 |
+
+### 已归档变更
+
+| 变更名称 | Issue | PR | 说明 |
+|----------|-------|-----|------|
+| issue-11-data-layer-migration | #11 | #14 | 数据层迁移 - 数据和视图分离 |
+| issue-4-home-time-display | #4 | #9 | 首页时间显示组件 |
+| pr-8-caldav-feishu-fix | - | #8 | 飞书 CalDAV 日历同步修复 |
+
+### 跳过的 Issue/PR
+
+| 类型 | 原因 |
+|------|------|
+| Dependabot PR | 依赖更新，无业务价值 |
+| 无实质内容 Issue | 仅占位或简单描述 |
+| 重复/已关闭 Issue | 无实际实现 |
 
 ## 目录结构
 
-迁移后的 OpenSpec 文档结构：
-
 ```
-openspec/
-├── config.yaml                    # 项目配置
-├── changes/                       # 活跃变更
-│   ├── issue-6-新增一个调试页面/
-│   ├── issue-12-更新技术约束性文档/
-│   ├── issue-19-系统时钟区域唤醒精简日历窗口/
-│   ├── issue-21-启动页面会白屏很久.../
-│   └── issue-5-关闭所有页面的默认右键菜单.../
-└── archive/                       # 已归档变更
-    ├── issue-4-首页展示当前的实时时间.../
-    ├── issue-11-检查数据存储，数据和视图进行分离/
-    ├── issue-17-无法创建日程事件和代办事件/
-    ├── pr-8-(caldav)-修复飞书-CalDAV-日历同步问题/
-    ├── pr-10-添加-GitHub-协作规范到-AGENTS.md/
-    ├── pr-16-Hook系统时钟实现程序显隐切换/
-    └── pr-22-集成-OpenSpec-规格驱动开发框架/
-```
-
-## 迁移脚本
-
-脚本位置：`scripts/migrate-to-openspec.ts`
-
-### 使用方法
-
-```bash
-# 预览迁移操作（不实际创建文件）
-pnpm tsx scripts/migrate-to-openspec.ts --dry-run
-
-# 执行完整迁移
-pnpm tsx scripts/migrate-to-openspec.ts
-
-# 只迁移已归档的变更
-pnpm tsx scripts/migrate-to-openspec.ts --status=archived
-
-# 只迁移活跃的变更
-pnpm tsx scripts/migrate-to-openspec.ts --status=active
+openspec/changes/
+├── issue-19-simplified-calendar-popup/    # 活跃
+│   ├── .openspec.yaml
+│   ├── proposal.md
+│   ├── design.md
+│   ├── tasks.md
+│   └── specs/calendar-popup/spec.md
+├── issue-5-context-menu/                  # 活跃
+│   ├── .openspec.yaml
+│   ├── proposal.md
+│   ├── design.md
+│   ├── tasks.md
+│   └── specs/context-menu/spec.md
+└── archive/
+    ├── issue-11-data-layer-migration/     # 已归档
+    ├── issue-4-home-time-display/         # 已归档
+    └── pr-8-caldav-feishu-fix/            # 已归档
 ```
 
-### 字段映射
+## 文档规范
 
-| GitHub 字段 | OpenSpec 字段 | 说明 |
-|-------------|---------------|------|
-| Issue #xxx | `issue-xxx-{slug}` | 变更名称 |
-| Issue title | proposal.md 标题 | 提案标题 |
-| Issue body | proposal.md 需求描述 | 需求详情 |
-| PR title (Closes #xxx) | 关联 Issue | 自动匹配关联 |
-| PR body Summary | design.md 实现概述 | 技术方案 |
-| PR body Files Changed | tasks.md 相关文件 | 变更文件 |
-| PR mergedAt | archive/ | 归档目录 |
+每个变更包含以下制品：
 
-### 跳过规则
-
-以下 PR 会被自动跳过：
-- Dependabot 依赖更新 PR（标题包含 `chore(deps` 或 `bump `）
+| 制品 | 内容要求 |
+|------|----------|
+| `.openspec.yaml` | 变更元信息、关联资源、变更范围、统计信息 |
+| `proposal.md` | Why（背景）、What Changes（变更内容）、Capabilities（能力）、Impact（影响） |
+| `design.md` | Context（技术背景）、Goals/Non-Goals（目标）、Decisions（决策）、Risks（风险） |
+| `tasks.md` | 任务分组、进度记录、验收结果 |
+| `specs/*/spec.md` | ADDED Requirements + Scenario（GIVEN-WHEN-THEN 格式） |
 
 ## 后续维护
 
@@ -91,21 +98,17 @@ pnpm tsx scripts/migrate-to-openspec.ts --status=active
 /opsx:archive
 ```
 
-### 历史记录同步
+### 校验命令
 
-如果需要在 GitHub Issue 上补充信息：
-1. 更新 GitHub Issue 描述或评论
-2. 重新运行迁移脚本更新对应的 OpenSpec 文档
+```bash
+# 校验活跃变更
+npx openspec validate --changes
 
-### PR 关联 Issue
-
-如果 PR 标题包含 `Closes #xxx`，迁移脚本会自动：
-1. 将 Issue 和 PR 关联为同一条变更记录
-2. 使用 Issue 的标题和描述作为 proposal
-3. 使用 PR 的描述作为 design
+# 查看变更列表
+npx openspec list
+```
 
 ## 参考链接
 
 - [OpenSpec 官方文档](https://openspec.dev/)
 - [项目 OpenSpec 配置](../../../openspec/config.yaml)
-- [OpenSpec 工作流 Skill](../../../.opencode/skills/openspec-propose/SKILL.md)
