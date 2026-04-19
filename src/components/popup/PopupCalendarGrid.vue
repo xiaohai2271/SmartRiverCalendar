@@ -251,6 +251,8 @@ function handleViewEvent(event: CalendarEvent) {
 .calendar-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
+  grid-template-rows: repeat(6, 1fr);
+  flex: 1;
   gap: 1px;
   background: var(--popup-border-color);
   border-radius: var(--popup-radius-md);
@@ -264,7 +266,6 @@ function handleViewEvent(event: CalendarEvent) {
   align-items: center;
   justify-content: center;
   padding: var(--day-cell-padding, 3px 1px);
-  min-height: var(--day-cell-min-height, 36px);
   background: var(--popup-bg-secondary);
   cursor: pointer;
   transition: all var(--popup-transition-fast);
