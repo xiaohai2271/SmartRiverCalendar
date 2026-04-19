@@ -1,0 +1,33 @@
+schema: spec-driven
+name: issue-19-simplified-calendar-popup
+status: active
+category: feature
+created_at: 2026-04-19
+updated_at: 2026-04-19
+
+# 关联资源
+references:
+  - type: github-issue
+    id: "19"
+    url: https://github.com/xiaohai2271/SmartRiverCalender/issues/19
+  - type: github-pr
+    id: "20"
+    url: https://github.com/xiaohai2271/SmartRiverCalender/pull/20
+
+# 实现状态
+implementation:
+  status: in_progress
+  pr: "20"
+  progress: 85%
+  completed:
+    - 三段式布局实现
+    - 农历节假日显示
+    - 右键菜单快捷操作
+    - 键盘快捷键支持
+    - 失焦自动隐藏
+    - 弹出窗口定位修复
+    - 日历面板滚动条优化
+  remaining:
+    - Windows 平台点击内部失焦问题
+    - 天气信息显示（待集成）
+    - 设置界面配置项完善

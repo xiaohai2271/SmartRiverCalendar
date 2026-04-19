@@ -1,0 +1,40 @@
+# OpenSpec v1.3.0 变更配置
+# 小河日历 - 数据层迁移
+
+schema: spec-driven
+name: issue-11-data-layer-migration
+version: 1.0.0
+status: archived
+category: refactor
+
+# 变更元信息
+metadata:
+  issue: 11
+  pr: 14
+  author: xiaohai2271
+  created_at: 2026-03-30
+  merged_at: 2026-04-10
+  labels: []
+
+# 关联资源
+references:
+  - .sisyphus/drafts/data-layer-migration.md
+  - .agents/skills/calendar-business-flows/references/data-layer-migration.md
+
+# 变更范围
+scope:
+  - src-tauri/src/db/
+  - src-tauri/src/commands.rs
+  - src/stores/calendar.ts
+  - src/stores/todo.ts
+  - src/utils/database.ts (删除)
+  - src/utils/tauri.ts
+
+# 统计信息
+stats:
+  files_changed: 26
+  commits: 16
+  additions: 6554
+  deletions: 779
+  rust_tests: 150
+  frontend_tests: 171
