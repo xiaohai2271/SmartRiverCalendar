@@ -31,7 +31,32 @@
 
 ## 截图预览
 
-> 📸 项目截图将在后续版本中添加
+### 首页
+
+![首页](screenshots/home-view-light.png)
+
+### 日历视图
+
+#### 月视图
+![月视图 - 浅色主题](screenshots/month-view-light.png)
+![月视图 - 深色主题](screenshots/month-view-dark.png)
+
+#### 日视图
+![日视图](screenshots/day-view-light.png)
+
+#### 周视图
+![周视图](screenshots/week-view-light.png)
+
+#### 年视图
+![年视图](screenshots/year-view-light.png)
+
+### 待办事项
+
+![待办事项](screenshots/todos-view-light.png)
+
+### 设置页面
+
+![设置页面](screenshots/settings-view-light.png)
 
 ## 快速开始
 
