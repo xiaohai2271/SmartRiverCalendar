@@ -18,9 +18,11 @@
 ### 核心功能
 - **多视图模式**: 支持日、周、月、年四种视图模式，自由切换
 - **多日历管理**: 支持多个日历账户，独立颜色标识
+- **外部日历支持**: 支持添加外部日历订阅
 - **农历支持**: 完整的农历日期显示，支持传统节日
 - **节假日显示**: 中国法定节假日、调休补班标识
 - **待办事项**: 集成待办管理，与日历事件无缝结合
+- **智能提醒**: 事件提醒、待办提醒，支持自定义模板
 
 ### 技术特性
 - **跨平台**: 支持 Windows 和 Android 平台
@@ -65,7 +67,7 @@
 - Node.js 18+
 - pnpm 8+
 - Rust (通过 [rustup](https://rustup.rs/) 安装)
-- Tauri CLI 依赖项 ([参考官方文档](https://tauri.app/v1/guides/getting-started/prerequisites))
+- Tauri CLI 依赖项 ([参考官方文档](https://tauri.app/start/prerequisites/))
 
 ### 安装
 
@@ -125,13 +127,20 @@ pnpm tauri:build
 SmartRiverCalender/
 ├── src/                      # Vue 3 前端源码
 │   ├── components/           # UI 组件
-│   │   ├── calendar/         # 日历视图组件
+│   │   ├── calendar/         # 日历视图组件 (DayView, WeekView, MonthView, YearView)
 │   │   ├── settings/         # 设置组件
-│   │   └── todo/             # 待办组件
+│   │   ├── todo/             # 待办组件
+│   │   ├── popup/            # 弹窗组件
+│   │   ├── reminder/         # 提醒组件
+│   │   └── home/             # 首页组件
 │   ├── views/                # 页面视图
 │   ├── stores/               # Pinia 状态管理
+│   ├── services/             # 业务逻辑服务 (提醒、同步、更新)
+│   ├── composables/          # 组合式函数
+│   ├── router/               # 路由配置
 │   ├── types/                # TypeScript 类型定义
 │   ├── utils/                # 工具函数
+│   ├── styles/               # 样式文件
 │   └── __tests__/            # 单元测试
 ├── src-tauri/                # Rust 后端 (Tauri)
 └── dist/                     # 构建产物
