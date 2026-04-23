@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Mutex;
-use tauri::Manager;
+use tauri::{Emitter, Listener, Manager};
 
 mod commands;
 mod crypto;
@@ -106,6 +106,10 @@ pub fn run() {
 
                 // 创建菜单项
                 let show = MenuItemBuilder::new("显示主窗口").id("show").build(app)?;
+                let show_popup = CheckMenuItemBuilder::new("日历面板")
+                    .id("show_popup")
+                    .checked(false)
+                    .build(app)?;
                 let always_on_top = CheckMenuItemBuilder::new("始终置顶")
                     .id("always_on_top")
                     .checked(false)
@@ -122,6 +126,7 @@ pub fn run() {
                 // 构建菜单
                 let menu = MenuBuilder::new(app)
                     .item(&show)
+                    .item(&show_popup)
                     .separator()
                     .item(&always_on_top)
                     .item(&auto_hide)
@@ -137,7 +142,7 @@ pub fn run() {
                     .show_menu_on_left_click(false)
                     .tooltip("小河日历")
                     .icon(app.default_window_icon().unwrap().clone())
-                    .on_menu_event(|app, event| match event.id().as_ref() {
+                    .on_menu_event(|app: &tauri::AppHandle, event| match event.id().as_ref() {
                         "quit" => {
                             app.exit(0);
                         }
@@ -145,6 +150,30 @@ pub fn run() {
                             if let Some(window) = app.get_webview_window("main") {
                                 let _ = window.show();
                                 let _ = window.set_focus();
+                            }
+                        }
+                        "show_popup" => {
+                            // 用户点击「日历面板」菜单项
+                            // 通过事件驱动让前端统一调度精简窗口的显隐
+                            // 这样可以与时钟区域 Hook 的唤醒机制不冲突
+                            #[cfg(target_os = "windows")]
+                            {
+                                clock_hook::toggle::emit_popup_toggle(app);
+                            }
+                            #[cfg(not(target_os = "windows"))]
+                            {
+                                // 非 Windows 平台：直接操作窗口并更新菜单状态
+                                if let Some(popup) = app.get_webview_window("calendar-popup") {
+                                    let visible = popup.is_visible().unwrap_or(false);
+                                    if visible {
+                                        let _ = popup.hide();
+                                    } else {
+                                        let _ = popup.show();
+                                        let _ = popup.set_focus();
+                                    }
+                                    // 更新菜单项 checked 状态
+                                    let _ = show_popup.set_checked(app, !visible);
+                                }
                             }
                         }
                         "always_on_top" => {
@@ -170,17 +199,17 @@ pub fn run() {
                         }
                         _ => {}
                     })
-                    .on_tray_icon_event(|tray, event| {
+                    .on_tray_icon_event(|tray: &tauri::tray::TrayIcon, event: tauri::tray::TrayIconEvent| {
                         // 让 positioner 插件处理托盘事件
                         tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
-                        match event {
+                        match &event {
                         tauri::tray::TrayIconEvent::Click {
                             button,
                             button_state,
                             ..
                         } => {
-                            if button == tauri::tray::MouseButton::Left
-                                && button_state == tauri::tray::MouseButtonState::Up
+                            if *button == tauri::tray::MouseButton::Left
+                                && *button_state == tauri::tray::MouseButtonState::Up
                             {
                                 let app = tray.app_handle();
                                 // Windows 平台：通过事件驱动，前端统一调度
@@ -206,6 +235,17 @@ pub fn run() {
                         }
                     })
                     .build(app)?;
+
+                // 监听前端发送的 popup-visibility-changed 事件
+                // 更新菜单项的 checked 状态
+                let popup_menu_item = show_popup.clone();
+                app.listen("popup-visibility-changed", move |event: tauri::Event| {
+                    if let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                        if let Some(visible) = payload.get("visible").and_then(|v| v.as_bool()) {
+                            let _ = popup_menu_item.set_checked(visible);
+                        }
+                    }
+                });
             }
 
             Ok(())
@@ -218,6 +258,9 @@ pub fn run() {
                         // calendar-popup 窗口：阻止关闭，改为隐藏
                         api.prevent_close();
                         let _ = window.hide();
+                        // 通知前端更新菜单状态
+                        let app = window.app_handle();
+                        let _ = app.emit("popup-hidden", ());
                     } else {
                         // main 窗口：程序退出时确保清理 Hook（仅 Windows）
                         #[cfg(target_os = "windows")]

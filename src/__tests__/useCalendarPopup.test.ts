@@ -24,8 +24,10 @@ vi.mock('@tauri-apps/api/webviewWindow', () => ({
 
 // 模拟事件监听
 const mockListen = vi.fn()
+const mockEmit = vi.fn()
 vi.mock('@tauri-apps/api/event', () => ({
   listen: (...args: unknown[]) => mockListen(...args),
+  emit: (...args: unknown[]) => mockEmit(...args),
 }))
 
 // 模拟窗口 API
@@ -238,10 +240,10 @@ describe('useWindowToggle 事件处理', () => {
     const mockWindow = createMockPopupWindow()
     mockGetByLabel.mockResolvedValue(mockWindow)
 
-    // 模拟事件回调
-    let eventCallback: (event: { payload: unknown }) => Promise<void> = async () => {}
-    mockListen.mockImplementation(async (_event: string, callback: (e: { payload: unknown }) => Promise<void>) => {
-      eventCallback = callback
+    // 模拟事件回调 - 支持多个事件监听
+    const eventCallbacks = new Map<string, (event: { payload: unknown }) => Promise<void>>()
+    mockListen.mockImplementation(async (eventName: string, callback: (e: { payload: unknown }) => Promise<void>) => {
+      eventCallbacks.set(eventName, callback)
       return () => {}
     })
 
@@ -249,8 +251,12 @@ describe('useWindowToggle 事件处理', () => {
     const { initWindowToggleListener } = await import('../composables/useWindowToggle')
     await initWindowToggleListener()
 
+    // 获取 window-toggle-request 的回调
+    const toggleCallback = eventCallbacks.get('window-toggle-request')
+    expect(toggleCallback).toBeDefined()
+
     // 触发 ClockArea 事件
-    await eventCallback({
+    await toggleCallback!({
       payload: {
         source: 'ClockArea',
         monitorType: 'Primary',
@@ -284,23 +290,28 @@ describe('useWindowToggle 事件处理', () => {
     // 重置模块缓存以应用新的 mock
     vi.resetModules()
 
-    // 模拟事件回调
-    let eventCallback: (event: { payload: unknown }) => Promise<void> = async () => {}
-    const localMockListen = vi.fn().mockImplementation(async (_event: string, callback: (e: { payload: unknown }) => Promise<void>) => {
-      eventCallback = callback
+    // 模拟事件回调 - 支持多个事件监听
+    const eventCallbacks = new Map<string, (event: { payload: unknown }) => Promise<void>>()
+    const localMockListen = vi.fn().mockImplementation(async (eventName: string, callback: (e: { payload: unknown }) => Promise<void>) => {
+      eventCallbacks.set(eventName, callback)
       return () => {}
     })
 
     vi.doMock('@tauri-apps/api/event', () => ({
       listen: localMockListen,
+      emit: (...args: unknown[]) => mockEmit(...args),
     }))
 
     // 初始化监听器
     const { initWindowToggleListener } = await import('../composables/useWindowToggle')
     await initWindowToggleListener()
 
+    // 获取 window-toggle-request 的回调（TrayIcon 事件通过此事件发送）
+    const toggleCallback = eventCallbacks.get('window-toggle-request')
+    expect(toggleCallback).toBeDefined()
+
     // 触发 TrayIcon 事件
-    await eventCallback({
+    await toggleCallback!({
       payload: {
         source: 'TrayIcon',
       },
@@ -326,6 +337,7 @@ describe('useWindowToggle 事件处理', () => {
 
     vi.doMock('@tauri-apps/api/event', () => ({
       listen: (...args: unknown[]) => mockListen(...args),
+      emit: (...args: unknown[]) => mockEmit(...args),
     }))
 
     vi.doMock('@tauri-apps/api/window', () => ({
@@ -378,10 +390,10 @@ describe('useWindowToggle 事件处理', () => {
     const { resetPopupState, isPopupVisible } = await import('../composables/useCalendarPopup')
     resetPopupState()
 
-    // 模拟事件回调
-    let eventCallback: (event: { payload: unknown }) => Promise<void> = async () => {}
-    mockListen.mockImplementation(async (_event: string, callback: (e: { payload: unknown }) => Promise<void>) => {
-      eventCallback = callback
+    // 模拟事件回调 - 支持多个事件监听
+    const eventCallbacks = new Map<string, (event: { payload: unknown }) => Promise<void>>()
+    mockListen.mockImplementation(async (eventName: string, callback: (e: { payload: unknown }) => Promise<void>) => {
+      eventCallbacks.set(eventName, callback)
       return () => {}
     })
 
@@ -392,8 +404,12 @@ describe('useWindowToggle 事件处理', () => {
     // 重置 mock 返回值（因为在 beforeEach 中被清除）
     mockGetByLabel.mockResolvedValue(mockWindow)
 
+    // 获取 window-toggle-request 的回调
+    const toggleCallback = eventCallbacks.get('window-toggle-request')
+    expect(toggleCallback).toBeDefined()
+
     // 触发带参数的 ClockArea 事件
-    await eventCallback({
+    await toggleCallback!({
       payload: {
         source: 'ClockArea',
         monitorType: 'Secondary',

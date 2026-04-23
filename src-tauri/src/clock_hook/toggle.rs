@@ -69,3 +69,30 @@ pub fn emit_tray_click(app: &tauri::AppHandle) {
         log::error!("[TrayIcon] 发射事件失败: {}", e);
     }
 }
+
+/// 精简日历弹出窗口切换请求事件
+/// 由右键菜单中的「显示/隐藏精简日历」菜单项触发
+#[derive(Debug, Clone, Serialize)]
+pub struct PopupToggleRequest {
+    /// 来源标识
+    pub source: PopupToggleSource,
+}
+
+/// 精简日历切换来源
+#[derive(Debug, Clone, Serialize)]
+pub enum PopupToggleSource {
+    /// 托盘右键菜单
+    TrayMenu,
+}
+
+/// 发射精简日历弹出窗口切换事件
+/// 由托盘右键菜单的「显示/隐藏精简日历」菜单项触发
+/// 前端收到此事件后调用 toggleCalendarPopup() 切换精简窗口显隐
+pub fn emit_popup_toggle(app: &tauri::AppHandle) {
+    let request = PopupToggleRequest {
+        source: PopupToggleSource::TrayMenu,
+    };
+    if let Err(e) = app.emit("popup-toggle-request", &request) {
+        log::error!("[TrayMenu] 发射精简日历切换事件失败: {}", e);
+    }
+}

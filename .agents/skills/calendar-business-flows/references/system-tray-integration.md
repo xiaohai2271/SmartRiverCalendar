@@ -21,11 +21,11 @@
 ## 托盘功能
 
 ### 核心功能
-1. **窗口控制**: 显示/隐藏主窗口
+1. **窗口控制**: 显示/隐藏主窗口、显示/隐藏精简日历
 2. **功能快捷方式**: 检查更新、设置等
 3. **状态切换**: 始终置顶、自动隐藏
 4. **退出应用**: 完全关闭应用
-5. **精简日历**: 点击系统时钟区域显示弹出窗口
+5. **精简日历**: 点击系统时钟区域唤醒，或通过右键菜单切换显隐
 
 ## 菜单结构
 
@@ -33,6 +33,7 @@
 ```rust
 // 创建菜单项
 let show = MenuItemBuilder::new("显示主窗口").id("show").build(app)?;
+let show_popup = MenuItemBuilder::new("显示精简日历").id("show_popup").build(app)?;
 let always_on_top = CheckMenuItemBuilder::new("始终置顶")
     .id("always_on_top")
     .checked(false)
@@ -50,6 +51,7 @@ let quit = MenuItemBuilder::new("退出").id("quit").build(app)?;
 ### 菜单布局
 ```
 ├── 显示主窗口
+├── 显示精简日历
 ├── ──────────── (分隔符)
 ├── [✓] 始终置顶
 ├── [✓] 自动隐藏
@@ -71,6 +73,27 @@ let quit = MenuItemBuilder::new("退出").id("quit").build(app)?;
         if let Some(window) = app.get_webview_window("main") {
             let _ = window.show();
             let _ = window.set_focus();
+        }
+    }
+    "show_popup" => {
+        // 用户点击「显示/隐藏精简日历」菜单项
+        // 通过事件驱动让前端统一调度精简窗口的显隐
+        // 这样可以与时钟区域 Hook 的唤醒机制不冲突
+        #[cfg(target_os = "windows")]
+        {
+            clock_hook::toggle::emit_popup_toggle(app);
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            // 非 Windows 平台：直接操作窗口
+            if let Some(popup) = app.get_webview_window("calendar-popup") {
+                if popup.is_visible().unwrap_or(false) {
+                    let _ = popup.hide();
+                } else {
+                    let _ = popup.show();
+                    let _ = popup.set_focus();
+                }
+            }
         }
     }
     "always_on_top" => {
@@ -256,12 +279,13 @@ src/
 
 ### 事件流程
 
+#### 时钟区域点击触发
 ```
 用户点击时钟区域
        ↓
 WH_MOUSE_LL 钩子捕获
        ↓
-Rust 后端发送 ClockArea 事件
+Rust 后端发送 ClockArea 事件 (window-toggle-request)
        ↓
 前端 useWindowToggle 监听事件
        ↓
@@ -269,6 +293,23 @@ Rust 后端发送 ClockArea 事件
        ↓
 显示/隐藏弹出窗口
 ```
+
+#### 托盘右键菜单触发
+```
+用户点击「显示精简日历」菜单项
+       ↓
+Rust 后端发送 popup-toggle-request 事件
+       ↓
+前端 useWindowToggle 监听事件
+       ↓
+调用 toggleCalendarPopup()
+       ↓
+显示/隐藏弹出窗口
+```
+
+**与时钟区域 Hook 不冲突**：两种触发方式都调用同一个 `toggleCalendarPopup()` 函数，该函数通过实时查询窗口可见性决定切换方向。因此：
+- 通过时钟区域唤醒的精简窗口，可以被右键菜单隐藏
+- 通过右键菜单显示的精简窗口，可以被时钟区域点击隐藏
 
 ### 键盘快捷键
 
@@ -326,6 +367,7 @@ setTimeout(async () => {
 - 托盘逻辑: `src-tauri/src/lib.rs`
 - 窗口命令: `src-tauri/src/commands.rs`
 - 应用状态: `src-tauri/src/commands.rs` (AppState)
+- 事件发射: `src-tauri/src/clock_hook/toggle.rs` (emit_popup_toggle)
 - 弹出窗口控制: `src/composables/useCalendarPopup.ts`
 - 窗口切换监听: `src/composables/useWindowToggle.ts`
 - 弹出窗口视图: `src/views/CalendarPopupView.vue`

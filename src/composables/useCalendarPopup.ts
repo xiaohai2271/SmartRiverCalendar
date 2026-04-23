@@ -353,12 +353,30 @@ export async function toggleCalendarPopup(
     }
 
     // 实时查询窗口可见性来决定切换方向
-    if (await isPopupWindowVisible()) {
+    const wasVisible = await isPopupWindowVisible()
+    if (wasVisible) {
       await hideCalendarPopup()
+      // 隐藏后状态为 false
+      await emitPopupVisibilityChanged(false)
     } else {
       await showCalendarPopup(pendingParams.monitorType, pendingParams.clockRect)
+      // 显示后状态为 true
+      await emitPopupVisibilityChanged(true)
     }
   }, DEBOUNCE_DELAY)
+}
+
+/**
+ * 发送弹出窗口可见性变化事件
+ * 通知 Rust 端更新菜单项的 checked 状态
+ */
+async function emitPopupVisibilityChanged(visible: boolean): Promise<void> {
+  try {
+    const { emit } = await import('@tauri-apps/api/event')
+    await emit('popup-visibility-changed', { visible })
+  } catch (error) {
+    console.warn('[useCalendarPopup] 发送可见性变化事件失败:', error)
+  }
 }
 
 /**
