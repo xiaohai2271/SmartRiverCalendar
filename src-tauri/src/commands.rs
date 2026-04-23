@@ -1561,3 +1561,33 @@ pub fn debug_open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
         Err("开发者工具仅在开发模式下可用".to_string())
     }
 }
+
+// ==================== 日志命令 ====================
+
+/// 日志条目（用于前端显示）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogEntry {
+    pub timestamp: String,
+    pub level: String,
+    pub target: String,
+    pub message: String,
+}
+
+/// 获取后端日志
+#[tauri::command]
+pub fn debug_get_logs() -> Vec<LogEntry> {
+    let logs = crate::log_buffer::get_logs();
+    logs.into_iter().map(|l| LogEntry {
+        timestamp: l.timestamp,
+        level: l.level,
+        target: l.target,
+        message: l.message,
+    }).collect()
+}
+
+/// 清空后端日志
+#[tauri::command]
+pub fn debug_clear_logs() {
+    crate::log_buffer::clear_logs();
+    info!("[debug_clear_logs] 日志已清空");
+}

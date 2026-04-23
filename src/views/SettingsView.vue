@@ -388,7 +388,6 @@
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from '../stores/settings'
 import { useCalendarStore } from '../stores/calendar'
@@ -423,47 +422,8 @@ import type { PopupWindowSize } from '../types'
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
 const popupSettingsStore = usePopupSettingsStore()
-const router = useRouter()
 
 const settings = computed(() => settingsStore.settings)
-
-// ==================== 调试页面隐藏触发逻辑 ====================
-const appNameRef = ref<HTMLElement | null>(null)
-const debugInputBuffer = ref('')
-const isAppNameSelected = ref(false)
-
-// 检测选中状态变化
-function checkSelection() {
-  const selection = window.getSelection()
-  if (selection && selection.toString().trim() === '小河日历') {
-    isAppNameSelected.value = true
-  } else {
-    isAppNameSelected.value = false
-    debugInputBuffer.value = ''
-  }
-}
-
-// 监听键盘输入
-function handleKeyDown(event: KeyboardEvent) {
-  if (!isAppNameSelected.value) return
-  
-  const key = event.key.toLowerCase()
-  // 只接受字母输入
-  if (/^[a-z]$/.test(key)) {
-    debugInputBuffer.value += key
-    // 保持缓冲区最多 5 个字符
-    if (debugInputBuffer.value.length > 5) {
-      debugInputBuffer.value = debugInputBuffer.value.slice(-5)
-    }
-    // 检测是否输入了 "debug"
-    if (debugInputBuffer.value === 'debug') {
-      console.log('[Settings] 调试模式触发，跳转到调试页面')
-      router.push('/debug')
-      debugInputBuffer.value = ''
-      isAppNameSelected.value = false
-    }
-  }
-}
 
 // 节假日数据
 const holidays = ref<Record<string, string>>(getAllHolidays())
@@ -500,10 +460,6 @@ const clockHookDetectionMethod = ref('未启用')
 
 // 初始化自启动状态
 onMounted(async () => {
-  // 调试页面触发事件监听
-  document.addEventListener('selectionchange', checkSelection)
-  document.addEventListener('keydown', handleKeyDown)
-  
   if (isTauri()) {
     const enabled = await getAutostartEnabled()
     settingsStore.updateSettings({ autoStart: enabled })
@@ -521,9 +477,6 @@ onMounted(async () => {
     })
     onUnmounted(() => {
       unlistenDetection()
-      // 移除调试页面触发事件监听
-      document.removeEventListener('selectionchange', checkSelection)
-      document.removeEventListener('keydown', handleKeyDown)
     })
   }
 })

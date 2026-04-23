@@ -21,15 +21,23 @@
     <div v-if="activeTab === 'logs'" class="debug-section">
       <div class="section-header">
         <h3>日志导出</h3>
-        <button class="action-btn" @click="exportLogs" :disabled="exporting">
-          {{ exporting ? '导出中...' : '导出日志' }}
-        </button>
+        <div class="log-controls">
+          <select v-model="logSource" @change="refreshLogs" class="log-source-select">
+            <option value="all">全部日志</option>
+            <option value="frontend">前端日志</option>
+            <option value="backend">后端日志</option>
+          </select>
+          <button class="action-btn" @click="exportLogs" :disabled="exporting">
+            {{ exporting ? '导出中...' : '导出日志' }}
+          </button>
+        </div>
       </div>
       <div class="log-viewer">
         <div v-if="logs.length === 0" class="empty-state">暂无日志</div>
         <div v-else class="log-list">
-          <div v-for="(log, index) in logs" :key="index" :class="['log-item', log.level]">
+          <div v-for="(log, index) in logs" :key="index" :class="['log-item', log.level, log.source]">
             <span class="log-time">{{ log.time }}</span>
+            <span v-if="log.source" class="log-source">{{ log.source === 'backend' ? '后端' : '前端' }}</span>
             <span class="log-level">{{ log.level.toUpperCase() }}</span>
             <span class="log-message">{{ log.message }}</span>
           </div>
@@ -173,7 +181,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { isTauri, safeInvoke, debugGetTableSchema, debugGetTableData, debugOpenDevTools } from '../utils/tauri'
+import { isTauri, safeInvoke, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs } from '../utils/tauri'
 
 const router = useRouter()
 
@@ -192,9 +200,11 @@ interface LogEntry {
   time: string
   level: string
   message: string
+  source?: string // 'frontend' | 'backend'
 }
 const logs = ref<LogEntry[]>([])
 const exporting = ref(false)
+const logSource = ref<'all' | 'frontend' | 'backend'>('all')
 
 // 数据库结构相关
 interface ColumnInfo {
@@ -245,7 +255,7 @@ async function exportLogs() {
   exporting.value = true
   try {
     const logContent = logs.value.map(log => 
-      `[${log.time}] [${log.level.toUpperCase()}] ${log.message}`
+      `[${log.time}] [${log.level.toUpperCase()}]${log.source ? ` [${log.source}]` : ''} ${log.message}`
     ).join('\n')
     
     const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' })
@@ -262,25 +272,66 @@ async function exportLogs() {
   }
 }
 
-function refreshLogs() {
-  const storedLogs = localStorage.getItem('debug_logs')
-  if (storedLogs) {
-    try {
-      logs.value = JSON.parse(storedLogs)
-    } catch {
-      logs.value = []
+async function refreshLogs() {
+  const allLogs: LogEntry[] = []
+  
+  // 获取前端日志
+  if (logSource.value === 'all' || logSource.value === 'frontend') {
+    const storedLogs = localStorage.getItem('debug_logs')
+    if (storedLogs) {
+      try {
+        const frontendLogs = JSON.parse(storedLogs)
+        allLogs.push(...frontendLogs.map((l: LogEntry) => ({ ...l, source: 'frontend' })))
+      } catch {
+        // 忽略解析错误
+      }
     }
-  } else {
+  }
+  
+  // 获取后端日志
+  if ((logSource.value === 'all' || logSource.value === 'backend') && isTauri()) {
+    try {
+      const backendLogs = await debugGetLogs()
+      allLogs.push(...backendLogs.map(l => ({
+        time: l.timestamp,
+        level: l.level.toLowerCase(),
+        message: `[${l.target}] ${l.message}`,
+        source: 'backend'
+      })))
+    } catch (error) {
+      console.error('获取后端日志失败:', error)
+    }
+  }
+  
+  // 按时间排序（最新的在前面）
+  allLogs.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+  
+  if (allLogs.length === 0) {
     logs.value = [
-      { time: new Date().toISOString(), level: 'info', message: '调试页面已打开' },
-      { time: new Date().toISOString(), level: 'info', message: `当前环境: ${isTauri() ? 'Tauri' : '浏览器'}` }
+      { time: new Date().toISOString(), level: 'info', message: '调试页面已打开', source: 'frontend' },
+      { time: new Date().toISOString(), level: 'info', message: `当前环境: ${isTauri() ? 'Tauri' : '浏览器'}`, source: 'frontend' }
     ]
+  } else {
+    logs.value = allLogs
   }
 }
 
-function clearLogs() {
+async function clearLogs() {
+  // 清空前端日志
+  if (logSource.value === 'all' || logSource.value === 'frontend') {
+    localStorage.removeItem('debug_logs')
+  }
+  
+  // 清空后端日志
+  if ((logSource.value === 'all' || logSource.value === 'backend') && isTauri()) {
+    try {
+      await debugClearLogs()
+    } catch (error) {
+      console.error('清空后端日志失败:', error)
+    }
+  }
+  
   logs.value = []
-  localStorage.removeItem('debug_logs')
 }
 
 // ==================== 数据库结构功能 ====================
@@ -666,6 +717,34 @@ onMounted(async () => {
 .log-message {
   flex: 1;
   word-break: break-all;
+}
+
+.log-source {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+}
+
+.log-item.backend .log-source {
+  background: #3b82f6;
+  color: white;
+}
+
+.log-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.log-source-select {
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 13px;
 }
 
 /* 数据库结构 */

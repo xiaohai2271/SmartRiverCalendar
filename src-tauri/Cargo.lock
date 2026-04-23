@@ -7447,6 +7447,7 @@ dependencies = [
  "hostname",
  "ical",
  "log",
+ "once_cell",
  "quick-xml 0.37.5",
  "rand 0.8.5",
  "reqwest 0.12.28",

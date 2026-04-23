@@ -599,3 +599,21 @@ export async function debugGetTableData(tableName: string): Promise<Record<strin
 export async function debugOpenDevTools(): Promise<void> {
   await safeInvoke('debug_open_devtools')
 }
+
+/// 日志条目
+export interface LogEntry {
+  timestamp: string
+  level: string
+  target: string
+  message: string
+}
+
+/// 获取后端日志
+export async function debugGetLogs(): Promise<LogEntry[]> {
+  return await safeInvoke<LogEntry[]>('debug_get_logs') ?? []
+}
+
+/// 清空后端日志
+export async function debugClearLogs(): Promise<void> {
+  await safeInvoke('debug_clear_logs')
+}

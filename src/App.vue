@@ -94,6 +94,48 @@ const isPopupWindow = getCurrentWindow().label === 'calendar-popup'
 // popup-navigate 事件监听器取消函数
 const unlistenPopupNavigate = ref<UnlistenFn | null>(null)
 
+// ==================== 调试页面触发逻辑 ====================
+const debugInputBuffer = ref('')
+const debugInputTimer = ref<ReturnType<typeof setTimeout> | null>(null)
+
+// 处理选中变化事件
+function handleSelectionChange() {
+  const selection = window.getSelection()
+  if (selection && selection.toString().includes('小河日历')) {
+    // 选中了包含"小河日历"的文字，准备接收输入
+    debugInputBuffer.value = ''
+  }
+}
+
+// 处理键盘输入
+function handleKeyDown(event: KeyboardEvent) {
+  // 只处理字母键
+  if (event.key.length === 1 && /[a-zA-Z]/.test(event.key)) {
+    const selection = window.getSelection()
+    // 检查是否有选中包含"小河日历"的文字
+    if (selection && selection.toString().includes('小河日历')) {
+      // 添加到缓冲区
+      debugInputBuffer.value += event.key.toLowerCase()
+      
+      // 清除之前的定时器
+      if (debugInputTimer.value) {
+        clearTimeout(debugInputTimer.value)
+      }
+      
+      // 设置超时清空缓冲区（2秒无输入则重置）
+      debugInputTimer.value = setTimeout(() => {
+        debugInputBuffer.value = ''
+      }, 2000)
+      
+      // 检查是否输入了 "debug"
+      if (debugInputBuffer.value === 'debug') {
+        debugInputBuffer.value = ''
+        router.push('/debug')
+      }
+    }
+  }
+}
+
 // 提醒事件总线
 const reminderBus = {
   on: (callback: (data: {
@@ -230,6 +272,10 @@ onMounted(async () => {
       unlistenPopupNavigate.value = unlisten
     })
   }
+
+  // 添加调试页面触发监听器（全局）
+  document.addEventListener('selectionchange', handleSelectionChange)
+  document.addEventListener('keydown', handleKeyDown)
 })
 
 // 应用关闭时清理定时器
@@ -240,6 +286,13 @@ onUnmounted(() => {
   // 取消 popup-navigate 事件监听
   if (unlistenPopupNavigate.value) {
     unlistenPopupNavigate.value()
+  }
+  // 移除调试页面触发监听器
+  document.removeEventListener('selectionchange', handleSelectionChange)
+  document.removeEventListener('keydown', handleKeyDown)
+  // 清除输入缓冲定时器
+  if (debugInputTimer.value) {
+    clearTimeout(debugInputTimer.value)
   }
 })
 

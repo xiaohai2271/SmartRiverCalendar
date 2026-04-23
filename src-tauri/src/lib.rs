@@ -10,6 +10,7 @@ pub mod caldav;
 pub mod db;
 mod sync;
 mod updater;
+mod log_buffer;
 
 #[cfg(target_os = "windows")]
 mod clock_hook;
@@ -51,10 +52,9 @@ fn init_database() -> Result<Mutex<DatabaseConnection>, Box<dyn std::error::Erro
 }
 
 pub fn run() {
-    // 设置默认日志级别为 info，这样即使不设 RUST_LOG 环境变量也能看到后端日志
-    env_logger::Builder::from_env(
-        env_logger::Env::default().default_filter_or("info")
-    ).init();
+    // 初始化日志系统（同时输出到控制台和缓冲区）
+    log_buffer::init_logger();
+    log::info!("日志系统初始化完成");
 
     // 初始化数据库
     let db = match init_database() {
@@ -353,6 +353,8 @@ pub fn run() {
             commands::debug_get_table_schema,
             commands::debug_get_table_data,
             commands::debug_open_devtools,
+            commands::debug_get_logs,
+            commands::debug_clear_logs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
