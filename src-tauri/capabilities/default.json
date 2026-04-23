@@ -26,6 +26,10 @@
     "autostart:allow-is-enabled",
     "global-shortcut:default",
     "positioner:default",
-    "mcp-bridge:default"
+    "mcp-bridge:default",
+    "dialog:default",
+    "dialog:allow-save",
+    "fs:default",
+    "fs:allow-write-text-file"
   ]
 }

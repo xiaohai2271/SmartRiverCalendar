@@ -378,7 +378,7 @@
     <div class="settings-section">
       <h3>关于</h3>
       <div class="about-info">
-        <p>小河日历</p>
+        <p ref="appNameRef" class="app-name-text">小河日历</p>
         <p>版本: 0.1.0</p>
         <p class="copyright">打造最强替代系统日历的智能日历软件</p>
       </div>
