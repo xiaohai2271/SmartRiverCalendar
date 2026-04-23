@@ -349,6 +349,10 @@ pub fn run() {
             commands::get_sync_state,
             commands::upsert_sync_state,
             commands::delete_sync_state,
+            // 调试命令
+            commands::debug_get_table_schema,
+            commands::debug_get_table_data,
+            commands::debug_open_devtools,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

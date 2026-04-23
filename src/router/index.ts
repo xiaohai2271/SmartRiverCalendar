@@ -32,6 +32,12 @@ const router = createRouter({
       path: '/calendar-popup',
       name: 'calendar-popup',
       component: () => import('../views/CalendarPopupView.vue')
+    },
+    // 隐藏的调试页面（不在导航中显示）
+    {
+      path: '/debug',
+      name: 'debug',
+      component: () => import('../views/DebugView.vue')
     }
   ]
 })

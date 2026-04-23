@@ -568,3 +568,34 @@ export async function getClockHookStatus(): Promise<string> {
 export async function isClockHookAvailable(): Promise<boolean> {
   return await safeInvoke<boolean>('is_clock_hook_available') ?? false
 }
+
+// ==================== 调试相关 ====================
+
+/// 数据库表列信息
+export interface DebugColumnInfo {
+  name: string
+  type: string
+  pk: boolean
+  notnull: boolean
+}
+
+/// 数据库表结构信息
+export interface DebugTableSchema {
+  name: string
+  columns: DebugColumnInfo[]
+}
+
+/// 获取数据库表结构
+export async function debugGetTableSchema(): Promise<DebugTableSchema[]> {
+  return await safeInvoke<DebugTableSchema[]>('debug_get_table_schema') ?? []
+}
+
+/// 获取表数据
+export async function debugGetTableData(tableName: string): Promise<Record<string, any>[]> {
+  return await safeInvoke<Record<string, any>[]>('debug_get_table_data', { tableName }) ?? []
+}
+
+/// 打开开发者工具
+export async function debugOpenDevTools(): Promise<void> {
+  await safeInvoke('debug_open_devtools')
+}

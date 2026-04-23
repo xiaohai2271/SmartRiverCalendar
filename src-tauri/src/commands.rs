@@ -1409,3 +1409,155 @@ mod tests {
         assert_ne!(AccountType::Exchange, AccountType::CalDav);
     }
 }
+
+// ============================================================
+// 调试命令
+// ============================================================
+
+/// 数据库表列信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugColumnInfo {
+    pub name: String,
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub pk: bool,
+    pub notnull: bool,
+}
+
+/// 数据库表结构信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DebugTableSchema {
+    pub name: String,
+    pub columns: Vec<DebugColumnInfo>,
+}
+
+/// 获取数据库所有表的结构
+#[tauri::command]
+pub fn debug_get_table_schema(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DebugTableSchema>, DatabaseError> {
+    info!("[debug_get_table_schema] 获取数据库表结构");
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    
+    // 获取所有表名
+    let tables: Vec<String> = conn
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+        .and_then(|mut stmt| {
+            let rows = stmt.query_map([], |row| row.get(0))?;
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|e| DatabaseError::QueryError { message: e.to_string() })?;
+    
+    let mut result = Vec::new();
+    
+    for table_name in tables {
+        // 获取表的列信息
+        let columns: Vec<DebugColumnInfo> = conn
+            .prepare(&format!("PRAGMA table_info({})", table_name))
+            .and_then(|mut stmt| {
+                let rows = stmt.query_map([], |row| {
+                    Ok(DebugColumnInfo {
+                        name: row.get(1)?,
+                        type_: row.get(2)?,
+                        pk: row.get::<_, i32>(5)? == 1,
+                        notnull: row.get::<_, i32>(3)? == 1,
+                    })
+                })?;
+                rows.collect::<Result<Vec<_>, _>>()
+            })
+            .map_err(|e| DatabaseError::QueryError { message: e.to_string() })?;
+        
+        result.push(DebugTableSchema {
+            name: table_name,
+            columns,
+        });
+    }
+    
+    Ok(result)
+}
+
+/// 获取指定表的数据
+#[tauri::command]
+pub fn debug_get_table_data(
+    table_name: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<serde_json::Value>, DatabaseError> {
+    info!("[debug_get_table_data] 获取表数据: {}", table_name);
+    
+    // 安全检查：只允许查询特定表
+    let allowed_tables = ["calendars", "events", "todos", "accounts", "sync_state"];
+    if !allowed_tables.contains(&table_name.as_str()) {
+        return Err(DatabaseError::QueryError {
+            message: format!("不允许查询表: {}", table_name),
+        });
+    }
+    
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    
+    // 查询表数据（限制最多 1000 条）
+    let data: Vec<serde_json::Value> = conn
+        .prepare(&format!("SELECT * FROM {} LIMIT 1000", table_name))
+        .and_then(|mut stmt| {
+            let column_names: Vec<String> = stmt
+                .column_names()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect();
+            
+            let rows = stmt.query_map([], |row| {
+                let mut obj = serde_json::Map::new();
+                for (i, name) in column_names.iter().enumerate() {
+                    let value: rusqlite::types::Value = row.get(i)?;
+                    let json_value = rusqlite_value_to_json(value);
+                    obj.insert(name.clone(), json_value);
+                }
+                Ok(serde_json::Value::Object(obj))
+            })?;
+            rows.collect::<Result<Vec<_>, _>>()
+        })
+        .map_err(|e| DatabaseError::QueryError { message: e.to_string() })?;
+    
+    Ok(data)
+}
+
+/// 将 rusqlite::Value 转换为 serde_json::Value
+fn rusqlite_value_to_json(value: rusqlite::types::Value) -> serde_json::Value {
+    use rusqlite::types::Value;
+    match value {
+        Value::Null => serde_json::Value::Null,
+        Value::Integer(i) => serde_json::Value::Number(i.into()),
+        Value::Real(f) => {
+            if let Some(n) = serde_json::Number::from_f64(f) {
+                serde_json::Value::Number(n)
+            } else {
+                serde_json::Value::Null
+            }
+        }
+        Value::Text(s) => serde_json::Value::String(s),
+        Value::Blob(b) => serde_json::Value::String(format!("[BLOB: {} bytes]", b.len())),
+    }
+}
+
+/// 打开开发者工具
+#[tauri::command]
+pub fn debug_open_devtools(window: tauri::WebviewWindow) -> Result<(), String> {
+    info!("[debug_open_devtools] 打开开发者工具");
+    
+    #[cfg(debug_assertions)]
+    {
+        window.open_devtools();
+        Ok(())
+    }
+    
+    #[cfg(not(debug_assertions))]
+    {
+        let _ = window;
+        Err("开发者工具仅在开发模式下可用".to_string())
+    }
+}
