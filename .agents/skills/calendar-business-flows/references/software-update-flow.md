@@ -51,6 +51,16 @@
 
 ```json
 {
+  "bundle": {
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    }
+  },
   "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlDNTA0OTRDRjY2Q0QzNjEKUldSaDAyejJURWxRbkQyWUYzM3VFUFowNzFabHBTWktkUEsyOVNMZ1ZhVE5WbzhMRE5weU5WcHYK",
@@ -75,7 +85,10 @@
 | `versionName` | 当前应用版本号（自动填充） |
 | `target` | 操作系统类型（自动填充）：windows/darwin/linux |
 | `arch` | 系统架构（自动填充）：x86_64/aarch64等 |
-| `windows.installMode` | 更新安装模式："passive"表示静默安装，"basicUI"表示显示进度 |
+| `plugins.updater.windows.installMode` | 更新安装模式："passive"表示静默安装，"basicUI"表示显示进度 |
+| `bundle.windows.nsis.installMode` | **NSIS 安装模式**：`currentUser`（用户级安装，无需UAC）或 `perMachine`（系统级安装，需要UAC） |
+
+> **重要**: `bundle.windows.nsis.installMode` 必须与旧版本保持一致！如果旧版本是用户级安装（`AppData\Local`），新版本也必须是 `currentUser`，否则会导致更新失败。
 
 ### API端点说明
 
@@ -261,7 +274,7 @@ tauri-plugin-process = "2"
 
 ### 4. 更新安装后未生效（程序重启但版本未变）
 **可能原因：**
-- 手动调用 `restart()` 导致安装进程被终止
+- 手动调用 `Restart()` 导致安装进程被终止
 - `installMode: "passive"` 模式下过早重启
 
 **解决方案：**
@@ -271,7 +284,21 @@ tauri-plugin-process = "2"
 4. NSIS installer 会通过 `/R` flag 自动重启
 5. MSI installer 会通过 `AUTOLAUNCHAPP=True` 自动重启
 
-### 4. 如何获取tauriKey？
+### 5. UAC 弹窗后更新失败（安装程序未执行安装）
+**可能原因：**
+- 新旧版本的 `nsis.installMode` 不一致
+- 旧版本是 `currentUser` 模式，新版本尝试 `perMachine` 安装
+- NSIS installer 在错误的注册表位置查找旧版本信息
+
+**解决方案：**
+1. 确保在 `tauri.conf.json` 中明确配置 `bundle.windows.nsis.installMode`
+2. 如果旧版本安装在 `AppData\Local`，新版本必须设置 `installMode: "currentUser"`
+3. 如果旧版本安装在 `Program Files`，新版本必须设置 `installMode: "perMachine"`
+4. 检查旧版本注册表位置：
+   - `currentUser`: `HKCU\Software\[厂商]\[产品名]`
+   - `perMachine`: `HKLM\Software\[厂商]\[产品名]`
+
+### 6. 如何获取tauriKey？
 1. 登录 [UpgradeLink控制台](https://www.toolsetlink.com/)
 2. 创建Tauri类型应用
 3. 在应用详情页获取tauriKey
