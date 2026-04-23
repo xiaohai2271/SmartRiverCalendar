@@ -23,6 +23,19 @@
         "decorations": false,
         "transparent": false,
         "visible": true
+      },
+      {
+        "label": "calendar-popup",
+        "title": "精简日历",
+        "width": 340,
+        "height": 480,
+        "decorations": false,
+        "transparent": false,
+        "resizable": true,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "url": "/calendar-popup"
       }
     ],
     "security": {

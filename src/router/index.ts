@@ -28,6 +28,11 @@ const router = createRouter({
       path: '/settings',
       name: 'settings',
       component: () => import('../views/SettingsView.vue')
+    },
+    {
+      path: '/calendar-popup',
+      name: 'calendar-popup',
+      component: () => import('../views/CalendarPopupView.vue')
     }
   ]
 })

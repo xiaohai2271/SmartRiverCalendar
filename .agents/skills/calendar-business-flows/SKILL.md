@@ -17,8 +17,8 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **详细文档**: 参考 [references/software-update-flow.md](references/software-update-flow.md)
 
 ### 2. 系统托盘集成
-- **功能**: 托盘图标、右键菜单、窗口显示/隐藏
-- **涉及组件**: Tauri tray模块、系统事件处理
+- **功能**: 托盘图标、右键菜单、窗口显示/隐藏、**精简日历弹出窗口**
+- **涉及组件**: Tauri tray模块、系统事件处理、弹出窗口组件
 - **详细文档**: 参考 [references/system-tray-integration.md](references/system-tray-integration.md)
 
 ### 3. 日历数据管理
@@ -72,6 +72,11 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - 时钟点击模块: `src-tauri/src/clock_hook/`
 - 前端状态: `src/stores/`
 - 前端事件监听: `src/composables/useWindowToggle.ts`
+- **弹出窗口控制**: `src/composables/useCalendarPopup.ts`
+- **弹出窗口视图**: `src/views/CalendarPopupView.vue`
+- **弹出窗口组件**: `src/components/popup/`
+- **弹出窗口设置**: `src/stores/popupSettings.ts`
+- **权限配置**: `src-tauri/capabilities/default.json`
 - EWS 客户端: `src-tauri/src/ews.rs`
 - CalDAV 客户端: `src-tauri/src/caldav.rs`
 - 同步引擎: `src-tauri/src/sync.rs`

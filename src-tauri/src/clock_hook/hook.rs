@@ -1,7 +1,7 @@
 // WH_MOUSE_LL 全局鼠标钩子
 // 检测鼠标点击是否落在时钟区域，根据设置拦截系统弹窗
 
-use std::sync::atomic::{AtomicBool, AtomicIsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicIsize, AtomicPtr, Ordering};
 use std::sync::Mutex;
 use tauri::AppHandle;
 use windows::Win32::Foundation::*;
@@ -13,6 +13,35 @@ pub static HOOK_RUNNING: AtomicBool = AtomicBool::new(false);
 
 /// 是否拦截系统弹窗（用户设置）
 pub static BLOCK_POPUP: AtomicBool = AtomicBool::new(false);
+
+/// 弹出窗口区域（用于点击穿透判断）
+static POPUP_WINDOW_RECT: AtomicPtr<RECT> = AtomicPtr::new(std::ptr::null_mut());
+
+/// 设置弹出窗口区域
+pub fn set_popup_window_rect(rect: Option<RECT>) {
+    let old_ptr = POPUP_WINDOW_RECT.swap(
+        rect.map(|r| Box::into_raw(Box::new(r)))
+            .unwrap_or(std::ptr::null_mut()),
+        Ordering::SeqCst,
+    );
+    if !old_ptr.is_null() {
+        unsafe {
+            let _ = Box::from_raw(old_ptr);
+        }
+    }
+}
+
+/// 检查点是否在弹出窗口区域内
+fn is_point_in_popup_window(pt: POINT) -> bool {
+    let ptr = POPUP_WINDOW_RECT.load(Ordering::SeqCst);
+    if ptr.is_null() {
+        return false;
+    }
+    unsafe {
+        let rect = &*ptr;
+        pt.x >= rect.left && pt.x <= rect.right && pt.y >= rect.top && pt.y <= rect.bottom
+    }
+}
 
 /// 钩子回调中持有 AppHandle 的方式：
 /// 使用 Mutex<Option<AppHandle>> 以允许动态重置
@@ -102,10 +131,15 @@ unsafe extern "system" fn mouse_ll_callback(code: i32, wparam: WPARAM, lparam: L
             let mouse_data = *(lparam.0 as *const MSLLHOOKSTRUCT);
             let pt = mouse_data.pt;
 
+            // 检查是否点击在弹出窗口区域内（弹出窗口打开时的点击穿透）
+            if is_point_in_popup_window(pt) {
+                return CallNextHookEx(None, code, wparam, lparam);
+            }
+
             // 读取缓存（read 锁，持有时间极短）
             let hit = match crate::clock_hook::region_updater::CLOCK_REGIONS.try_read() {
                 Ok(cache) => {
-                    let result = cache.hit_test(pt);
+                    let result = cache.hit_test(pt).cloned();
                     drop(cache); // 立即释放
                     result
                 }
@@ -115,17 +149,25 @@ unsafe extern "system" fn mouse_ll_callback(code: i32, wparam: WPARAM, lparam: L
                 }
             };
 
-            if hit.is_some() {
-                log::debug!("[Hook] 时钟区域点击检测命中: {:?}", pt);
+            if let Some(region) = hit {
+                log::debug!(
+                    "[Hook] 时钟区域点击检测命中: {:?}, monitor_type: {:?}",
+                    pt,
+                    region.monitor_type
+                );
 
-                // 发射 Tauri 事件通知前端
+                // 发射 Tauri 事件通知前端，携带区域信息
                 if let Some(mutex) = APP_HANDLE.get() {
                     if let Ok(guard) = mutex.lock() {
                         if let Some(app) = guard.as_ref() {
                             let app_clone = app.clone();
+                            let region_clone = region;
                             let _ =
                                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
-                                    crate::clock_hook::toggle::emit_clock_click(&app_clone);
+                                    crate::clock_hook::toggle::emit_clock_click(
+                                        &app_clone,
+                                        &region_clone,
+                                    );
                                 }));
                         }
                     }

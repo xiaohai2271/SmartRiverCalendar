@@ -2,6 +2,70 @@
   <div class="settings-view">
     <h2>设置</h2>
 
+    <!-- 精简日历面板设置 -->
+    <div class="settings-section">
+      <h3>精简日历面板</h3>
+      <div class="setting-item">
+        <label>显示农历</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowLunar"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示农历节日</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowLunarFestival"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示节气</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowSolarTerm"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示节假日/调休</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowHoliday"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>显示日程事件</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupShowEvents"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>日历面板显示农历</label>
+        <input
+          type="checkbox"
+          v-model="popupSettingsStore.settings.popupCalendarShowLunar"
+          @change="savePopupSettings"
+        />
+      </div>
+      <div class="setting-item">
+        <label>日历面板节假日颜色</label>
+        <select
+          v-model="popupSettingsStore.settings.popupCalendarHolidayColor"
+          @change="savePopupSettings"
+        >
+          <option value="default">默认</option>
+          <option value="soft">柔和</option>
+          <option value="high-contrast">高对比</option>
+        </select>
+      </div>
+    </div>
+
     <!-- 外观设置 -->
     <div class="settings-section">
       <h3>外观</h3>
@@ -179,6 +243,14 @@
     <div class="settings-section">
       <h3>系统集成</h3>
       <div class="setting-item">
+        <label>窗口大小</label>
+        <select v-model="popupSettingsStore.settings.popupWindowSize" @change="handleWindowSizeChange">
+          <option value="small">紧凑</option>
+          <option value="medium">默认</option>
+          <option value="large">宽松</option>
+        </select>
+      </div>
+      <div class="setting-item">
         <label>点击系统时钟唤醒窗口</label>
         <input type="checkbox" v-model="settings.clockHookEnabled" @change="handleClockHookChange" />
       </div>
@@ -319,6 +391,7 @@ import { ref, computed, reactive, onMounted, onUnmounted } from 'vue'
 import { listen } from '@tauri-apps/api/event'
 import { useSettingsStore } from '../stores/settings'
 import { useCalendarStore } from '../stores/calendar'
+import { usePopupSettingsStore } from '../stores/popupSettings'
 import {
   getAllHolidays,
   getAllMakeupDays,
@@ -341,10 +414,14 @@ import {
   setClockHookBlockPopup,
   getClockHookStatus,
 } from '../utils/tauri'
+import { setPopupWindowSize } from '../composables/useCalendarPopup'
 import { saveExternalAccount, getAccountByServerUrl } from '../utils/database'
+import { broadcastSettingsChange } from '../utils/broadcast'
+import type { PopupWindowSize } from '../types'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
+const popupSettingsStore = usePopupSettingsStore()
 
 const settings = computed(() => settingsStore.settings)
 
@@ -406,6 +483,32 @@ onMounted(async () => {
 
 async function saveSettings() {
   settingsStore.saveSettings()
+}
+
+// 保存精简日历面板设置
+function savePopupSettings() {
+  popupSettingsStore.savePopupSettings()
+}
+
+// 处理窗口大小变更
+async function handleWindowSizeChange(event: Event) {
+  const select = event.target as HTMLSelectElement
+  const newSize = select.value as PopupWindowSize
+  console.log('[Settings] 窗口大小变更:', newSize)
+  
+  // 保存到 localStorage (v-model 已经更新了 settings)
+  popupSettingsStore.savePopupSettings()
+  
+  // 广播变更通知精简窗口
+  broadcastSettingsChange('popupWindowSize', newSize)
+  console.log('[Settings] 已广播窗口大小变更:', newSize)
+  
+  // 直接调用窗口调整函数，使弹出窗口实时生效
+  try {
+    await setPopupWindowSize(newSize)
+  } catch (error) {
+    console.error('[Settings] 设置窗口大小失败:', error)
+  }
 }
 
 // 处理自启动设置变化

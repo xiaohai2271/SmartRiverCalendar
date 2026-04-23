@@ -28,7 +28,8 @@ describe('clockHook API', () => {
     mockInvoke.mockResolvedValue(undefined)
     const { disableClockHook } = await import('../utils/tauri')
     await disableClockHook()
-    expect(mockInvoke).toHaveBeenCalledWith('disable_clock_hook')
+    // safeInvoke 会传递 undefined 作为第二个参数
+    expect(mockInvoke).toHaveBeenCalledWith('disable_clock_hook', undefined)
   })
 
   it('setClockHookBlockPopup 传递 block 参数', async () => {
@@ -51,12 +52,12 @@ describe('clockHook API', () => {
   })
 
   it('非 Tauri 环境下返回默认值', async () => {
-    // 移除 Tauri 环境标记
-    Object.defineProperty(window, '__TAURI_INTERNALS__', {
-      value: undefined,
-      writable: true,
-      configurable: true,
-    })
+    // 完全删除 Tauri 环境标记属性（而不是设置为 undefined）
+    delete (window as any).__TAURI_INTERNALS__
+    
+    // 重置模块缓存以确保重新导入
+    vi.resetModules()
+    
     const { enableClockHook } = await import('../utils/tauri')
     expect(await enableClockHook()).toBe('')
     // invoke 不应被调用
