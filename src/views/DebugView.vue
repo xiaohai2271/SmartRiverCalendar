@@ -179,9 +179,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { isTauri, safeInvoke, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs } from '../utils/tauri'
+import { startLogCapture, stopLogCapture } from '../utils/logger'
 
 const router = useRouter()
 
@@ -535,6 +536,10 @@ function formatSize(bytes: number): string {
 // ==================== 初始化 ====================
 
 onMounted(async () => {
+  // 启用前端日志捕获
+  startLogCapture()
+  console.log('[DebugView] 调试页面已打开')
+  
   // 刷新日志
   refreshLogs()
   
@@ -552,6 +557,11 @@ onMounted(async () => {
       appInfo.version = info.version
     }
   }
+})
+
+onUnmounted(() => {
+  // 停用前端日志捕获
+  stopLogCapture()
 })
 </script>
 
