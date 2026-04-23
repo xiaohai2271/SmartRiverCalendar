@@ -7,7 +7,6 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-blue.svg)](https://tauri.app/)
 [![Vue](https://img.shields.io/badge/Vue-3.x-green.svg)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 一款基于 Tauri 2.x + Vue 3 + TypeScript 构建的跨平台桌面日历应用，支持多日历管理、多种视图模式、农历/节假日显示。
 
@@ -18,9 +17,11 @@
 ### 核心功能
 - **多视图模式**: 支持日、周、月、年四种视图模式，自由切换
 - **多日历管理**: 支持多个日历账户，独立颜色标识
+- **外部日历支持**: 支持添加外部日历订阅
 - **农历支持**: 完整的农历日期显示，支持传统节日
 - **节假日显示**: 中国法定节假日、调休补班标识
 - **待办事项**: 集成待办管理，与日历事件无缝结合
+- **智能提醒**: 事件提醒、待办提醒，支持自定义模板
 
 ### 技术特性
 - **跨平台**: 支持 Windows 和 Android 平台
@@ -31,7 +32,32 @@
 
 ## 截图预览
 
-> 📸 项目截图将在后续版本中添加
+### 首页
+
+![首页](screenshots/home-view-light.png)
+
+### 日历视图
+
+#### 月视图
+![月视图 - 浅色主题](screenshots/month-view-light.png)
+![月视图 - 深色主题](screenshots/month-view-dark.png)
+
+#### 日视图
+![日视图](screenshots/day-view-light.png)
+
+#### 周视图
+![周视图](screenshots/week-view-light.png)
+
+#### 年视图
+![年视图](screenshots/year-view-light.png)
+
+### 待办事项
+
+![待办事项](screenshots/todos-view-light.png)
+
+### 设置页面
+
+![设置页面](screenshots/settings-view-light.png)
 
 ## 快速开始
 
@@ -40,7 +66,7 @@
 - Node.js 18+
 - pnpm 8+
 - Rust (通过 [rustup](https://rustup.rs/) 安装)
-- Tauri CLI 依赖项 ([参考官方文档](https://tauri.app/v1/guides/getting-started/prerequisites))
+- Tauri CLI 依赖项 ([参考官方文档](https://tauri.app/start/prerequisites/))
 
 ### 安装
 
@@ -100,13 +126,20 @@ pnpm tauri:build
 SmartRiverCalender/
 ├── src/                      # Vue 3 前端源码
 │   ├── components/           # UI 组件
-│   │   ├── calendar/         # 日历视图组件
+│   │   ├── calendar/         # 日历视图组件 (DayView, WeekView, MonthView, YearView)
 │   │   ├── settings/         # 设置组件
-│   │   └── todo/             # 待办组件
+│   │   ├── todo/             # 待办组件
+│   │   ├── popup/            # 弹窗组件
+│   │   ├── reminder/         # 提醒组件
+│   │   └── home/             # 首页组件
 │   ├── views/                # 页面视图
 │   ├── stores/               # Pinia 状态管理
+│   ├── services/             # 业务逻辑服务 (提醒、同步、更新)
+│   ├── composables/          # 组合式函数
+│   ├── router/               # 路由配置
 │   ├── types/                # TypeScript 类型定义
 │   ├── utils/                # 工具函数
+│   ├── styles/               # 样式文件
 │   └── __tests__/            # 单元测试
 ├── src-tauri/                # Rust 后端 (Tauri)
 └── dist/                     # 构建产物
@@ -161,10 +194,6 @@ pnpm vitest run src/__tests__/date.test.ts
 3. 提交更改 (`git commit -m 'feat: Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 创建 Pull Request
-
-## 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
 ## 致谢
 
