@@ -187,35 +187,47 @@ onMounted(async () => {
     return
   }
   
-  // 主窗口完整初始化
-  calendarStore.initialize()
+  // 主窗口初始化 - 优先渲染界面，后台加载非关键数据
+  
+  // 1. 立即应用主题（同步操作，快速完成）
   applyTheme()
-  checkForUpdatesOnStartup()
-  // 启动提醒服务
-  startReminderService()
+  
+  // 2. 启动核心数据加载（不等待完成，让界面先渲染）
+  calendarStore.initialize()
+  
+  // 3. 异步加载非关键功能（不阻塞界面渲染）
+  setTimeout(() => {
+    // 启动提醒服务
+    startReminderService()
+    
+    // 检查更新（后台进行，不影响启动速度）
+    checkForUpdatesOnStartup()
+    
+    // 初始化窗口切换事件监听
+    if (isTauri()) {
+      initWindowToggleListener()
+    }
+    
+    // 根据设置决定是否启用时钟 Hook
+    if (isTauri() && settingsStore.settings.clockHookEnabled) {
+      enableClockHook().then(async () => {
+        await setClockHookBlockPopup(settingsStore.settings.clockHookBlockPopup)
+      }).catch((e) => {
+        console.error('时钟点击检测功能启动失败:', e)
+        settingsStore.updateSettings({ clockHookEnabled: false })
+      })
+    }
+  }, 100) // 延迟 100ms，让界面先渲染
 
   // 监听稍后提醒事件
   window.addEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
 
-  // 初始化窗口切换事件监听
+  // 监听弹出窗口导航事件（不阻塞）
   if (isTauri()) {
-    initWindowToggleListener()
-  }
-
-  // 根据设置决定是否启用时钟 Hook
-  if (isTauri() && settingsStore.settings.clockHookEnabled) {
-    enableClockHook().then(async () => {
-      await setClockHookBlockPopup(settingsStore.settings.clockHookBlockPopup)
-    }).catch((e) => {
-      console.error('时钟点击检测功能启动失败:', e)
-      settingsStore.updateSettings({ clockHookEnabled: false })
-    })
-  }
-
-  // 监听弹出窗口导航事件
-  if (isTauri()) {
-    unlistenPopupNavigate.value = await listen<PopupNavigationPayload>('popup-navigate', (event) => {
+    listen<PopupNavigationPayload>('popup-navigate', (event) => {
       handlePopupNavigate(event.payload)
+    }).then((unlisten) => {
+      unlistenPopupNavigate.value = unlisten
     })
   }
 })

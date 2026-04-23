@@ -8,14 +8,14 @@
  * 
  * 注意：窗口显示和隐藏由外部（系统托盘/主窗口）手动控制
  */
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCalendarStore } from '@/stores/calendar'
 import { usePopupSettingsStore } from '@/stores/popupSettings'
 import { emit as tauriEmit } from '@tauri-apps/api/event'
 import { setPopupWindowSize } from '@/composables/useCalendarPopup'
 import { onSettingsChange } from '@/utils/broadcast'
-import type { PopupNavigationPayload, CalendarEvent } from '@/types'
+import type { PopupNavigationPayload, CalendarEvent, PopupWindowSize } from '@/types'
 
 // 子组件
 import PopupDateInfo from '@/components/popup/PopupDateInfo.vue'
@@ -90,7 +90,7 @@ function formatDateToString(date: Date): string {
  * 调用 Tauri API 调整实际窗口大小
  * @param size 可选的尺寸值，如果不提供则从设置中读取
  */
-async function applyWindowSize(size?: string): Promise<void> {
+async function applyWindowSize(size?: PopupWindowSize): Promise<void> {
   const targetSize = size || popupSettings.settings.popupWindowSize || 'medium'
   currentSize.value = targetSize
 
@@ -346,9 +346,9 @@ onMounted(async () => {
     // 处理窗口尺寸变更
     if (key === 'popupWindowSize' && typeof value === 'string') {
       // 同步更新 store 中的设置，避免后续 loadPopupSettings() 覆盖
-      popupSettings.settings.popupWindowSize = value
+      popupSettings.settings.popupWindowSize = value as PopupWindowSize
       // 应用窗口尺寸
-      applyWindowSize(value)
+      applyWindowSize(value as PopupWindowSize)
     }
   })
 })

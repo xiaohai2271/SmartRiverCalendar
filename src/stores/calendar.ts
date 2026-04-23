@@ -55,7 +55,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         console.error('Failed to load default view setting:', e)
       }
 
-      // 加载本地日历
+      // 1. 优先加载本地日历（快速操作）
       const loadedCalendars = await invokeGetCalendars()
       if (loadedCalendars.length > 0) {
         calendars.value = loadedCalendars
@@ -75,25 +75,39 @@ export const useCalendarStore = defineStore('calendar', () => {
         }
       }
 
-      // 加载外部账号和日历
-      await loadExternalCalendars()
-
-      // 加载事件
+      // 2. 加载本地事件（快速操作）
       const loadedEvents = await invokeGetEvents()
       events.value = loadedEvents
 
-      // 加载外部事件：根据当前视图范围初始化加载
-      const { start, end } = currentDateRange.value
-      await loadExternalEvents(start.getTime(), end.getTime())
-
+      // 3. 先标记初始化完成，让界面先渲染
       isInitialized.value = true
-      console.log('Calendar store initialized:', {
+      console.log('Calendar store initialized (local data):', {
         calendars: calendars.value.length,
         events: events.value.length,
         defaultView: currentView.value
       })
+
+      // 4. 延迟加载外部数据（网络请求，不阻塞界面）
+      // 使用 setTimeout 确保界面先渲染完成
+      setTimeout(async () => {
+        try {
+          // 加载外部账号和日历
+          await loadExternalCalendars()
+
+          // 加载外部事件：根据当前视图范围初始化加载
+          const { start, end } = currentDateRange.value
+          await loadExternalEvents(start.getTime(), end.getTime())
+
+          console.log('External data loaded successfully')
+        } catch (error) {
+          console.error('Failed to load external data:', error)
+        }
+      }, 200) // 延迟 200ms，让界面先渲染
+
     } catch (error) {
       console.error('Failed to initialize calendar store:', error)
+      // 即使失败也标记初始化完成，避免界面卡死
+      isInitialized.value = true
     }
   }
 
