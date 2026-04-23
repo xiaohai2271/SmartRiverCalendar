@@ -183,6 +183,8 @@ import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { isTauri, safeInvoke, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs } from '../utils/tauri'
 import { startLogCapture, stopLogCapture } from '../utils/logger'
+import { save } from '@tauri-apps/plugin-dialog'
+import { writeTextFile } from '@tauri-apps/plugin-fs'
 
 const router = useRouter()
 
@@ -259,13 +261,28 @@ async function exportLogs() {
       `[${log.time}] [${log.level.toUpperCase()}]${log.source ? ` [${log.source}]` : ''} ${log.message}`
     ).join('\n')
     
-    const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `小河日历_日志_${new Date().toISOString().slice(0, 10)}.txt`
-    a.click()
-    URL.revokeObjectURL(url)
+    const defaultName = `小河日历_日志_${new Date().toISOString().slice(0, 10)}.txt`
+    
+    if (isTauri()) {
+      // 使用 Tauri 的保存对话框
+      const filePath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: '文本文件', extensions: ['txt'] }]
+      })
+      
+      if (filePath) {
+        await writeTextFile(filePath, logContent)
+      }
+    } else {
+      // 浏览器环境：使用传统下载方式
+      const blob = new Blob([logContent], { type: 'text/plain;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = defaultName
+      a.click()
+      URL.revokeObjectURL(url)
+    }
   } catch (error) {
     console.error('导出日志失败:', error)
   } finally {
@@ -478,17 +495,36 @@ function formatValue(value: any): string {
   return String(value)
 }
 
-function exportTableData() {
+async function exportTableData() {
   if (tableData.value.length === 0) return
   
   const json = JSON.stringify(tableData.value, null, 2)
-  const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${selectedTable.value}_${new Date().toISOString().slice(0, 10)}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  const defaultName = `${selectedTable.value}_${new Date().toISOString().slice(0, 10)}.json`
+  
+  try {
+    if (isTauri()) {
+      // 使用 Tauri 的保存对话框
+      const filePath = await save({
+        defaultPath: defaultName,
+        filters: [{ name: 'JSON 文件', extensions: ['json'] }]
+      })
+      
+      if (filePath) {
+        await writeTextFile(filePath, json)
+      }
+    } else {
+      // 浏览器环境：使用传统下载方式
+      const blob = new Blob([json], { type: 'application/json;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = defaultName
+      a.click()
+      URL.revokeObjectURL(url)
+    }
+  } catch (error) {
+    console.error('导出数据失败:', error)
+  }
 }
 
 // ==================== 开发者工具功能 ====================
