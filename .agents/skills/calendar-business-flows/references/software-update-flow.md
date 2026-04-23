@@ -26,13 +26,14 @@
 ## 更新流程图
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  用户触发   │───▶│  检查更新   │───▶│  下载更新   │───▶│  安装更新   │───▶│  重启应用   │
-│  或自动检查 │    │  (服务器)   │    │  (签名验证) │    │  (完成)     │    │  (生效)     │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  用户触发   │───▶│  检查更新   │───▶│  下载更新   │───▶│  安装更新   │
+│  或自动检查 │    │  (服务器)   │    │  (签名验证) │    │  (installer │
+└─────────────┘    └─────────────┘    └─────────────┘    │自动重启)    │
+                                                       └─────────────┘
 ```
 
-> **重要**: 安装完成后必须调用 `app.restart()` (Rust) 或 `relaunch()` (前端) 重启应用，更新才能生效。
+> **Windows 流程**: 安装进程会自动关闭应用并重启（通过 `/R` flag 或 `AUTOLAUNCHAPP=True`）。**不要手动调用 restart()**。
 
 ## 配置说明
 
@@ -137,7 +138,7 @@ pub async fn download_and_install_update(update: Update) -> Result<(), String> {
 }
 ```
 
-#### 4. 处理更新结果并重启
+#### 4. 处理更新结果
 ```rust
 pub async fn handle_update_result(app_handle: AppHandle, result: UpdateCheckResult) {
     match result {
@@ -145,9 +146,9 @@ pub async fn handle_update_result(app_handle: AppHandle, result: UpdateCheckResu
             log::info!("有新版本可用: {}", update.version);
             match download_and_install_update(update).await {
                 Ok(()) => {
-                    log::info!("更新安装成功，正在重启应用...");
-                    // 使用 tauri-plugin-process 提供的 restart 功能
-                    app_handle.restart();
+                    log::info!("更新安装成功，等待 installer 自动重启应用...");
+                    // Windows installer 会自动重启应用
+                    // 不要手动调用 restart()
                 }
                 Err(e) => {
                     log::error!("下载更新失败: {}", e);
@@ -260,15 +261,15 @@ tauri-plugin-process = "2"
 
 ### 4. 更新安装后未生效（程序重启但版本未变）
 **可能原因：**
-- 缺少 `tauri-plugin-process` 插件
-- 安装完成后未调用重启方法
-- `installMode: "passive"` 模式下应用过早重启，安装进程被终止
+- 手动调用 `restart()` 导致安装进程被终止
+- `installMode: "passive"` 模式下过早重启
 
 **解决方案：**
-1. 确保 `Cargo.toml` 中添加了 `tauri-plugin-process = "2"` 依赖
-2. 确保 `lib.rs` 中注册了 `.plugin(tauri_plugin_process::init())`
-3. 确保 `updater.rs` 在安装完成后调用 `app_handle.restart()`
-4. 检查日志确认更新流程完整执行
+1. **不要手动调用 restart()** - Windows installer 会自动处理
+2. 确保 `installMode` 设置为 "passive"
+3. 检查日志确认没有过早重启
+4. NSIS installer 会通过 `/R` flag 自动重启
+5. MSI installer 会通过 `AUTOLAUNCHAPP=True` 自动重启
 
 ### 4. 如何获取tauriKey？
 1. 登录 [UpgradeLink控制台](https://www.toolsetlink.com/)
