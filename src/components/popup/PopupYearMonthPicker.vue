@@ -13,9 +13,6 @@ const emit = defineEmits<{
   confirm: [year: number, month: number]
 }>()
 
-// 弹窗引用
-const pickerRef = ref<HTMLElement | null>(null)
-
 // 选中的年份
 const selectedYear = ref(props.currentDate.getFullYear())
 // 选中的月份
