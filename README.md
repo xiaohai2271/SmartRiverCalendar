@@ -7,7 +7,6 @@
 [![Tauri](https://img.shields.io/badge/Tauri-2.x-blue.svg)](https://tauri.app/)
 [![Vue](https://img.shields.io/badge/Vue-3.x-green.svg)](https://vuejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg)](https://www.typescriptlang.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 一款基于 Tauri 2.x + Vue 3 + TypeScript 构建的跨平台桌面日历应用，支持多日历管理、多种视图模式、农历/节假日显示。
 
@@ -195,10 +194,6 @@ pnpm vitest run src/__tests__/date.test.ts
 3. 提交更改 (`git commit -m 'feat: Add some AmazingFeature'`)
 4. 推送到分支 (`git push origin feature/AmazingFeature`)
 5. 创建 Pull Request
-
-## 许可证
-
-本项目采用 MIT 许可证 - 详见 [LICENSE](LICENSE) 文件
 
 ## 致谢
 
