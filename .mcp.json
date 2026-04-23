@@ -4,6 +4,10 @@
       "type": "stdio",
       "command": "npx",
       "args": ["-y", "@hypothesi/tauri-mcp-server"]
+    },
+    "windows-mcp": {
+      "type": "stdio",
+      "command": "C:\\Users\\zheng\\.local\\bin\\windows-mcp.exe"
     }
   }
 }

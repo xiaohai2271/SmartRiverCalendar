@@ -42,8 +42,14 @@ Thumbs.db
 Desktop.ini
 
 # Claude 配置（包含个人设置）
-.claude/
+.claude/*
 !.claude/skills/
+!.claude/commands/
+
+# OpenCode 配置
+.opencode/*
+!.opencode/skills/
+!.opencode/commands/
 
 # Sisyphus 工作状态
 .sisyphus/
