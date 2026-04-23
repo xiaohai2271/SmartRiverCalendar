@@ -75,6 +75,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::default().build())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
@@ -195,8 +196,8 @@ pub fn run() {
                             // 调用 updater 模块检查并处理更新
                             let app_handle = app.clone();
                             tauri::async_runtime::spawn(async move {
-                                let result = updater::check_for_updates(app_handle).await;
-                                updater::handle_update_result(result).await;
+                                let result = updater::check_for_updates(app_handle.clone()).await;
+                                updater::handle_update_result(app_handle, result).await;
                             });
                         }
                         _ => {}

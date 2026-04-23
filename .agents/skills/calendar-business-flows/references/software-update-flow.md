@@ -26,11 +26,13 @@
 ## 更新流程图
 
 ```
-┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-│  用户触发   │───▶│  检查更新   │───▶│  下载更新   │───▶│  安装更新   │
-│  或自动检查 │    │  (服务器)   │    │  (签名验证) │    │  (完成)     │
-└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  用户触发   │───▶│  检查更新   │───▶│  下载更新   │───▶│  安装更新   │───▶│  重启应用   │
+│  或自动检查 │    │  (服务器)   │    │  (签名验证) │    │  (完成)     │    │  (生效)     │
+└─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘    └─────────────┘
 ```
+
+> **重要**: 安装完成后必须调用 `app.restart()` (Rust) 或 `relaunch()` (前端) 重启应用，更新才能生效。
 
 ## 配置说明
 
@@ -124,12 +126,48 @@ pub async fn download_and_install_update(update: Update) -> Result<(), String> {
             },
             || {
                 // 下载完成回调
+                log::info!("更新包下载完成");
             },
         )
         .await
-        .map_err(|e| format!("下载或安装更新失败: {}", e))
+        .map_err(|e| format!("下载或安装更新失败: {}", e))?;
+
+    log::info!("更新安装完成");
+    Ok(())
 }
 ```
+
+#### 4. 处理更新结果并重启
+```rust
+pub async fn handle_update_result(app_handle: AppHandle, result: UpdateCheckResult) {
+    match result {
+        UpdateCheckResult::UpdateAvailable(update) => {
+            log::info!("有新版本可用: {}", update.version);
+            match download_and_install_update(update).await {
+                Ok(()) => {
+                    log::info!("更新安装成功，正在重启应用...");
+                    // 使用 tauri-plugin-process 提供的 restart 功能
+                    app_handle.restart();
+                }
+                Err(e) => {
+                    log::error!("下载更新失败: {}", e);
+                }
+            }
+        }
+        UpdateCheckResult::UpToDate => {
+            log::info!("当前已是最新版本");
+        }
+        UpdateCheckResult::Failed(e) => {
+            log::error!("检查更新失败: {}", e);
+        }
+        UpdateCheckResult::InitFailed(e) => {
+            log::error!("初始化更新器失败: {}", e);
+        }
+    }
+}
+```
+
+> **关键依赖**: 重启功能依赖 `tauri-plugin-process` 插件，需要在 `Cargo.toml` 中添加依赖并在 `lib.rs` 中注册。
 
 ### 更新检查结果枚举
 ```rust
@@ -157,10 +195,30 @@ let check_update = MenuItemBuilder::new("检查更新")
 "check_update" => {
     let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = updater::check_for_updates(app_handle).await;
-        updater::handle_update_result(result).await;
+        let result = updater::check_for_updates(app_handle.clone()).await;
+        updater::handle_update_result(app_handle, result).await;
     });
 }
+```
+
+### 必要插件配置
+
+更新流程依赖以下 Tauri 插件：
+
+1. **tauri-plugin-updater**: 提供更新检查、下载、安装功能
+2. **tauri-plugin-process**: 提供应用重启功能 (`app.restart()` / `relaunch()`)
+
+在 `Cargo.toml` 中添加：
+```toml
+[dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+```
+
+在 `lib.rs` 中注册：
+```rust
+.plugin(tauri_plugin_process::init())
+.plugin(tauri_plugin_updater::Builder::default().build())
 ```
 
 ## 常见问题
@@ -200,6 +258,18 @@ let check_update = MenuItemBuilder::new("检查更新")
 2. 关闭应用后重试
 3. 以管理员权限运行
 
+### 4. 更新安装后未生效（程序重启但版本未变）
+**可能原因：**
+- 缺少 `tauri-plugin-process` 插件
+- 安装完成后未调用重启方法
+- `installMode: "passive"` 模式下应用过早重启，安装进程被终止
+
+**解决方案：**
+1. 确保 `Cargo.toml` 中添加了 `tauri-plugin-process = "2"` 依赖
+2. 确保 `lib.rs` 中注册了 `.plugin(tauri_plugin_process::init())`
+3. 确保 `updater.rs` 在安装完成后调用 `app_handle.restart()`
+4. 检查日志确认更新流程完整执行
+
 ### 4. 如何获取tauriKey？
 1. 登录 [UpgradeLink控制台](https://www.toolsetlink.com/)
 2. 创建Tauri类型应用
@@ -219,9 +289,38 @@ let check_update = MenuItemBuilder::new("检查更新")
 ## 相关文件
 
 - 配置文件: `src-tauri/tauri.conf.json`
-- 更新逻辑: `src-tauri/src/updater.rs`
-- 主程序入口: `src-tauri/src/lib.rs`
+- Rust 更新逻辑: `src-tauri/src/updater.rs`
+- Rust 主程序入口: `src-tauri/src/lib.rs`
+- 前端更新服务: `src/services/updater.ts`
 - 系统托盘逻辑: `src-tauri/src/lib.rs`
+
+### 前端更新服务 (`src/services/updater.ts`)
+
+前端使用 `@tauri-apps/plugin-updater` 和 `@tauri-apps/plugin-process` 实现更新流程：
+
+```typescript
+import { check } from '@tauri-apps/plugin-updater'
+import { relaunch } from '@tauri-apps/plugin-process'
+
+export async function checkAndInstallUpdate(showNotification = true): Promise<void> {
+  const update = await check({
+    timeout: 5000,
+    headers: { 'X-AccessKey': 'your-access-key' },
+  })
+
+  if (update) {
+    // 下载并安装
+    await update.downloadAndInstall((event) => {
+      // 处理下载进度
+    })
+
+    // 重启应用使更新生效
+    await relaunch()
+  }
+}
+```
+
+> **注意**: 前端的 `relaunch()` 需要 Rust 端注册 `tauri-plugin-process` 插件才能正常工作。
 
 ## UpgradeLink平台资源
 
