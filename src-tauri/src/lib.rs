@@ -193,12 +193,13 @@ pub fn run() {
                         }
                         "check_update" => {
                             // 用户点击"检查更新"菜单项
-                            // 调用 updater 模块检查并处理更新
-                            let app_handle = app.clone();
-                            tauri::async_runtime::spawn(async move {
-                                let result = updater::check_for_updates(app_handle.clone()).await;
-                                updater::handle_update_result(app_handle, result).await;
-                            });
+                            // 先恢复主窗口（如果被隐藏），然后发射事件到前端处理
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                            // 发射事件到前端，由前端控制更新弹窗流程
+                            let _ = app.emit("check-update", ());
                         }
                         _ => {}
                     })

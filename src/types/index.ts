@@ -221,3 +221,13 @@ export interface WindowToggleRequest {
     bottom: number
   }
 }
+
+// 更新信息
+export interface UpdateInfo {
+  /** 新版本号 */
+  version: string
+  /** 更新说明 */
+  body?: string
+  /** 发布日期 */
+  date?: string
+}

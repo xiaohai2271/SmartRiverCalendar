@@ -145,7 +145,7 @@ pub struct CalDavCalendarInfo {
 pub fn get_app_info() -> AppInfo {
     AppInfo {
         name: "小河日历".to_string(),
-        version: "0.1.0".to_string(),
+        version: "0.1.1".to_string(),
     }
 }
 
@@ -1312,7 +1312,7 @@ mod tests {
     fn test_get_app_info() {
         let info = get_app_info();
         assert_eq!(info.name, "小河日历");
-        assert_eq!(info.version, "0.1.0");
+        assert_eq!(info.version, "0.1.1");
     }
 
     #[test]
