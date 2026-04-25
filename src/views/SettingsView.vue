@@ -379,7 +379,7 @@
       <h3>关于</h3>
       <div class="about-info">
         <p ref="appNameRef" class="app-name-text">小河日历</p>
-        <p>版本: 0.1.0</p>
+        <p>版本: 0.1.1</p>
         <p class="copyright">打造最强替代系统日历的智能日历软件</p>
       </div>
     </div>

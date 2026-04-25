@@ -117,3 +117,86 @@ export async function getCurrentVersion(): Promise<string> {
     return '0.0.0'
   }
 }
+
+// localStorage 存储键名
+const SKIPPED_VERSION_KEY = 'skippedUpdateVersion'
+
+/**
+ * 获取跳过的版本
+ * @returns 跳过的版本号，未跳过则返回 null
+ */
+export function getSkippedVersion(): string | null {
+  const skipped = localStorage.getItem(SKIPPED_VERSION_KEY)
+  return skipped
+}
+
+/**
+ * 设置跳过的版本
+ * @param version 要跳过的版本号
+ */
+export function setSkippedVersion(version: string): void {
+  localStorage.setItem(SKIPPED_VERSION_KEY, version)
+}
+
+/**
+ * 清除跳过的版本记录
+ */
+export function clearSkippedVersion(): void {
+  localStorage.removeItem(SKIPPED_VERSION_KEY)
+}
+
+/**
+ * 检查指定版本是否被跳过
+ * @param version 要检查的版本号
+ * @returns 是否已跳过该版本
+ */
+export function isVersionSkipped(version: string): boolean {
+  const skipped = getSkippedVersion()
+  return skipped === version
+}
+
+/**
+ * 检查更新详情
+ * @returns 更新信息，无更新或被跳过时返回 null
+ */
+export async function checkForUpdateDetails(): Promise<import('@/types').UpdateInfo | null> {
+  try {
+    const update = await check({
+      timeout: 5000,
+      headers: { 'X-AccessKey': UPGRADE_CONFIG.accessKey },
+    })
+
+    if (!update) return null
+
+    // 检查是否被跳过
+    if (isVersionSkipped(update.version)) return null
+
+    return {
+      version: update.version,
+      body: update.body,
+      date: update.date,
+    }
+  } catch (error) {
+    console.error('检查更新失败:', error)
+    return null // 静默返回 null
+  }
+}
+
+/**
+ * 开始下载并安装更新
+ * @param updateInfo 更新信息
+ */
+export async function startUpdate(updateInfo: import('@/types').UpdateInfo): Promise<void> {
+  // 重新获取 Update 对象
+  const update = await check({
+    timeout: 5000,
+    headers: { 'X-AccessKey': UPGRADE_CONFIG.accessKey },
+  })
+
+  if (!update || update.version !== updateInfo.version) {
+    throw new Error('无法获取更新信息')
+  }
+
+  await update.downloadAndInstall()
+  // 不调用 relaunch()，Windows installer 会自动重启
+}

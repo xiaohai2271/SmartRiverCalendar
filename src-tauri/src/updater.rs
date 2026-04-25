@@ -22,6 +22,19 @@
 //! }
 //! ```
 //!
+//! ## Windows 更新流程
+//!
+//! 在 Windows 上，安装进程会自动处理应用的关闭和重启：
+//! 1. 下载完成后启动安装进程
+//! 2. 安装进程关闭当前应用（Windows 安装程序的限制）
+//! 3. 安装进程完成文件替换
+//! 4. 安装进程自动重启应用（通过 `/R` flag 或 `AUTOLAUNCHAPP=True`）
+//!
+//! **注意**: 不要手动调用 `restart()`，否则会导致：
+//! - 应用过早重启，安装进程被终止
+//! - 双重重启冲突
+//! - 更新失败
+//!
 //! ## 使用示例
 //!
 //! ```rust,ignore
@@ -38,6 +51,7 @@
 //! match updater.check().await {
 //!     Ok(Some(update)) => {
 //!         println!("有新版本: {}", update.version);
+//!         // 下载并安装，Windows 上 installer 会自动处理重启
 //!         update.download_and_install(|_, _| {}, || {}).await.ok();
 //!     }
 //!     Ok(None) => println!("已是最新版本"),
@@ -185,39 +199,49 @@ pub async fn download_and_install_update(update: Update) -> Result<(), String> {
             },
             || {
                 // 下载完成回调
+                log::info!("更新包下载完成");
             },
         )
         .await
-        .map_err(|e| format!("下载或安装更新失败: {}", e))
+        .map_err(|e| format!("下载或安装更新失败: {}", e))?;
+
+    log::info!("更新安装完成");
+    Ok(())
 }
 
 /// 处理更新检查结果并输出日志
 ///
 /// # 参数
 ///
+/// * `app_handle` - Tauri 应用句柄
 /// * `result` - 更新检查结果
 ///
 /// # 行为
 ///
-/// - 有更新：打印版本号并自动下载安装
+/// - 有更新：打印版本号并自动下载安装，Windows 上等待 installer 自动重启
 /// - 无更新：打印提示信息
 /// - 失败：打印错误信息
-pub async fn handle_update_result(result: UpdateCheckResult) {
+pub async fn handle_update_result(app_handle: AppHandle, result: UpdateCheckResult) {
     match result {
         UpdateCheckResult::UpdateAvailable(update) => {
-            println!("有新版本可用: {}", update.version);
-            if let Err(e) = download_and_install_update(update).await {
-                println!("下载更新失败: {}", e);
+            log::info!("有新版本可用: {}", update.version);
+            match download_and_install_update(update).await {
+                Ok(()) => {
+                    log::info!("更新安装成功，等待 installer 自动重启应用...");
+                }
+                Err(e) => {
+                    log::error!("下载更新失败: {}", e);
+                }
             }
         }
         UpdateCheckResult::UpToDate => {
-            println!("当前已是最新版本");
+            log::info!("当前已是最新版本");
         }
         UpdateCheckResult::Failed(e) => {
-            println!("检查更新失败: {}", e);
+            log::error!("检查更新失败: {}", e);
         }
         UpdateCheckResult::InitFailed(e) => {
-            println!("初始化更新器失败: {}", e);
+            log::error!("初始化更新器失败: {}", e);
         }
     }
 }

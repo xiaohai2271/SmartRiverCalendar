@@ -65,6 +65,17 @@
 
   <!-- 提醒弹窗组件 -->
   <ReminderPopup />
+
+  <!-- 软件更新弹窗组件 -->
+  <UpdateDialog
+    :visible="showUpdateDialog"
+    :update-info="updateInfo"
+    :loading="isUpdating"
+    @upgrade="handleUpdateUpgrade"
+    @later="handleUpdateLater"
+    @skip="handleUpdateSkip"
+    @close="handleUpdateClose"
+  />
   </template>
 </template>
 
@@ -78,7 +89,8 @@ import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
 import ReminderPopup from './components/reminder/ReminderPopup.vue'
-import { checkAndInstallUpdate } from './services/updater'
+import UpdateDialog from './components/update/UpdateDialog.vue'
+import { checkForUpdateDetails, startUpdate, setSkippedVersion } from './services/updater'
 import { startReminderService, stopReminderService, onReminderPopup, offReminderPopup, handleSnoozeReminder } from './services/reminder'
 import { isTauri, enableClockHook, setClockHookBlockPopup } from './utils/tauri'
 import { initWindowToggleListener } from './composables/useWindowToggle'
@@ -87,6 +99,11 @@ import type { CalendarEvent, Todo, PopupNavigationPayload } from './types'
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
 const router = useRouter()
+
+// 更新弹窗状态
+const showUpdateDialog = ref(false)
+const updateInfo = ref<import('@/types').UpdateInfo | null>(null)
+const isUpdating = ref(false)
 
 // 检测当前是否为弹出窗口
 const isPopupWindow = getCurrentWindow().label === 'calendar-popup'
@@ -271,6 +288,15 @@ onMounted(async () => {
     }).then((unlisten) => {
       unlistenPopupNavigate.value = unlisten
     })
+
+    // 监听托盘"检查更新"事件
+    listen('check-update', async () => {
+      const info = await checkForUpdateDetails()
+      if (info) {
+        updateInfo.value = info
+        showUpdateDialog.value = true
+      }
+    })
   }
 
   // 添加调试页面触发监听器（全局）
@@ -315,12 +341,40 @@ watch(() => settingsStore.settings.theme, applyTheme)
 // 启动时检查更新
 async function checkForUpdatesOnStartup() {
   if (isTauri() && settingsStore.settings.autoUpdate) {
-    try {
-      await checkAndInstallUpdate(true)
-    } catch (error) {
-      console.error('自动更新检查失败:', error)
+    const info = await checkForUpdateDetails()
+    if (info) {
+      updateInfo.value = info
+      showUpdateDialog.value = true
     }
   }
+}
+
+// 处理更新弹窗事件
+async function handleUpdateUpgrade() {
+  if (!updateInfo.value) return
+  isUpdating.value = true
+  try {
+    await startUpdate(updateInfo.value)
+    // Windows installer 会自动重启应用
+  } catch (error) {
+    console.error('更新失败:', error)
+    isUpdating.value = false
+  }
+}
+
+function handleUpdateLater() {
+  showUpdateDialog.value = false
+}
+
+function handleUpdateSkip() {
+  if (updateInfo.value) {
+    setSkippedVersion(updateInfo.value.version)
+  }
+  showUpdateDialog.value = false
+}
+
+function handleUpdateClose() {
+  showUpdateDialog.value = false
 }
 </script>
 

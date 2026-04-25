@@ -12,9 +12,10 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 ## 业务流程列表
 
 ### 1. 软件更新流程
-- **触发条件**: 用户点击"检查更新"或应用启动时自动检查
-- **涉及组件**: Tauri updater插件、Rust更新模块、前端UI
+- **触发条件**: 应用启动自动检查或用户通过系统托盘"检查更新"触发
+- **涉及组件**: Tauri updater插件、Rust更新模块、前端更新服务、UpdateDialog组件
 - **详细文档**: 参考 [references/software-update-flow.md](references/software-update-flow.md)
+- **新特性**: 前端驱动更新弹窗，支持跳过版本管理、三种用户交互选项（现在升级/稍后/不再提示）
 
 ### 2. 系统托盘集成
 - **功能**: 托盘图标、右键菜单、窗口显示/隐藏、**精简日历弹出窗口**
@@ -69,6 +70,10 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - 更新配置: `src-tauri/tauri.conf.json` (plugins.updater)
 - 更新逻辑: `src-tauri/src/updater.rs`
 - 托盘逻辑: `src-tauri/src/lib.rs`
+- **前端更新服务**: `src/services/updater.ts`
+- **前端更新弹窗**: `src/components/update/UpdateDialog.vue`
+- **前端更新测试**: `src/__tests__/updater.test.ts`
+- **前端组件测试**: `src/__tests__/UpdateDialog.test.ts`
 - 时钟点击模块: `src-tauri/src/clock_hook/`
 - 前端状态: `src/stores/`
 - 前端事件监听: `src/composables/useWindowToggle.ts`
