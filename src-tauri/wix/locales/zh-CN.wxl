@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<WixLocalization Culture="zh-CN" xmlns="http://schemas.microsoft.com/wix/2006/localization">
+    <!-- 产品显示名称：开始菜单、控制面板、安装界面中显示的应用名称 -->
+    <String Id="ProductName">小河日历</String>
+
+    <!-- 安装对话框标题 -->
+    <String Id="WelcomeDlgTitle">欢迎使用 小河日历 安装程序</String>
+    <String Id="ConfirmInstallDlgTitle">确认安装 小河日历</String>
+    <String Id="ExitDlgTitle">小河日历 安装完成</String>
+    <String Id="FatalErrorTitle">小河日历 安装失败</String>
+    <String Id="UserExitTitle">小河日历 安装已取消</String>
+
+    <!-- 安装进度 -->
+    <String Id="ProgressDlgTitle">正在安装 小河日历</String>
+    <String Id="ProgressDlgLabel1">正在安装 小河日历</String>
+
+    <!-- 维护模式 -->
+    <String Id="MaintenanceWelcomeDlgTitle">小河日历 维护</String>
+    <String Id="MaintenanceTypeDlgTitle">选择 小河日历 维护操作</String>
+
+    <!-- 安装后启动 -->
+    <String Id="LaunchApp">启动 小河日历</String>
+
+    <!-- 降级错误 -->
+    <String Id="DowngradeErrorMessage">已安装更高版本的 小河日历。</String>
+
+    <!-- PATH 环境变量功能 -->
+    <String Id="PathEnvVarFeature">将 小河日历 可执行文件的安装位置添加到 PATH 系统环境变量中。这样可以从任意位置调用 小河日历。</String>
+
+    <!-- 安装功能描述 -->
+    <String Id="InstallAppFeature">安装 小河日历。</String>
+</WixLocalization>

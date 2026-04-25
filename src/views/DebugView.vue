@@ -238,7 +238,7 @@ const dataError = ref('')
 // 应用信息
 const appInfo = reactive({
   name: '小河日历',
-  version: '0.1.0'
+  version: '0.1.1'
 })
 const isTauriEnv = computed(() => isTauri())
 const platform = ref('')
