@@ -31,9 +31,9 @@
           <div class="dialog-body">
             <!-- 更新日志内容 -->
             <div
-              v-if="updateInfo?.body"
+              v-if="renderedBody"
               class="update-log"
-              v-html="updateInfo.body"
+              v-html="renderedBody"
             ></div>
             <!-- 空日志提示 -->
             <div v-else class="empty-log">
@@ -81,6 +81,8 @@
  */
 
 import type { UpdateInfo } from '@/types'
+import { computed } from 'vue'
+import { marked } from 'marked'
 
 /**
  * 组件 Props 定义
@@ -94,10 +96,7 @@ interface Props {
   loading?: boolean
 }
 
-/**
- * 默认值定义
- */
-withDefaults(defineProps<Props>(), {
+const props = withDefaults(defineProps<Props>(), {
   loading: false
 })
 
@@ -116,6 +115,18 @@ interface Emits {
 }
 
 const emit = defineEmits<Emits>()
+
+/**
+ * 将 Markdown 格式的更新日志转换为 HTML
+ * 使用 marked 库进行解析
+ */
+const renderedBody = computed(() => {
+  const body = props.updateInfo?.body
+  if (!body || !body.trim()) return ''
+  // 将 Markdown 转换为 HTML，并拦截链接在新窗口打开
+  const html = marked.parse(body, { async: false }) as string
+  return html
+})
 </script>
 
 <style scoped>

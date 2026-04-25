@@ -9,10 +9,10 @@ import UpdateDialog from '@/components/update/UpdateDialog.vue'
 import type { UpdateInfo } from '@/types'
 
 describe('UpdateDialog 组件', () => {
-  // 测试数据
+  // 测试数据 - 使用 Markdown 格式的更新日志
   const mockUpdateInfo: UpdateInfo = {
     version: '1.1.0',
-    body: '<h3>新增功能</h3><ul><li>支持深色模式</li><li>优化性能</li></ul>',
+    body: '### 新增功能\n\n- 支持深色模式\n- 优化性能\n\n### 修复\n\n- 修复已知问题',
     date: '2024-01-15'
   }
 
@@ -79,9 +79,9 @@ describe('UpdateDialog 组件', () => {
   })
 
   /**
-   * 测试4: 更新日志正确渲染（v-html）
+   * 测试4: 更新日志正确渲染（Markdown → HTML）
    */
-  it('应该正确渲染更新日志内容', () => {
+  it('应该将 Markdown 格式的更新日志渲染为 HTML', () => {
     mount(UpdateDialog, {
       props: {
         visible: true,
@@ -92,9 +92,13 @@ describe('UpdateDialog 组件', () => {
 
     const logContent = document.body.querySelector('.update-log')
     expect(logContent).not.toBeNull()
-    // 验证 v-html 渲染的内容
-    expect(logContent!.innerHTML).toContain('<h3>新增功能</h3>')
+    // 验证 Markdown 标题转换为 HTML 标题
+    expect(logContent!.innerHTML).toContain('<h3')
+    expect(logContent!.textContent).toContain('新增功能')
+    // 验证 Markdown 列表转换为 HTML 列表
     expect(logContent!.innerHTML).toContain('<li>支持深色模式</li>')
+    expect(logContent!.innerHTML).toContain('<li>优化性能</li>')
+    expect(logContent!.innerHTML).toContain('<li>修复已知问题</li>')
   })
 
   /**
