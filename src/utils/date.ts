@@ -242,11 +242,13 @@ export interface EventSpanInfo {
  */
 function getEffectiveEndDate(endTime: number, startDate: Date): Date {
   const endDate = new Date(endTime)
-  // 如果结束时间恰好在开始日期次日的 00:00:00.000，视为全天事件，回退到开始日期
+  // 如果结束时间在开始日期次日的 00:00:00 附近（亚秒级容差），视为全天事件，回退到开始日期
+  // 容差处理：部分日历系统 endTime 存在毫秒级偏差（如 00:00:00.001），精确匹配会误判为跨天
   const nextDayStart = new Date(startDate)
   nextDayStart.setDate(nextDayStart.getDate() + 1)
   nextDayStart.setHours(0, 0, 0, 0)
-  if (endDate.getTime() === nextDayStart.getTime()) {
+  const TOLERANCE_MS = 1000 // 毫秒级容差，覆盖日历系统亚秒级偏差
+  if (Math.abs(endDate.getTime() - nextDayStart.getTime()) < TOLERANCE_MS) {
     return new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
   }
   return endDate
@@ -293,9 +295,9 @@ export function getEventSpanInfo(event: CrossDayEvent, day: Date): EventSpanInfo
   const eventStartDate = startOfDay(startDate)
   const eventEndDate = startOfDay(effectiveEndDate)
 
-  // 计算跨越天数
+  // 计算跨越天数，使用 Math.floor 避免毫秒偏差导致向上取整
   const diffMs = eventEndDate.getTime() - eventStartDate.getTime()
-  const spanDays = Math.round(diffMs / 86400000) + 1
+  const spanDays = Math.floor(diffMs / 86400000) + 1
 
   // 判断 day 是否在事件范围内
   const dayStart = startOfDay(day)

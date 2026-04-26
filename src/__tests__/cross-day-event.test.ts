@@ -174,4 +174,45 @@ describe('跨天事件工具函数', () => {
       expect(info.isMiddle).toBe(true)
     })
   })
+
+  describe('毫秒精度容差', () => {
+    it('单天事件 endTime 为次日 00:00:00.001 应识别为单天', () => {
+      const event = {
+        startTime: ts(2024, 0, 15, 0, 0),
+        endTime: new Date(2024, 0, 16, 0, 0, 0, 1).getTime(), // 次日零点 + 1ms
+        allDay: false
+      }
+      expect(isMultiDayEvent(event as any)).toBe(false)
+    })
+
+    it('getEventSpanInfo 对毫秒偏差的单天事件应返回 spanDays=1', () => {
+      const event = {
+        startTime: ts(2024, 0, 15, 0, 0),
+        endTime: new Date(2024, 0, 16, 0, 0, 0, 500).getTime(), // 次日零点 + 500ms
+        allDay: false
+      }
+      const info = getEventSpanInfo(event as any, new Date(2024, 0, 15))
+      expect(info.spanDays).toBe(1)
+      expect(info.isStart).toBe(true)
+      expect(info.isEnd).toBe(true)
+    })
+
+    it('单天事件 endTime 为次日 00:00:00.999 仍在容差内', () => {
+      const event = {
+        startTime: ts(2024, 0, 15, 0, 0),
+        endTime: new Date(2024, 0, 16, 0, 0, 0, 999).getTime(), // 次日零点 + 999ms
+        allDay: false
+      }
+      expect(isMultiDayEvent(event as any)).toBe(false)
+    })
+
+    it('单天事件 endTime 为次日 00:00:01（超过容差）应识别为跨天', () => {
+      const event = {
+        startTime: ts(2024, 0, 15, 0, 0),
+        endTime: ts(2024, 0, 16, 0, 0, 1), // 次日零点 + 1s（超出容差）
+        allDay: false
+      }
+      expect(isMultiDayEvent(event as any)).toBe(true)
+    })
+  })
 })

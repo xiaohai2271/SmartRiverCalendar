@@ -4,8 +4,7 @@
     :class="{
       'is-start': spanInfo.isStart,
       'is-end': spanInfo.isEnd,
-      'is-middle': spanInfo.isMiddle,
-      'is-all-day': event.allDay
+      'is-middle': spanInfo.isMiddle
     }"
     :style="barStyle"
     @click.stop="handleClick"
@@ -66,28 +65,42 @@ const barStyle = computed(() => {
     background: color
   }
 
-  // 全天事件或单日事件：无特殊边距
-  if (props.event.allDay || !isMultiDay.value) {
+  // 非全天事件：根据时间比例计算左右边距
+  const startDate = new Date(props.event.startTime)
+  const endDate = new Date(props.event.endTime)
+  const dayStart = new Date(props.day)
+  dayStart.setHours(0, 0, 0, 0)
+  const dayEnd = new Date(props.day)
+  dayEnd.setHours(23, 59, 59, 999)
+
+  // 事件开始于当天0点之前（含）且结束于当天末尾之后（含）→ 视为全天，占满整行
+  const startsBeforeDay = startDate.getTime() <= dayStart.getTime()
+  const endsAfterDay = endDate.getTime() >= dayEnd.getTime()
+  // 结束时间为次日 00:00:00 也视为覆盖整天
+  const endsAtNextDayMidnight = (() => {
+    const nextDay = new Date(props.day)
+    nextDay.setDate(nextDay.getDate() + 1)
+    nextDay.setHours(0, 0, 0, 0)
+    return Math.abs(endDate.getTime() - nextDay.getTime()) < 60000
+  })()
+
+  if (startsBeforeDay && (endsAfterDay || endsAtNextDayMidnight)) {
     return style
   }
 
-  // 跨天事件：根据时间比例计算边距
-  const startDate = new Date(props.event.startTime)
-  const endDate = new Date(props.event.endTime)
+  // 计算事件在当天内的可见起止时间
+  const visibleStart = startDate.getTime() > dayStart.getTime() ? startDate : dayStart
+  const visibleEnd = endDate.getTime() < dayEnd.getTime() ? endDate : dayEnd
 
-  // 开始日：右边距根据开始时间在当天的比例
-  if (spanInfo.value.isStart) {
-    const minutes = startDate.getHours() * 60 + startDate.getMinutes()
-    const ratio = minutes / (24 * 60)
-    style.marginRight = `${ratio * 100}%`
-  }
+  // 左边距：事件开始时间占全天比例
+  const startMinutes = visibleStart.getHours() * 60 + visibleStart.getMinutes()
+  const leftRatio = startMinutes / (24 * 60)
+  style.marginLeft = `${leftRatio * 100}%`
 
-  // 结束日：左边距根据结束时间在当天的比例
-  if (spanInfo.value.isEnd) {
-    const minutes = endDate.getHours() * 60 + endDate.getMinutes()
-    const ratio = minutes / (24 * 60)
-    style.marginLeft = `${ratio * 100}%`
-  }
+  // 右边距：事件结束后剩余时间占全天比例
+  const endMinutes = visibleEnd.getHours() * 60 + visibleEnd.getMinutes()
+  const rightRatio = 1 - endMinutes / (24 * 60)
+  style.marginRight = `${rightRatio * 100}%`
 
   return style
 })
@@ -119,7 +132,6 @@ function handleMouseMove(event: MouseEvent) {
 <style scoped>
 .event-bar {
   height: 4px;
-  border-radius: 2px;
   cursor: pointer;
   transition: opacity var(--transition-fast), transform var(--transition-fast);
   margin-bottom: 2px;
@@ -143,11 +155,5 @@ function handleMouseMove(event: MouseEvent) {
 
 .event-bar.is-middle {
   border-radius: 0;
-}
-
-/* 全天事件 */
-.event-bar.is-all-day {
-  height: 4px;
-  border-radius: 2px;
 }
 </style>

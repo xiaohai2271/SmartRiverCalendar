@@ -214,6 +214,35 @@ const formattedDate = computed(() => {
 })
 
 // 判断当前选中的日历是否为只读
+
+// 获取第一个可写日历的 ID
+function getFirstWritableCalendarId(): string {
+  const writableCal = calendarStore.calendars.find(cal => !cal.readOnly)
+  return writableCal?.id || 'default'
+}
+
+// 获取指定日历的颜色
+function getCalendarColor(calendarId: string): string {
+  const calendar = calendarStore.calendars.find(cal => cal.id === calendarId)
+  return calendar?.color || ''
+}
+
+const showEventModal = ref(false)
+const isEditingEvent = ref(false)
+const editingEventId = ref<string | null>(null)
+
+const eventFormData = ref({
+  title: '',
+  allDay: true,
+  startDate: '',
+  startTime: '09:00',
+  endDate: '',
+  endTime: '10:00',
+  calendarId: getFirstWritableCalendarId(),
+  description: '',
+  color: ''
+})
+
 const isReadOnlyCalendar = computed(() => {
   const selectedCalendar = calendarStore.calendars.find(
     cal => cal.id === eventFormData.value.calendarId
@@ -232,32 +261,15 @@ watch(() => eventFormData.value.calendarId, (newCalendarId) => {
   }
 })
 
-const showEventModal = ref(false)
-const isEditingEvent = ref(false)
-const editingEventId = ref<string | null>(null)
-
-// 获取第一个可写日历的 ID
-function getFirstWritableCalendarId(): string {
-  const writableCal = calendarStore.calendars.find(cal => !cal.readOnly)
-  return writableCal?.id || 'default'
-}
-
-// 获取指定日历的颜色
-function getCalendarColor(calendarId: string): string {
-  const calendar = calendarStore.calendars.find(cal => cal.id === calendarId)
-  return calendar?.color || ''
-}
-
-const eventFormData = ref({
-  title: '',
-  allDay: true,
-  startDate: '',
-  startTime: '09:00',
-  endDate: '',
-  endTime: '10:00',
-  calendarId: getFirstWritableCalendarId(),
-  description: '',
-  color: ''
+// 监听全天事件切换，自动设置开始/结束时间
+watch(() => eventFormData.value.allDay, (isAllDay) => {
+  if (isAllDay) {
+    eventFormData.value.startTime = '00:00'
+    eventFormData.value.endTime = '23:59'
+  } else {
+    eventFormData.value.startTime = '09:00'
+    eventFormData.value.endTime = '10:00'
+  }
 })
 
 // 获取今天的日期字符串
@@ -545,6 +557,7 @@ function viewDaySchedules(date: Date) {
   display: flex;
   align-items: center;
   gap: 16px;
+  padding-left: 16px;
 }
 
 .today-btn {
@@ -612,6 +625,11 @@ function viewDaySchedules(date: Date) {
 .calendar-content {
   flex: 1;
   overflow: auto;
+}
+
+/* 月视图时隐藏滚动条 - 所有6行日期格子完整可见 */
+.calendar-content:has(.month-view) {
+  overflow: hidden;
 }
 
 /* Add Event Button */

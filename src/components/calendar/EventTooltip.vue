@@ -7,7 +7,7 @@
       :class="{ 'is-all-day': event.allDay }"
     >
       <!-- 事件颜色标识条 -->
-      <div class="tooltip-color-bar" :style="{ background: calendarColor }"></div>
+      <div class="tooltip-color-bar" :style="{ background: eventColor }"></div>
 
       <!-- 事件内容 -->
       <div class="tooltip-content">
@@ -22,7 +22,7 @@
 
         <!-- 日历名称 -->
         <div class="tooltip-calendar">
-          <span class="calendar-dot" :style="{ background: calendarColor }"></span>
+          <span class="calendar-dot" :style="{ background: eventColor }"></span>
           <span class="calendar-name">{{ calendarName }}</span>
         </div>
 
@@ -107,11 +107,11 @@ const calendarName = computed(() => {
   return calendar?.name || '未知日历'
 })
 
-// 获取日历颜色
-const calendarColor = computed(() => {
+// 获取日历事件颜色
+const eventColor = computed(() => {
   if (!props.event) return '#4A90D9'
   const calendar = calendarStore.calendars.find(c => c.id === props.event!.calendarId)
-  return calendar?.color || '#4A90D9'
+  return props.event?.color || calendar?.color || '#4A90D9'
 })
 
 // 格式化时间显示

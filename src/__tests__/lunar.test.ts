@@ -97,4 +97,27 @@ describe('农历工具函数', () => {
       expect(typeof isWork).toBe('boolean')
     })
   })
+
+  // 农历显示格式测试
+  describe('农历显示格式', () => {
+    it('农历正月初一应显示"正月"', () => {
+      const info = getLunarInfo(new Date('2026-02-17')) // 2026年正月初一
+      expect(info.lunarDate).toBe('正月')
+    })
+
+    it('农历正月初二应显示"初二"', () => {
+      const info = getLunarInfo(new Date('2026-02-18')) // 2026年正月初二
+      expect(info.lunarDate).toBe('初二')
+    })
+
+    it('农历正月初三应显示"初三"', () => {
+      const info = getLunarInfo(new Date('2026-02-19')) // 2026年正月初三
+      expect(info.lunarDate).toBe('初三')
+    })
+
+    it('农历二月初一应显示"二月"', () => {
+      const info = getLunarInfo(new Date('2026-03-19')) // 2026年二月初一
+      expect(info.lunarDate).toBe('二月')
+    })
+  })
 })
