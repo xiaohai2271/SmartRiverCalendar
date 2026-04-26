@@ -107,8 +107,10 @@ import {
   addCustomHoliday,
   removeCustomHoliday,
   loadCustomHolidays,
-  type MergedHolidayInfo
+  type MergedHolidayInfo,
+  type CustomHolidayData
 } from '../../utils/holidayStorage'
+import { refreshHolidayCache } from '../../utils/lunar'
 
 // ==================== State ====================
 // 当前选中的年份
@@ -119,6 +121,9 @@ const availableYears = ref<number[]>([])
 
 // 当前年份的节假日数据
 const holidays = ref<Record<string, MergedHolidayInfo>>({})
+
+// 用户自定义节假日数据（用于判断 isCustom）
+const customHolidayData = ref<CustomHolidayData>({ holidays: {}, makeupDays: {} })
 
 // 新增节假日表单
 const newHoliday = ref({
@@ -134,8 +139,7 @@ const newHoliday = ref({
 const sortedHolidays = computed(() => {
   const list = Object.entries(holidays.value).map(([date, info]) => {
     // 判断是否为自定义节假日（用户添加的）
-    const customData = loadCustomHolidays()
-    const isCustom = date in customData.holidays || date in customData.makeupDays
+    const isCustom = date in customHolidayData.value.holidays || date in customHolidayData.value.makeupDays
 
     return {
       date,
@@ -172,22 +176,22 @@ const canGoNext = computed(() => {
 })
 
 // ==================== Lifecycle ====================
-onMounted(() => {
-  loadAvailableYears()
-  loadHolidays()
+onMounted(async () => {
+  await loadAvailableYears()
+  await loadHolidays()
 })
 
 // ==================== Watch ====================
-watch(currentYear, () => {
-  loadHolidays()
+watch(currentYear, async () => {
+  await loadHolidays()
 })
 
 // ==================== Methods ====================
 /**
  * 加载可用年份列表
  */
-function loadAvailableYears(): void {
-  availableYears.value = getAvailableYears()
+async function loadAvailableYears(): Promise<void> {
+  availableYears.value = await getAvailableYears()
   // 如果当前年份不在列表中，默认选择最近的一年
   if (!availableYears.value.includes(currentYear.value) && availableYears.value.length > 0) {
     currentYear.value = availableYears.value[0]
@@ -197,8 +201,10 @@ function loadAvailableYears(): void {
 /**
  * 加载指定年份的节假日数据
  */
-function loadHolidays(): void {
-  holidays.value = filterHolidaysByYear(currentYear.value)
+async function loadHolidays(): Promise<void> {
+  holidays.value = await filterHolidaysByYear(currentYear.value)
+  // 同时加载自定义数据用于判断 isCustom
+  customHolidayData.value = await loadCustomHolidays()
 }
 
 /**
@@ -224,7 +230,7 @@ function switchToNextYear(): void {
 /**
  * 添加自定义节假日
  */
-function addHoliday(): void {
+async function addHoliday(): Promise<void> {
   if (!canAdd.value) return
 
   const { date, name, type } = newHoliday.value
@@ -237,11 +243,12 @@ function addHoliday(): void {
   }
 
   // 添加节假日
-  addCustomHoliday(date, name.trim(), type)
+  await addCustomHoliday(date, name.trim(), type)
 
-  // 重新加载数据
-  loadAvailableYears()
-  loadHolidays()
+  // 刷新缓存并重新加载数据
+  await refreshHolidayCache()
+  await loadAvailableYears()
+  await loadHolidays()
 
   // 重置表单
   newHoliday.value = {
@@ -254,16 +261,17 @@ function addHoliday(): void {
 /**
  * 删除自定义节假日
  */
-function removeHoliday(date: string, type: 'holiday' | 'makeup'): void {
+async function removeHoliday(date: string, type: 'holiday' | 'makeup'): Promise<void> {
   if (!confirm('确定要删除这个节假日吗？')) {
     return
   }
 
-  removeCustomHoliday(date, type)
+  await removeCustomHoliday(date, type)
 
-  // 重新加载数据
-  loadAvailableYears()
-  loadHolidays()
+  // 刷新缓存并重新加载数据
+  await refreshHolidayCache()
+  await loadAvailableYears()
+  await loadHolidays()
 }
 </script>
 

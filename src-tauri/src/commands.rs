@@ -22,6 +22,9 @@ use crate::db::repositories::todo::{
 use crate::db::repositories::sync_state::{
     SyncStateRepository, SyncState, NewSyncState,
 };
+use crate::db::repositories::settings::{
+    SettingEntry, SettingsRepository, UserHoliday, UserHolidaysRepository,
+};
 use crate::ews;
 
 #[derive(Serialize)]
@@ -1304,6 +1307,139 @@ pub fn set_popup_window_rect(_rect: Option<PopupRect>) -> Result<(), String> {
     Err("此功能仅在 Windows 平台可用".to_string())
 }
 
+// ============================================================
+// 应用设置命令
+// ============================================================
+
+/// 获取应用设置
+#[tauri::command]
+pub fn get_setting(
+    key: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Option<String>, DatabaseError> {
+    info!("[get_setting] 获取设置: key={}", key);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = SettingsRepository::new(&conn);
+    repo.get(&key)
+}
+
+/// 设置应用设置
+#[tauri::command]
+pub fn set_setting(
+    key: String,
+    value: String,
+    description: Option<String>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), DatabaseError> {
+    info!("[set_setting] 设置: key={}, value={}", key, value);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = SettingsRepository::new(&conn);
+    repo.set(&key, &value, description.as_deref())
+}
+
+/// 按前缀获取所有设置
+#[tauri::command]
+pub fn get_all_settings(
+    prefix: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<(String, String)>, DatabaseError> {
+    info!("[get_all_settings] 获取前缀为 {} 的所有设置", prefix);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = SettingsRepository::new(&conn);
+    repo.get_by_prefix(&prefix)
+}
+
+/// 获取完整设置条目（含描述和时间戳）
+#[tauri::command]
+pub fn get_setting_entry(
+    key: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Option<SettingEntry>, DatabaseError> {
+    info!("[get_setting_entry] 获取设置条目: key={}", key);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = SettingsRepository::new(&conn);
+    repo.get_entry(&key)
+}
+
+/// 按前缀获取所有设置条目（含描述和时间戳）
+#[tauri::command]
+pub fn get_all_setting_entries(
+    prefix: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<SettingEntry>, DatabaseError> {
+    info!("[get_all_setting_entries] 获取前缀为 {} 的所有设置条目", prefix);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = SettingsRepository::new(&conn);
+    repo.get_entries_by_prefix(&prefix)
+}
+
+// ============================================================
+// 用户节假日命令
+// ============================================================
+
+/// 添加用户节假日
+#[tauri::command]
+pub fn add_user_holiday(
+    date: String,
+    name: String,
+    category: String,
+    source: Option<String>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), DatabaseError> {
+    info!("[add_user_holiday] 添加节假日: date={}, name={}, category={}", date, name, category);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = UserHolidaysRepository::new(&conn);
+    repo.add(&date, &name, &category, source.as_deref())
+}
+
+/// 删除用户节假日
+#[tauri::command]
+pub fn remove_user_holiday(
+    date: String,
+    category: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<bool, DatabaseError> {
+    info!("[remove_user_holiday] 删除节假日: date={}, category={}", date, category);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = UserHolidaysRepository::new(&conn);
+    repo.remove(&date, &category)
+}
+
+/// 获取所有用户节假日
+#[tauri::command]
+pub fn get_all_user_holidays(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<UserHoliday>, DatabaseError> {
+    info!("[get_all_user_holidays] 获取所有用户节假日");
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = UserHolidaysRepository::new(&conn);
+    repo.get_all()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1488,7 +1624,7 @@ pub fn debug_get_table_data(
     info!("[debug_get_table_data] 获取表数据: {}", table_name);
     
     // 安全检查：只允许查询特定表
-    let allowed_tables = ["calendars", "events", "todos", "accounts", "sync_state"];
+    let allowed_tables = ["calendars", "events", "todos", "accounts", "sync_state", "app_settings", "user_holidays"];
     if !allowed_tables.contains(&table_name.as_str()) {
         return Err(DatabaseError::QueryError {
             message: format!("不允许查询表: {}", table_name),

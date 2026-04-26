@@ -4,6 +4,7 @@
 pub mod account;
 pub mod calendar;
 pub mod event;
+pub mod settings;
 pub mod sync_state;
 pub mod todo;
 
@@ -11,5 +12,6 @@ pub mod todo;
 pub use account::{Account, AccountRepository, CreateAccountParams, UpdateAccountParams};
 pub use calendar::CalendarRepository;
 pub use event::{CreateEvent, Event, EventRepository, UpdateEvent};
+pub use settings::{SettingEntry, SettingsRepository, UserHoliday, UserHolidaysRepository};
 pub use sync_state::{NewSyncState, SyncState, SyncStateRepository, UpdateSyncState};
 pub use todo::{CreateTodoInput, Todo, TodoRepository, UpdateTodoInput};

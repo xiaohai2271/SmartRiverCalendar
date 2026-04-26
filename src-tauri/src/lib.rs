@@ -359,6 +359,16 @@ pub fn run() {
             commands::debug_open_devtools,
             commands::debug_get_logs,
             commands::debug_clear_logs,
+            // 应用设置命令
+            commands::get_setting,
+            commands::set_setting,
+            commands::get_all_settings,
+            commands::get_setting_entry,
+            commands::get_all_setting_entries,
+            // 用户节假日命令
+            commands::add_user_holiday,
+            commands::remove_user_holiday,
+            commands::get_all_user_holidays,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

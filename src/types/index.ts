@@ -72,7 +72,17 @@ export interface TimeBlock {
   pomodoroCount?: number
 }
 
-// App Settings
+/**
+ * 应用设置类型定义
+ *
+ * 存储映射：
+ * - localStorage 键名: 'app-settings'
+ * - 数据库表: 'app_settings'，key 前缀为 'app.'
+ *
+ * 示例：
+ * - theme → 数据库 key: 'app.theme'
+ * - defaultView → 数据库 key: 'app.defaultView'
+ */
 export interface AppSettings {
   theme: 'light' | 'dark' | 'auto'
   defaultView: 'day' | 'week' | 'month' | 'year'
@@ -181,7 +191,16 @@ export const POPUP_WINDOW_SIZES = {
   large: { width: 400, height: 560 }
 } as const
 
-// 弹出面板设置
+/**
+ * 弹出面板设置类型定义
+ *
+ * 存储映射：
+ * - localStorage 键名: 'popup-settings'
+ * - 数据库表: 'app_settings'，key 前缀为 'popup.'
+ *
+ * 示例：
+ * - popupWindowSize → 数据库 key: 'popup.popupWindowSize'
+ */
 export interface PopupSettings {
   popupShowLunar: boolean // 显示农历
   popupShowLunarFestival: boolean // 显示农历节日
@@ -230,4 +249,21 @@ export interface UpdateInfo {
   body?: string
   /** 发布日期 */
   date?: string
+}
+
+/**
+ * 用户自定义节假日条目
+ * 对应数据库 user_holidays 表
+ */
+export interface UserHolidayEntry {
+  /** 日期，格式 YYYY-MM-DD */
+  date: string
+  /** 节假日名称 */
+  name: string
+  /** 类别：holiday（节假日）或 makeup（调休补班） */
+  category: 'holiday' | 'makeup'
+  /** 来源：custom（用户自定义）或 api（外部接口） */
+  source: 'custom' | 'api'
+  /** 创建时间（Unix 时间戳，秒） */
+  created_at: number
 }

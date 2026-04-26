@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, watch } from 'vue'
+import { ref } from 'vue'
 import type { AppSettings } from '../types'
+import * as settingsService from '../services/settings'
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
@@ -28,45 +29,99 @@ const DEFAULT_SETTINGS: AppSettings = {
   clockHookBlockPopup: false, // 默认不阻止系统弹窗
 }
 
+/**
+ * 从数据库设置数组解析为 AppSettings 对象
+ * @param settings 数据库返回的键值对数组 [['app.theme', '"dark"'], ...]
+ * @returns 部分 AppSettings 对象
+ */
+function parseSettingsFromDb(settings: [string, string][]): Partial<AppSettings> {
+  const result: Partial<AppSettings> = {}
+  for (const [key, value] of settings) {
+    const fieldName = key.replace('app.', '') as keyof AppSettings
+    try {
+      result[fieldName] = JSON.parse(value)
+    } catch {
+      // JSON 解析失败，直接使用原始值
+      ;(result as Record<string, unknown>)[fieldName] = value
+    }
+  }
+  return result
+}
+
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>({ ...DEFAULT_SETTINGS })
 
-  // Load settings from localStorage
-  function loadSettings() {
+  /**
+   * 从数据库或 localStorage 加载设置
+   * 优先使用数据库，不可用时降级到 localStorage
+   */
+  async function loadSettings(): Promise<void> {
     try {
-      const stored = localStorage.getItem('app-settings')
-      if (stored) {
-        settings.value = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
+      const dbAvailable = await settingsService.isDatabaseAvailable()
+      
+      if (dbAvailable) {
+        // 从数据库加载
+        const dbSettings = await settingsService.getAllSettings('app.')
+        if (dbSettings.length > 0) {
+          const parsed = parseSettingsFromDb(dbSettings)
+          settings.value = { ...DEFAULT_SETTINGS, ...parsed }
+        }
+      } else {
+        // 降级到 localStorage
+        console.warn('[settings] 数据库不可用，降级到 localStorage 加载设置')
+        const stored = settingsService.loadFromLocalStorage('app-settings')
+        if (stored) {
+          settings.value = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
+        }
       }
     } catch (e) {
       console.error('Failed to load settings:', e)
+      // 加载失败时保持默认值
     }
   }
 
-  // Save settings to localStorage
-  function saveSettings() {
+  /**
+   * 保存设置到数据库或 localStorage
+   * 优先使用数据库，不可用时降级到 localStorage
+   */
+  async function saveSettings(): Promise<void> {
     try {
-      localStorage.setItem('app-settings', JSON.stringify(settings.value))
+      const dbAvailable = await settingsService.isDatabaseAvailable()
+      
+      if (dbAvailable) {
+        // 保存到数据库：逐项保存每个设置字段
+        for (const [key, value] of Object.entries(settings.value)) {
+          await settingsService.setSetting(`app.${key}`, JSON.stringify(value))
+        }
+      } else {
+        // 降级到 localStorage
+        console.warn('[settings] 数据库不可用，降级到 localStorage 保存设置')
+        localStorage.setItem('app-settings', JSON.stringify(settings.value))
+      }
     } catch (e) {
       console.error('Failed to save settings:', e)
     }
   }
 
-  function updateSettings(updates: Partial<AppSettings>) {
+  /**
+   * 更新设置并自动保存
+   * @param updates 部分设置更新
+   */
+  async function updateSettings(updates: Partial<AppSettings>): Promise<void> {
     settings.value = { ...settings.value, ...updates }
-    saveSettings()
+    await saveSettings()
   }
 
-  function resetSettings() {
+  /**
+   * 重置设置为默认值并保存
+   */
+  async function resetSettings(): Promise<void> {
     settings.value = { ...DEFAULT_SETTINGS }
-    saveSettings()
+    await saveSettings()
   }
 
-  // Initialize
+  // 初始化加载设置
   loadSettings()
-
-  // Auto-save on changes
-  watch(settings, saveSettings, { deep: true })
 
   return {
     settings,
