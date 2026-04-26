@@ -100,6 +100,26 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
         CREATE INDEX IF NOT EXISTS idx_events_external_id ON events(external_id);
         CREATE INDEX IF NOT EXISTS idx_todos_calendar_id ON todos(calendar_id);
         CREATE INDEX IF NOT EXISTS idx_sync_state_account_id ON sync_state(account_id);
+
+        -- 应用设置表（Key-Value 存储）
+        CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL,
+            description TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL
+        );
+
+        -- 用户节假日表（节假日/调休）
+        CREATE TABLE IF NOT EXISTS user_holidays (
+            date TEXT NOT NULL,
+            name TEXT NOT NULL,
+            category TEXT NOT NULL CHECK(category IN ('holiday','makeup')),
+            source TEXT NOT NULL DEFAULT 'custom' CHECK(source IN ('custom','api')),
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY (date, category)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_holidays_date ON user_holidays(date);
         "#,
     )?;
 
@@ -108,9 +128,17 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
 
 /// 初始化数据库
 ///
-/// 创建所有必要的表结构和索引
+/// 创建所有必要的表结构和索引，并执行数据库迁移
 pub fn init_database(conn: &Connection) -> Result<(), DatabaseError> {
     create_tables(conn)?;
+
+    // 数据库迁移：为已有数据库添加 description 列
+    // 忽略"列已存在"错误
+    let _ = conn.execute(
+        "ALTER TABLE app_settings ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+        [],
+    );
+
     Ok(())
 }
 
@@ -154,6 +182,8 @@ mod tests {
         assert!(tables.contains(&"todos".to_string()));
         assert!(tables.contains(&"accounts".to_string()));
         assert!(tables.contains(&"sync_state".to_string()));
+        assert!(tables.contains(&"app_settings".to_string()));
+        assert!(tables.contains(&"user_holidays".to_string()));
     }
 
     #[test]
@@ -175,5 +205,6 @@ mod tests {
         assert!(indexes.contains(&"idx_events_external_id".to_string()));
         assert!(indexes.contains(&"idx_todos_calendar_id".to_string()));
         assert!(indexes.contains(&"idx_sync_state_account_id".to_string()));
+        assert!(indexes.contains(&"idx_user_holidays_date".to_string()));
     }
 }

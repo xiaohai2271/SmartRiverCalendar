@@ -17,7 +17,7 @@ class MockBroadcastChannel {
   MockBroadcastChannel
 
 // Mock localStorage
-const localStorageMock = (() => {
+const createLocalStorageMock = () => {
   let store: Record<string, string> = {}
   return {
     getItem: vi.fn((key: string) => store[key] || null),
@@ -29,11 +29,31 @@ const localStorageMock = (() => {
     }),
     clear: vi.fn(() => {
       store = {}
-    })
+    }),
+    // 暴露 store 以便测试直接设置值
+    _setStore: (key: string, value: string) => {
+      store[key] = value
+    },
+    _getStore: () => store
   }
-})()
+}
 
+const localStorageMock = createLocalStorageMock()
+
+// 设置全局 localStorage mock
 Object.defineProperty(window, 'localStorage', { value: localStorageMock })
+
+// Mock settingsService 模块
+vi.mock('@/services/settings', () => ({
+  isDatabaseAvailable: vi.fn(() => Promise.resolve(false)),
+  loadFromLocalStorage: vi.fn((key: string) => {
+    // 使用同一个 mock localStorage
+    return localStorageMock.getItem(key)
+  }),
+  getSetting: vi.fn(() => Promise.resolve(null)),
+  setSetting: vi.fn(() => Promise.resolve()),
+  getAllSettings: vi.fn(() => Promise.resolve([]))
+}))
 
 describe('popupSettings Store', () => {
   beforeEach(() => {
@@ -67,7 +87,7 @@ describe('popupSettings Store', () => {
     const { usePopupSettingsStore } = await import('../stores/popupSettings')
     const store = usePopupSettingsStore()
 
-    store.updatePopupSettings({ popupShowLunar: false })
+    await store.updatePopupSettings({ popupShowLunar: false })
 
     expect(store.settings.popupShowLunar).toBe(false)
     // 其他设置应保持不变
@@ -79,7 +99,7 @@ describe('popupSettings Store', () => {
     const { usePopupSettingsStore } = await import('../stores/popupSettings')
     const store = usePopupSettingsStore()
 
-    store.updatePopupSettings({
+    await store.updatePopupSettings({
       popupShowLunar: false,
       popupShowSolarTerm: false,
       popupCalendarHolidayColor: 'high-contrast'
@@ -97,7 +117,7 @@ describe('popupSettings Store', () => {
     const store = usePopupSettingsStore()
 
     // 更新设置
-    store.updatePopupSettings({ popupShowEvents: false })
+    await store.updatePopupSettings({ popupShowEvents: false })
 
     // 验证 localStorage 被调用
     expect(localStorageMock.setItem).toHaveBeenCalledWith(
@@ -105,12 +125,15 @@ describe('popupSettings Store', () => {
       expect.stringContaining('"popupShowEvents":false')
     )
 
-    // 模拟重新加载
-    localStorageMock.getItem.mockReturnValue(JSON.stringify({ popupShowEvents: false }))
+    // 模拟重新加载 - 直接设置 store 值
+    localStorageMock._setStore('popup-settings', JSON.stringify({ popupShowEvents: false }))
 
     // 创建新的 store 实例（模拟应用重启）
     setActivePinia(createPinia())
     const newStore = usePopupSettingsStore()
+
+    // 等待异步加载完成
+    await newStore.loadPopupSettings()
 
     // 验证设置从 localStorage 加载
     expect(newStore.settings.popupShowEvents).toBe(false)
@@ -121,14 +144,14 @@ describe('popupSettings Store', () => {
     const store = usePopupSettingsStore()
 
     // 修改多个设置
-    store.updatePopupSettings({
+    await store.updatePopupSettings({
       popupShowLunar: false,
       popupShowHoliday: false,
       popupCalendarHolidayColor: 'soft'
     })
 
     // 重置
-    store.resetPopupSettings()
+    await store.resetPopupSettings()
 
     // 验证恢复默认值
     expect(store.settings.popupShowLunar).toBe(true)
@@ -141,7 +164,7 @@ describe('popupSettings Store', () => {
     const store = usePopupSettingsStore()
 
     // 更新设置
-    store.updatePopupSettings({ popupShowLunar: false })
+    await store.updatePopupSettings({ popupShowLunar: false })
 
     // 验证广播被调用
     expect(mockPostMessage).toHaveBeenCalledWith(
@@ -154,8 +177,9 @@ describe('popupSettings Store', () => {
   })
 
   it('loadPopupSettings 从 localStorage 加载', async () => {
-    // 预设 localStorage 数据
-    localStorageMock.getItem.mockReturnValue(
+    // 预设 localStorage 数据 - 直接设置 store 值
+    localStorageMock._setStore(
+      'popup-settings',
       JSON.stringify({
         popupShowLunar: false,
         popupCalendarHolidayColor: 'soft'
@@ -165,6 +189,9 @@ describe('popupSettings Store', () => {
     const { usePopupSettingsStore } = await import('../stores/popupSettings')
     const store = usePopupSettingsStore()
 
+    // 等待异步加载完成
+    await store.loadPopupSettings()
+
     // 验证设置被正确加载
     expect(store.settings.popupShowLunar).toBe(false)
     expect(store.settings.popupCalendarHolidayColor).toBe('soft')
@@ -173,12 +200,15 @@ describe('popupSettings Store', () => {
   })
 
   it('loadPopupSettings 处理无效 JSON', async () => {
-    // 设置无效 JSON
-    localStorageMock.getItem.mockReturnValue('invalid-json')
+    // 设置无效 JSON - 直接设置 store 值
+    localStorageMock._setStore('popup-settings', 'invalid-json')
 
     // 不应抛出错误
     const { usePopupSettingsStore } = await import('../stores/popupSettings')
     const store = usePopupSettingsStore()
+
+    // 等待异步加载完成
+    await store.loadPopupSettings()
 
     // 应使用默认值
     expect(store.settings.popupShowLunar).toBe(true)
@@ -195,11 +225,11 @@ describe('popupSettings Store', () => {
     const { usePopupSettingsStore } = await import('../stores/popupSettings')
     const store = usePopupSettingsStore()
 
-    store.updateWindowSize('large')
+    await store.updateWindowSize('large')
 
     expect(store.settings.popupWindowSize).toBe('large')
 
-    store.updateWindowSize('small')
+    await store.updateWindowSize('small')
     expect(store.settings.popupWindowSize).toBe('small')
   })
 
@@ -211,7 +241,7 @@ describe('popupSettings Store', () => {
     expect(store.settings.popupWindowSize).toBe('medium')
 
     // 设置相同的值不应触发保存
-    store.updateWindowSize('medium')
+    await store.updateWindowSize('medium')
 
     // 验证 localStorage.setItem 未被调用（除初始化加载外）
     // 由于 watch effect 可能在初始化时调用，我们检查最后值是否未变
@@ -219,8 +249,9 @@ describe('popupSettings Store', () => {
   })
 
   it('向后兼容：旧用户数据无 popupWindowSize 时使用默认值', async () => {
-    // 模拟旧用户数据（没有 popupWindowSize 字段）
-    localStorageMock.getItem.mockReturnValue(
+    // 模拟旧用户数据（没有 popupWindowSize 字段）- 直接设置 store 值
+    localStorageMock._setStore(
+      'popup-settings',
       JSON.stringify({
         popupShowLunar: false,
         popupCalendarHolidayColor: 'soft'
@@ -229,6 +260,9 @@ describe('popupSettings Store', () => {
 
     const { usePopupSettingsStore } = await import('../stores/popupSettings')
     const store = usePopupSettingsStore()
+
+    // 等待异步加载完成
+    await store.loadPopupSettings()
 
     // 旧数据应正确加载
     expect(store.settings.popupShowLunar).toBe(false)
@@ -242,7 +276,7 @@ describe('popupSettings Store', () => {
     const { usePopupSettingsStore } = await import('../stores/popupSettings')
     const store = usePopupSettingsStore()
 
-    store.updateWindowSize('large')
+    await store.updateWindowSize('large')
 
     // 验证 localStorage 包含 popupWindowSize
     expect(localStorageMock.setItem).toHaveBeenCalledWith(
@@ -256,11 +290,11 @@ describe('popupSettings Store', () => {
     const store = usePopupSettingsStore()
 
     // 修改窗口尺寸
-    store.updateWindowSize('large')
+    await store.updateWindowSize('large')
     expect(store.settings.popupWindowSize).toBe('large')
 
     // 重置设置
-    store.resetPopupSettings()
+    await store.resetPopupSettings()
 
     // 验证恢复为默认值 medium
     expect(store.settings.popupWindowSize).toBe('medium')

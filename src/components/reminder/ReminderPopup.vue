@@ -225,7 +225,6 @@ async function completeTodo(reminder: ReminderPopupData) {
   if (reminder.type === 'todo') {
     try {
       await todoStore.toggleTodo(reminder.itemId)
-      console.log('待办已标记完成:', reminder.title)
     } catch (error) {
       console.error('标记待办完成失败:', error)
     }

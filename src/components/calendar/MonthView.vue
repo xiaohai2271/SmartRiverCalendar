@@ -243,9 +243,9 @@ function selectDay(day: Date) {
   color: var(--text-tertiary);
 }
 
-/* 周末 - 极浅橙色 */
+/* 周末 - 极浅绿色 */
 .day-cell.weekend:not(.holiday):not(.workday) {
-  background: rgba(255, 237, 213, 0.4);
+  background: rgba(220, 252, 231, 0.35);
 }
 
 /* 法定节假日 - 极浅绿色，带左侧色条 */
@@ -374,9 +374,9 @@ function selectDay(day: Date) {
 }
 
 @media (prefers-color-scheme: dark) {
-  /* 周末 - 深色模式极浅 */
+  /* 周末 - 深色模式极浅绿色 */
   .day-cell.weekend:not(.holiday):not(.workday) {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(34, 197, 94, 0.08);
   }
 
   /* 法定节假日 - 深色模式极浅绿色 */

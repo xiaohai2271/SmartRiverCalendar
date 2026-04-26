@@ -1,4 +1,5 @@
 import { SolarDay, SolarTerm } from 'tyme4ts'
+import { getAllMergedHolidays, type MergedHolidayInfo } from './holidayStorage'
 
 export interface LunarInfo {
   lunarDate: string // 农历日期
@@ -11,6 +12,38 @@ export interface LunarInfo {
   holidayName?: string // 节假日名称
   isWorkDay: boolean // 是否工作日（补休）
   workDayName?: string // 补休名称
+}
+
+// 节假日数据缓存
+let holidayCache: Record<string, MergedHolidayInfo> | null = null
+
+/**
+ * 初始化节假日缓存（应用启动时调用）
+ * 从数据库或 localStorage 加载节假日数据到内存缓存
+ */
+export async function initHolidayCache(): Promise<void> {
+  holidayCache = await getAllMergedHolidays()
+}
+
+/**
+ * 刷新节假日缓存（当用户修改节假日时调用）
+ */
+export async function refreshHolidayCache(): Promise<void> {
+  holidayCache = await getAllMergedHolidays()
+}
+
+/**
+ * 获取节假日缓存
+ * 如果缓存不存在，返回空对象（同步调用时的降级处理）
+ */
+function getHolidayCache(): Record<string, MergedHolidayInfo> {
+  if (!holidayCache) {
+    // 缓存未初始化，尝试同步初始化（使用静态数据）
+    // 注意：这只是降级处理，应用启动时应该调用 initHolidayCache
+    console.warn('Holiday cache not initialized, call initHolidayCache() at app startup')
+    return {}
+  }
+  return holidayCache
 }
 
 function formatDate(date: Date): string {
@@ -103,10 +136,20 @@ export function getLunarInfo(date: Date): LunarInfo {
   const monthTerms = getMonthSolarTerms(year, month)
   const solarTermName = monthTerms.get(dateStr)
 
-  // 获取法定节假日
+  // 获取法定节假日（优先使用 tyme4ts 内置数据，如果没有则检查自定义节假日）
   const legalHoliday = solarDay.getLegalHoliday()
-  const holidayName = legalHoliday ? legalHoliday.getName() : undefined
-  const isWorkDay = legalHoliday ? legalHoliday.isWork() : false
+  let holidayName = legalHoliday ? legalHoliday.getName() : undefined
+  let isWorkDay = legalHoliday ? legalHoliday.isWork() : false
+
+  // 如果没有内置节假日，检查自定义节假日（使用缓存）
+  if (!holidayName) {
+    const customHolidays = getHolidayCache()
+    const customHoliday = customHolidays[dateStr]
+    if (customHoliday) {
+      holidayName = customHoliday.name
+      isWorkDay = customHoliday.type === 'makeup'
+    }
+  }
 
   const isWeekend = getWeekend(date)
 
