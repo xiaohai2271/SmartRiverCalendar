@@ -234,10 +234,9 @@ function cleanupOldReminders(): void {
   }
 
   keysToRemove.forEach(key => localStorage.removeItem(key))
-  
+
   // 记录清理时间
   localStorage.setItem(LAST_CLEANUP_KEY, Date.now().toString())
-  console.log(`清理了 ${keysToRemove.length} 条过期提醒记录`)
 }
 
 /**
@@ -509,8 +508,6 @@ async function checkAndSendReminders(): Promise<void> {
           if (snoozeTime !== null) {
             clearSnoozeTime(event.id)
           }
-
-          console.log('事件提醒已发送:', event.title)
         }
       }
     }
@@ -535,8 +532,6 @@ async function checkAndSendReminders(): Promise<void> {
           if (snoozeTime !== null) {
             clearSnoozeTime(todo.id)
           }
-
-          console.log('待办提醒已发送:', todo.title)
         }
       }
     }
@@ -550,11 +545,8 @@ async function checkAndSendReminders(): Promise<void> {
  */
 export function startReminderService(): void {
   if (reminderInterval) {
-    console.log('提醒服务已在运行')
     return
   }
-
-  console.log('启动提醒服务')
 
   // 启动时检查是否需要清理过期提醒记录
   if (shouldCleanupReminders()) {
@@ -577,7 +569,6 @@ export function stopReminderService(): void {
   if (reminderInterval) {
     clearInterval(reminderInterval)
     reminderInterval = null
-    console.log('提醒服务已停止')
   }
 
   // 停止标题闪烁
@@ -609,5 +600,4 @@ export function handleSnoozeReminder(
   snoozeTime: number
 ): void {
   setSnoozeTime(itemId, snoozeTime)
-  console.log(`已设置稍后提醒: ${itemId}, 时间: ${new Date(snoozeTime).toLocaleString()}`)
 }

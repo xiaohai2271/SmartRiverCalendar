@@ -1,4 +1,5 @@
 import { SolarDay, SolarTerm } from 'tyme4ts'
+import { getAllMergedHolidays } from './holidayStorage'
 
 export interface LunarInfo {
   lunarDate: string // 农历日期
@@ -103,10 +104,20 @@ export function getLunarInfo(date: Date): LunarInfo {
   const monthTerms = getMonthSolarTerms(year, month)
   const solarTermName = monthTerms.get(dateStr)
 
-  // 获取法定节假日
+  // 获取法定节假日（优先使用 tyme4ts 内置数据，如果没有则检查自定义节假日）
   const legalHoliday = solarDay.getLegalHoliday()
-  const holidayName = legalHoliday ? legalHoliday.getName() : undefined
-  const isWorkDay = legalHoliday ? legalHoliday.isWork() : false
+  let holidayName = legalHoliday ? legalHoliday.getName() : undefined
+  let isWorkDay = legalHoliday ? legalHoliday.isWork() : false
+
+  // 如果没有内置节假日，检查自定义节假日
+  if (!holidayName) {
+    const customHolidays = getAllMergedHolidays()
+    const customHoliday = customHolidays[dateStr]
+    if (customHoliday) {
+      holidayName = customHoliday.name
+      isWorkDay = customHoliday.type === 'makeup'
+    }
+  }
 
   const isWeekend = getWeekend(date)
 

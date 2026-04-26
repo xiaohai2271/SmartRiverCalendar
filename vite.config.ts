@@ -1,6 +1,26 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
+import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
+
+// 获取构建时变量
+const getBuildDate = () => new Date().toISOString()
+const getGitHash = () => {
+  try {
+    return execSync('git rev-parse --short HEAD', { encoding: 'utf-8' }).trim()
+  } catch (error) {
+    return 'unknown'
+  }
+}
+const getAppVersion = () => {
+  try {
+    const pkg = JSON.parse(readFileSync('./package.json', 'utf-8'))
+    return pkg.version || '0.0.0'
+  } catch (error) {
+    return '0.0.0'
+  }
+}
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -10,6 +30,11 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src')
     }
+  },
+  define: {
+    __BUILD_DATE__: JSON.stringify(getBuildDate()),
+    __GIT_HASH__: JSON.stringify(getGitHash()),
+    __APP_VERSION__: JSON.stringify(getAppVersion())
   },
   // 环境变量判断是否在 Tauri 环境中
   envPrefix: ['VITE_', 'TAURI_'],
