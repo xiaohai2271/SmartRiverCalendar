@@ -1,6 +1,6 @@
 [package]
 name = "xiaohe-calendar"
-version = "0.1.0"
+version = "0.1.2"
 description = "小河日历 - 智能日历"
 authors = ["XiaoheTeam"]
 license = "MIT"
