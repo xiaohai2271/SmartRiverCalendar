@@ -138,6 +138,14 @@
               <span class="info-value">{{ appInfo.version }}</span>
             </div>
             <div class="info-item">
+              <span class="info-label">构建时间:</span>
+              <span class="info-value">{{ appInfo.buildDate }}</span>
+            </div>
+            <div class="info-item">
+              <span class="info-label">Git 提交:</span>
+              <span class="info-value">{{ appInfo.gitHash }}</span>
+            </div>
+            <div class="info-item">
               <span class="info-label">运行环境:</span>
               <span class="info-value">{{ isTauriEnv ? 'Tauri' : '浏览器' }}</span>
             </div>
@@ -181,7 +189,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { isTauri, safeInvoke, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs } from '../utils/tauri'
+import { isTauri, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs } from '../utils/tauri'
 import { startLogCapture, stopLogCapture } from '../utils/logger'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
@@ -238,7 +246,9 @@ const dataError = ref('')
 // 应用信息
 const appInfo = reactive({
   name: '小河日历',
-  version: __APP_VERSION__
+  version: typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0',
+  buildDate: typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : '-',
+  gitHash: typeof __GIT_HASH__ !== 'undefined' ? __GIT_HASH__ : '-',
 })
 const isTauriEnv = computed(() => isTauri())
 const platform = ref('')
@@ -584,15 +594,6 @@ onMounted(async () => {
   
   // 获取平台信息
   platform.value = navigator.platform
-  
-  // 获取应用信息
-  if (isTauri()) {
-    const info = await safeInvoke<{ name: string; version: string }>('get_app_info')
-    if (info) {
-      appInfo.name = info.name
-      appInfo.version = info.version
-    }
-  }
 })
 
 onUnmounted(() => {
