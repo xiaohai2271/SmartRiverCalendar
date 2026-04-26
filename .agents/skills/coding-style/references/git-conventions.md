@@ -99,10 +99,9 @@ BREAKING CHANGE: 事件接口字段名由 startTime 改为 start_time
 ### 分支结构
 
 ```
-main          # 受保护，正式发布版本
-├── develop   # 开发主分支，功能集成
-│   ├── feature/{描述}   # 功能开发
-│   └── bugfix/{描述}    # 问题修复
+main                       # 受保护，正式发布版本
+├── feature/{描述}         # 功能开发
+└── bugfix/{描述}          # 问题修复
 ```
 
 ### 分支命名
@@ -116,38 +115,36 @@ main          # 受保护，正式发布版本
 ### 分支操作规范
 
 ```bash
-# 1. 从 develop 创建新分支 (不要从 main 创建)
-git checkout -b feature/add-week-view origin/develop
+# 1. 从 origin/main 创建新分支
+git checkout -b feature/add-week-view origin/main
 
-# 2. 开发过程中保持与 develop 同步
+# 2. 开发过程中保持与 main 同步
 git fetch origin
-git rebase origin/develop
+git rebase origin/main
 
-# 3. 完成后创建 PR 合并到 develop
-gh pr create --base develop --head feature/add-week-view
+# 3. 完成后创建 PR 合并到 main
+gh pr create --base main --head feature/add-week-view
 
-# 4. 禁止直接提交到 main 或 develop
+# 4. 禁止直接提交到 main
 ```
 
 ### 保护规则
 
 | 分支 | 保护状态 | 合并方式 |
 |------|----------|----------|
-| `main` | 受保护 | 仅管理员从 develop 合并 |
-| `develop` | 受保护 | PR Review 通过后合并 |
+| `main` | 受保护 | PR Review 通过后合并 |
 
 ## 开发流程
 
 ### 标准流程
-1. 从 `develop` 分支创建 `feature/xxx` 或 `bugfix/xxx` 分支
+1. 从 `origin/main` 分支创建 `feature/xxx` 或 `bugfix/xxx` 分支
 2. 在分支上进行开发
 3. 提交代码 (遵循 Angular Commit 规范)
 4. 执行测试验证
 5. Push 到远程仓库
-6. 创建 Pull Request 到 `develop` 分支
+6. 创建 Pull Request 到 `main` 分支
 7. Code Review
-8. 合并到 `develop`
-9. 管理员定期将 `develop` 发布到 `main`
+8. 合并到 `main`
 
 ### GitHub Issue 驱动流程
 ```
@@ -158,7 +155,7 @@ Issue → 创建分支 → 开发 → Commit (多次) → Push → 创建 PR (Cl
 
 ### 添加新功能
 ```bash
-git checkout -b feature/add-reminder origin/develop
+git checkout -b feature/add-reminder origin/main
 # ... 开发 ...
 git add src/components/reminder/ src/stores/reminder.ts
 git commit -m "feat(reminder): 添加事件提醒功能
@@ -171,12 +168,12 @@ git commit -m "feat(reminder): 添加事件提醒功能
 Closes #15"
 pnpm test:run
 git push -u origin feature/add-reminder
-gh pr create --base develop --title "feat(reminder): 添加事件提醒功能 Closes #15"
+gh pr create --base main --title "feat(reminder): 添加事件提醒功能 Closes #15"
 ```
 
 ### 修复 Bug
 ```bash
-git checkout -b bugfix/fix-calendar-sync origin/develop
+git checkout -b bugfix/fix-calendar-sync origin/main
 # ... 修复 ...
 git add src/services/sync.ts
 git commit -m "fix(sync): 修复日历同步时时间转换时区错误
@@ -191,7 +188,7 @@ git push -u origin bugfix/fix-calendar-sync
 
 ### 更新文档
 ```bash
-git checkout -b feature/update-tech-constraints origin/develop
+git checkout -b feature/update-tech-constraints origin/main
 # ... 文档更新 ...
 git add .agents/skills/ AGENTS.md
 git commit -m "docs: 更新技术约束文档，整理 AGENTS.md

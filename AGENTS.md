@@ -83,7 +83,7 @@ cargo test --lib          # 库单元测试
 
 1. **架构约束**: 展示层不直接操作数据库。数据流：`Vue → Service → Tauri invoke() → Rust → SQLite`
 2. **测试要求**: 提交前必须通过 `pnpm test:run`，覆盖率 > 50%
-3. **分支管理**: main 受保护，从 develop 创建 `feature/` 或 `bugfix/` 分支，通过 PR 合并
+3. **分支管理**: main 受保护，从 `origin/main` 拉取 `feature/` 或 `bugfix/` 分支，通过 PR 合并到 main
 4. **提交规范**: 遵循 [Angular Commit 规范](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#-commit-message-guidelines)，内容单一
 5. **文档同步**: 业务流程变更需更新 `.agents/skills/calendar-business-flows/`
 6. **日志规范**: 关键业务节点必须输出日志，控制日志量级
