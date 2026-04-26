@@ -2,18 +2,7 @@
   <div class="about-tab">
     <div class="about-card">
       <div class="app-logo">
-        <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
-          <line x1="16" y1="2" x2="16" y2="6"></line>
-          <line x1="8" y1="2" x2="8" y2="6"></line>
-          <line x1="3" y1="10" x2="21" y2="10"></line>
-          <path d="M8 14h.01"></path>
-          <path d="M12 14h.01"></path>
-          <path d="M16 14h.01"></path>
-          <path d="M8 18h.01"></path>
-          <path d="M12 18h.01"></path>
-          <path d="M16 18h.01"></path>
-        </svg>
+        <img :src="appIconUrl" alt="小河日历" width="96" height="96" />
       </div>
       <h2 class="app-name">小河日历</h2>
       <p class="app-version">版本 {{ version }}</p>
@@ -30,16 +19,16 @@
         </div>
       </div>
 
-      <div class="links-section">
+      <!-- <div class="links-section">
         <a href="https://github.com/xiaohai2271/SmartRiverCalender" target="_blank" class="link-item">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
           </svg>
           GitHub 仓库
         </a>
-      </div>
+      </div> -->
 
-      <p class="copyright">© 2024-2025 小河日历团队</p>
+      <p class="copyright">© 2025-2026 小河日历</p>
     </div>
   </div>
 </template>
@@ -49,29 +38,22 @@
  * 关于 Tab 组件
  * 显示应用版本、构建信息等
  */
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
+import appIconUrl from '../../assets/icon.png'
 
-// ==================== State ====================
-const version = ref('0.0.0')
-const buildDate = ref('')
-const gitHash = ref('')
-
-// ==================== Lifecycle ====================
-onMounted(() => {
-  // 获取版本信息
-  // @ts-ignore - Vite 注入的环境变量
-  version.value = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0'
-  // @ts-ignore
-  buildDate.value = typeof __BUILD_DATE__ !== 'undefined' ? formatDate(__BUILD_DATE__) : '-'
-  // @ts-ignore
-  gitHash.value = typeof __GIT_HASH__ !== 'undefined' ? __GIT_HASH__ : '-'
-})
+// ==================== 构建信息（由 Vite define 在编译时注入） ====================
+// 使用 typeof 守卫：Vite 编译后 __XXX__ 被替换为字面量，typeof 永远为 string
+// 在测试环境（未经 Vite define 处理）中，typeof 检查返回 undefined 走 fallback
+const version = ref(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0')
+const buildDate = ref(formatBuildDate(typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''))
+const gitHash = ref(typeof __GIT_HASH__ !== 'undefined' ? __GIT_HASH__ : '-')
 
 // ==================== Methods ====================
 /**
- * 格式化日期
+ * 格式化构建日期
  */
-function formatDate(dateStr: string): string {
+function formatBuildDate(dateStr: string): string {
+  if (!dateStr || dateStr === 'unknown') return '-'
   try {
     const date = new Date(dateStr)
     return date.toLocaleString('zh-CN', {
@@ -109,8 +91,6 @@ function formatDate(dateStr: string): string {
   justify-content: center;
   width: 96px;
   height: 96px;
-  background: var(--accent-color);
-  color: white;
   border-radius: var(--radius-xl);
   margin-bottom: 20px;
 }

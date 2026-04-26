@@ -3,7 +3,9 @@
     <div class="about-card">
       <!-- Logo 和标题 -->
       <div class="logo-section">
-        <div class="logo">📅</div>
+        <div class="logo">
+          <img :src="appIconUrl" alt="小河日历" width="64" height="64" />
+        </div>
         <h1>小河日历</h1>
       </div>
 
@@ -37,21 +39,20 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import appIconUrl from '../assets/icon.png'
 
-// 从全局变量读取应用信息
-const appVersion = computed(() => {
-  return (window as any).__APP_VERSION__ || 'unknown'
-})
+// 构建信息（由 Vite define 在编译时注入）
+const appVersion = __APP_VERSION__
+const buildDate = formatBuildDate(__BUILD_DATE__)
+const gitHash = __GIT_HASH__
 
-const buildDate = computed(() => {
-  const date = (window as any).__BUILD_DATE__
-  if (!date || date === 'unknown') return 'unknown'
-  // 如果已经是格式化好的字符串，直接返回
-  if (typeof date === 'string') return date
-  // 如果是时间戳，格式化
+/**
+ * 格式化构建日期
+ */
+function formatBuildDate(dateStr: string): string {
+  if (!dateStr || dateStr === 'unknown') return 'unknown'
   try {
-    const d = new Date(date)
+    const d = new Date(dateStr)
     return d.toLocaleString('zh-CN', {
       year: 'numeric',
       month: '2-digit',
@@ -61,14 +62,9 @@ const buildDate = computed(() => {
       second: '2-digit'
     }).replace(/\//g, '-')
   } catch {
-    return String(date)
+    return String(dateStr)
   }
-})
-
-const gitHash = computed(() => {
-  const hash = (window as any).__GIT_HASH__
-  return hash || 'unknown'
-})
+}
 </script>
 
 <style scoped>
