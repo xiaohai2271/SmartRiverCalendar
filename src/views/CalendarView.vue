@@ -131,7 +131,7 @@
               </div>
             </div>
 
-            <!-- Bottom Row: Calendar + Description -->
+            <!-- Bottom Row: Calendar + ColorPicker + Description -->
             <div class="bottom-row">
               <!-- Calendar Selection -->
               <div class="calendar-selector">
@@ -146,6 +146,14 @@
                     <span>{{ cal.name }}</span>
                   </button>
                 </template>
+              </div>
+
+              <!-- Color Picker -->
+              <div class="color-picker-wrapper">
+                <ColorPicker
+                  v-model="eventFormData.color"
+                  :disabled="isReadOnlyCalendar"
+                />
               </div>
 
               <!-- Description -->
@@ -186,6 +194,7 @@ import MonthView from '../components/calendar/MonthView.vue'
 import WeekView from '../components/calendar/WeekView.vue'
 import DayView from '../components/calendar/DayView.vue'
 import YearView from '../components/calendar/YearView.vue'
+import ColorPicker from '../components/calendar/ColorPicker.vue'
 import { formatDateLocale } from '../utils/date'
 import type { CalendarView, CalendarEvent } from '../types'
 
@@ -204,6 +213,25 @@ const formattedDate = computed(() => {
   return formatDateLocale(calendarStore.currentDate, 'zh-CN')
 })
 
+// 判断当前选中的日历是否为只读
+const isReadOnlyCalendar = computed(() => {
+  const selectedCalendar = calendarStore.calendars.find(
+    cal => cal.id === eventFormData.value.calendarId
+  )
+  return selectedCalendar?.readOnly ?? false
+})
+
+// 监听日历选择变化，自动更新默认颜色
+watch(() => eventFormData.value.calendarId, (newCalendarId) => {
+  // 只在新建事件时自动更新颜色（如果当前没有自定义颜色）
+  if (!isEditingEvent.value && !eventFormData.value.color) {
+    const selectedCalendar = calendarStore.calendars.find(cal => cal.id === newCalendarId)
+    if (selectedCalendar) {
+      eventFormData.value.color = selectedCalendar.color
+    }
+  }
+})
+
 const showEventModal = ref(false)
 const isEditingEvent = ref(false)
 const editingEventId = ref<string | null>(null)
@@ -214,6 +242,12 @@ function getFirstWritableCalendarId(): string {
   return writableCal?.id || 'default'
 }
 
+// 获取指定日历的颜色
+function getCalendarColor(calendarId: string): string {
+  const calendar = calendarStore.calendars.find(cal => cal.id === calendarId)
+  return calendar?.color || ''
+}
+
 const eventFormData = ref({
   title: '',
   allDay: true,
@@ -222,7 +256,8 @@ const eventFormData = ref({
   endDate: '',
   endTime: '10:00',
   calendarId: getFirstWritableCalendarId(),
-  description: ''
+  description: '',
+  color: ''
 })
 
 // 获取今天的日期字符串
@@ -357,6 +392,7 @@ function openAddEventModal() {
   isEditingEvent.value = false
   editingEventId.value = null
   const today = getTodayString()
+  const defaultCalendarId = getFirstWritableCalendarId()
   eventFormData.value = {
     title: '',
     allDay: true,
@@ -364,8 +400,9 @@ function openAddEventModal() {
     startTime: '09:00',
     endDate: today,
     endTime: '10:00',
-    calendarId: getFirstWritableCalendarId(),
-    description: ''
+    calendarId: defaultCalendarId,
+    description: '',
+    color: getCalendarColor(defaultCalendarId)
   }
   showEventModal.value = true
 }
@@ -377,6 +414,7 @@ function openAddEventModalWithDateAndTime(date: Date, startHour: number, endHour
   const dateString = getDateString(date)
   const startTime = `${String(startHour).padStart(2, '0')}:00`
   const endTime = `${String(endHour).padStart(2, '0')}:00`
+  const defaultCalendarId = getFirstWritableCalendarId()
   eventFormData.value = {
     title: '',
     allDay: false,
@@ -384,8 +422,9 @@ function openAddEventModalWithDateAndTime(date: Date, startHour: number, endHour
     startTime,
     endDate: dateString,
     endTime,
-    calendarId: getFirstWritableCalendarId(),
-    description: ''
+    calendarId: defaultCalendarId,
+    description: '',
+    color: getCalendarColor(defaultCalendarId)
   }
   showEventModal.value = true
 }
@@ -407,7 +446,8 @@ function openEditEventModal(event: CalendarEvent) {
     endDate: formatDateString(event.endTime - (event.allDay ? 86400000 : 0)),
     endTime: formatTimeString(event.endTime),
     calendarId: event.calendarId,
-    description: event.description || ''
+    description: event.description || '',
+    color: event.color || ''
   }
   showEventModal.value = true
 }
@@ -438,7 +478,7 @@ function handleEventSubmit() {
     : new Date(`${eventFormData.value.startDate}T${eventFormData.value.startTime}`).getTime()
 
   const endDateTime = eventFormData.value.allDay
-    ? new Date(eventFormData.value.endDate).getTime() + 86400000
+    ? new Date(eventFormData.value.endDate + 'T00:00:00').getTime() + 86400000
     : new Date(`${eventFormData.value.endDate}T${eventFormData.value.endTime}`).getTime()
 
   if (isEditingEvent.value && editingEventId.value) {
@@ -449,7 +489,8 @@ function handleEventSubmit() {
       startTime: startDateTime,
       endTime: endDateTime,
       allDay: eventFormData.value.allDay,
-      calendarId: eventFormData.value.calendarId
+      calendarId: eventFormData.value.calendarId,
+      color: eventFormData.value.color
     })
   } else {
     // 新建模式
@@ -459,7 +500,8 @@ function handleEventSubmit() {
       startTime: startDateTime,
       endTime: endDateTime,
       allDay: eventFormData.value.allDay,
-      calendarId: eventFormData.value.calendarId
+      calendarId: eventFormData.value.calendarId,
+      color: eventFormData.value.color
     })
   }
 
@@ -840,6 +882,11 @@ function viewDaySchedules(date: Date) {
   width: 10px;
   height: 10px;
   border-radius: 50%;
+}
+
+/* Color Picker Wrapper */
+.color-picker-wrapper {
+  flex-shrink: 0;
 }
 
 /* Description Input */

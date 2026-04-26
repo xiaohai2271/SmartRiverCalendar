@@ -33,23 +33,47 @@
               {{ getLunarInfo(day)?.lunarDate }}
             </span>
           </div>
-          <!-- 事件指示器（右上角） -->
-          <div v-if="getEventsForDay(day).length > 0" class="events-indicator">
-            <span
-              v-for="event in getEventsForDay(day).slice(0, maxEventDots)"
+        </div>
+
+        <!-- 事件显示区域 -->
+        <div v-if="getEventsForDay(day).length > 0" class="events-container">
+          <!-- 横条模式 -->
+          <div v-if="displayStyle === 'bar'" class="event-bars">
+            <EventBar
+              v-for="event in getEventsForDay(day).slice(0, maxEventBars)"
               :key="event.id"
-              class="event-dot"
-              :style="{ background: getEventColor(event) }"
-              :title="event.title"
-              @click.stop="emit('edit-event', event)"
-            ></span>
+              :event="event"
+              :day="day"
+              :calendar-color="getCalendarColor(event.calendarId)"
+              @edit-event="emit('edit-event', $event)"
+            />
             <span
-              v-if="getEventsForDay(day).length > maxEventDots"
+              v-if="getEventsForDay(day).length > maxEventBars"
               class="more-events"
               :title="`${getEventsForDay(day).length} 个日程`"
               @click.stop="emit('view-day-schedules', day)"
             >
-              +{{ getEventsForDay(day).length - maxEventDots }}
+              +{{ getEventsForDay(day).length - maxEventBars }}
+            </span>
+          </div>
+
+          <!-- 圆点模式 -->
+          <div v-else class="events-indicator">
+            <span
+              v-for="event in getEventsForDay(day).slice(0, 3)"
+              :key="event.id"
+              class="event-dot"
+              :style="{ backgroundColor: getEventColor(event) }"
+              :title="event.title"
+              @click.stop="emit('edit-event', event)"
+            ></span>
+            <span
+              v-if="getEventsForDay(day).length > 3"
+              class="more-events"
+              :title="`${getEventsForDay(day).length} 个日程`"
+              @click.stop="emit('view-day-schedules', day)"
+            >
+              +{{ getEventsForDay(day).length - 3 }}
             </span>
           </div>
         </div>
@@ -98,8 +122,9 @@
 import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
-import { getMonthDays, getWeekDays, isSameDay, isToday as isTodayFn } from '../../utils/date'
+import { getMonthDays, getWeekDays, isToday as isTodayFn, isEventOnDay } from '../../utils/date'
 import { getLunarInfo as fetchLunarInfo, type LunarInfo } from '../../utils/lunar'
+import EventBar from './EventBar.vue'
 import type { CalendarEvent } from '../../types'
 
 const emit = defineEmits<{
@@ -113,8 +138,11 @@ const settingsStore = useSettingsStore()
 const currentDate = computed(() => calendarStore.currentDate)
 const settings = computed(() => settingsStore.settings)
 
-// 最大显示事件点数量
-const maxEventDots = 3
+// 事件显示模式
+const displayStyle = computed(() => settings.value.monthEventDisplayStyle)
+
+// 最大显示事件数量
+const maxEventBars = 3
 
 // 显示设置
 const showLunar = computed(() => settings.value.showLunar)
@@ -175,13 +203,18 @@ function shouldShowFestival(day: Date): boolean {
 
 function getEventsForDay(day: Date): CalendarEvent[] {
   return calendarStore.events.filter(event => {
-    const eventDate = new Date(event.startTime)
-    return isSameDay(eventDate, day)
+    return isEventOnDay(event, day)
   })
 }
 
 function getEventColor(event: CalendarEvent): string {
+  if (event.color) return event.color
   const calendar = calendarStore.calendars.find(c => c.id === event.calendarId)
+  return calendar?.color || '#4A90D9'
+}
+
+function getCalendarColor(calendarId: string): string {
+  const calendar = calendarStore.calendars.find(c => c.id === calendarId)
   return calendar?.color || '#4A90D9'
 }
 
@@ -229,6 +262,8 @@ function selectDay(day: Date) {
   cursor: pointer;
   transition: background var(--transition-fast);
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .day-cell:hover {
@@ -270,12 +305,15 @@ function selectDay(day: Date) {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  margin-bottom: 2px;
+  min-height: 26px;
 }
 
 .day-header-left {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 26px;  /* 确保与今日圆形日期高度一致 */
 }
 
 .day-number {
@@ -292,7 +330,6 @@ function selectDay(day: Date) {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 2px;
 }
 
 .lunar-date {
@@ -306,11 +343,28 @@ function selectDay(day: Date) {
   font-weight: 600;
 }
 
-/* 事件指示器（右上角） */
+/* 事件横条区域 - 使用负 margin 突破格子内边距，实现跨天事件视觉连续 */
+.event-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  margin-left: -9px;   /* -8px padding + 1px gap */
+  margin-right: -9px;  /* -8px padding + 1px gap */
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+/* 事件容器 */
+.events-container {
+  margin-top: 4px;
+}
+
+/* 事件圆点指示器 */
 .events-indicator {
   display: flex;
-  gap: 3px;
   align-items: center;
+  gap: 3px;
 }
 
 .event-dot {
@@ -322,7 +376,7 @@ function selectDay(day: Date) {
 }
 
 .event-dot:hover {
-  transform: scale(1.5);
+  transform: scale(1.2);
 }
 
 .more-events {

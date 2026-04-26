@@ -18,6 +18,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   showHoliday: true,
   showMakeupDay: true,
   showWeekend: true,
+  monthEventDisplayStyle: 'bar', // 月视图事件显示模式（默认横条）
   // 提醒设置
   allDayReminderTime: 'morning', // 全天事件提醒时间：前一天晚上/当天早上
   allDayReminderHour: 9, // 全天事件提醒小时（默认9点）

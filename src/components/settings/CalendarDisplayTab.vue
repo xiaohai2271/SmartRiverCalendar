@@ -61,6 +61,13 @@
           <option :value="1">周一</option>
         </select>
       </div>
+      <div class="setting-item">
+        <label>月视图事件显示</label>
+        <select v-model="settings.monthEventDisplayStyle" @change="saveSettings">
+          <option value="bar">横条</option>
+          <option value="dot">圆点</option>
+        </select>
+      </div>
     </div>
   </div>
 </template>
