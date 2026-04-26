@@ -10,12 +10,8 @@ import {
   filterHolidaysByYear,
   addCustomHoliday,
   removeCustomHoliday,
-  loadCustomHolidays,
-  saveCustomHolidays,
-  type CustomHolidayData,
-  type MergedHolidayInfo
+  loadCustomHolidays
 } from '@/utils/holidayStorage'
-import { HOLIDAYS, MAKEUP_DAYS } from '@/utils/holidayData'
 
 // 模拟 settingsService，使数据库不可用，测试 localStorage 降级路径
 vi.mock('@/services/settings', () => ({
@@ -44,7 +40,7 @@ const localStorageMock = (() => {
   }
 })()
 
-Object.defineProperty(global, 'localStorage', {
+Object.defineProperty(globalThis, 'localStorage', {
   value: localStorageMock
 })
 

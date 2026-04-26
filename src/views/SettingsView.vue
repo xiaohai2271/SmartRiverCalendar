@@ -88,7 +88,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref } from 'vue'
 import { useSettingsStore } from '../stores/settings'
 import SettingsTabs from '../components/settings/SettingsTabs.vue'
 import CalendarDisplayTab from '../components/settings/CalendarDisplayTab.vue'

@@ -3,7 +3,7 @@
  * 测试 should FAIL 因为 AboutView.vue 尚未完整实现
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import AboutView from '@/views/AboutView.vue'
 

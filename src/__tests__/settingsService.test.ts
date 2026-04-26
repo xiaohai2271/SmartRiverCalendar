@@ -23,14 +23,14 @@ afterEach(() => {
 })
 
 // Mock window.__TAURI__ for Tauri 环境检测
-const originalWindow = global.window
+const originalWindow = globalThis.window
 
 describe('设置服务 (SettingsService)', () => {
   let settingsService: typeof import('../services/settings')
 
   beforeEach(async () => {
     // 设置 Tauri 环境标志
-    Object.defineProperty(global, 'window', {
+    Object.defineProperty(globalThis, 'window', {
       value: { __TAURI__: {} },
       writable: true
     })
@@ -43,7 +43,7 @@ describe('设置服务 (SettingsService)', () => {
 
   afterEach(() => {
     // 恢复 window
-    Object.defineProperty(global, 'window', {
+    Object.defineProperty(globalThis, 'window', {
       value: originalWindow,
       writable: true
     })
@@ -70,7 +70,7 @@ describe('设置服务 (SettingsService)', () => {
 
     it('应该返回 null 当 Tauri 环境不可用', async () => {
       // 模拟非 Tauri 环境
-      Object.defineProperty(global, 'window', {
+      Object.defineProperty(globalThis, 'window', {
         value: {},
         writable: true
       })
@@ -96,7 +96,7 @@ describe('设置服务 (SettingsService)', () => {
     })
 
     it('应该直接返回当 Tauri 环境不可用', async () => {
-      Object.defineProperty(global, 'window', {
+      Object.defineProperty(globalThis, 'window', {
         value: {},
         writable: true
       })
@@ -130,7 +130,7 @@ describe('设置服务 (SettingsService)', () => {
     })
 
     it('应该返回空数组当 Tauri 环境不可用', async () => {
-      Object.defineProperty(global, 'window', {
+      Object.defineProperty(globalThis, 'window', {
         value: {},
         writable: true
       })
@@ -208,7 +208,7 @@ describe('设置服务 (SettingsService)', () => {
     })
 
     it('应该返回 false 当 Tauri 环境不可用', async () => {
-      Object.defineProperty(global, 'window', {
+      Object.defineProperty(globalThis, 'window', {
         value: {},
         writable: true
       })
@@ -246,7 +246,7 @@ describe('设置服务 (SettingsService)', () => {
     })
 
     it('应该返回空数组当 Tauri 环境不可用', async () => {
-      Object.defineProperty(global, 'window', {
+      Object.defineProperty(globalThis, 'window', {
         value: {},
         writable: true
       })

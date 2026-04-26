@@ -159,22 +159,6 @@ const canAdd = computed(() => {
   return newHoliday.value.date && newHoliday.value.name.trim()
 })
 
-/**
- * 是否可以切换到上一年
- */
-const canGoPrev = computed(() => {
-  const index = availableYears.value.indexOf(currentYear.value)
-  return index < availableYears.value.length - 1
-})
-
-/**
- * 是否可以切换到下一年
- */
-const canGoNext = computed(() => {
-  const index = availableYears.value.indexOf(currentYear.value)
-  return index > 0
-})
-
 // ==================== Lifecycle ====================
 onMounted(async () => {
   await loadAvailableYears()
@@ -205,26 +189,6 @@ async function loadHolidays(): Promise<void> {
   holidays.value = await filterHolidaysByYear(currentYear.value)
   // 同时加载自定义数据用于判断 isCustom
   customHolidayData.value = await loadCustomHolidays()
-}
-
-/**
- * 切换到上一年
- */
-function switchToPrevYear(): void {
-  const index = availableYears.value.indexOf(currentYear.value)
-  if (index < availableYears.value.length - 1) {
-    currentYear.value = availableYears.value[index + 1]
-  }
-}
-
-/**
- * 切换到下一年
- */
-function switchToNextYear(): void {
-  const index = availableYears.value.indexOf(currentYear.value)
-  if (index > 0) {
-    currentYear.value = availableYears.value[index - 1]
-  }
 }
 
 /**
