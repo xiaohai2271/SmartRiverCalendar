@@ -64,6 +64,11 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **涉及组件**: WH_MOUSE_LL 钩子、UI Automation、时钟区域缓存更新器
 - **详细文档**: 参考 [references/clock-hook-integration.md](references/clock-hook-integration.md)
 
+### 11. 月视图事件显示模式
+- **功能**: 月视图事件横条/圆点显示模式切换、跨天事件渲染、事件颜色选择
+- **涉及组件**: MonthView组件、EventBar组件、EventTooltip组件、ColorPicker组件、设置存储
+- **详细文档**: 参考 [references/month-view-event-display.md](references/month-view-event-display.md)
+
 ## 快速参考
 
 ### 关键文件路径
@@ -82,6 +87,12 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **弹出窗口组件**: `src/components/popup/`
 - **弹出窗口设置**: `src/stores/popupSettings.ts`
 - **权限配置**: `src-tauri/capabilities/default.json`
+- 月视图组件: `src/components/calendar/MonthView.vue`
+- 事件横条: `src/components/calendar/EventBar.vue`
+- 悬浮提示: `src/components/calendar/EventTooltip.vue`
+- 颜色选择器: `src/components/calendar/ColorPicker.vue`
+- 跨天工具函数: `src/utils/date.ts`
+- 跨天测试: `src/__tests__/cross-day-event.test.ts`
 - EWS 客户端: `src-tauri/src/ews.rs`
 - CalDAV 客户端: `src-tauri/src/caldav.rs`
 - 同步引擎: `src-tauri/src/sync.rs`
