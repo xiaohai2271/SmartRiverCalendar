@@ -180,7 +180,8 @@ function onCustomColorChange(event: Event) {
 /* 颜色选择器容器 */
 .color-picker {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  align-items: center;
   gap: var(--space-sm);
 }
 
@@ -245,9 +246,10 @@ function onCustomColorChange(event: Event) {
 .custom-color-section {
   display: flex;
   align-items: center;
-  gap: var(--space-sm);
-  padding-top: var(--space-xs);
-  border-top: 1px solid var(--border-color);
+  gap: var(--space-xs);
+  padding-left: var(--space-sm);
+  border-left: 1px solid var(--border-color);
+  margin-left: var(--space-xs);
 }
 
 /* 自定义颜色标签 (按钮样式) */
