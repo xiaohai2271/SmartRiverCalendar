@@ -44,26 +44,6 @@ const emit = defineEmits<{
 
 const menuRef = ref<HTMLElement | null>(null)
 
-// 引用计数器管理 overflow
-let overflowLockCount = 0
-
-/** 锁定 body overflow */
-function lockOverflow() {
-  overflowLockCount++
-  if (overflowLockCount === 1) {
-    document.body.style.overflow = 'hidden'
-  }
-}
-
-/** 解锁 body overflow */
-function unlockOverflow() {
-  overflowLockCount--
-  if (overflowLockCount <= 0) {
-    overflowLockCount = 0
-    document.body.style.overflow = ''
-  }
-}
-
 // 计算菜单位置，智能溢出调整
 const menuStyle = computed(() => {
   const menuWidth = 180
@@ -124,7 +104,6 @@ watch(
   () => props.visible,
   (newVal) => {
     if (newVal) {
-      lockOverflow()
       nextTick(() => {
         document.addEventListener('click', handleClickOutside, true)
         document.addEventListener('keydown', handleKeydown, true)
@@ -132,20 +111,15 @@ watch(
     } else {
       document.removeEventListener('click', handleClickOutside, true)
       document.removeEventListener('keydown', handleKeydown, true)
-      unlockOverflow()
     }
   },
   { immediate: true }
 )
 
-// 组件卸载时清理所有监听和 overflow
+// 组件卸载时清理所有监听
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside, true)
   document.removeEventListener('keydown', handleKeydown, true)
-  if (overflowLockCount > 0) {
-    overflowLockCount = 0
-    document.body.style.overflow = ''
-  }
 })
 </script>
 

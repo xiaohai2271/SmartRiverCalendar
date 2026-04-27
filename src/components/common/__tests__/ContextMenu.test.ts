@@ -206,44 +206,35 @@ describe('ContextMenu 组件', () => {
   })
 
   describe('overflow 管理', () => {
-    it('visible 变为 true 时锁定 overflow', async () => {
+    it('visible 变化不影响 overflow（不再锁定滚动）', async () => {
+      const originalOverflow = document.body.style.overflow
       wrapper = mount(ContextMenu, {
         props: { visible: false, x: 100, y: 100, items: createMenuItems() },
         global: { stubs: globalStubs }
       })
       await wrapper.setProps({ visible: true })
       await nextTick()
-      expect(document.body.style.overflow).toBe('hidden')
-    })
-
-    it('visible 变为 false 时解锁 overflow', async () => {
-      wrapper = mount(ContextMenu, {
-        props: { visible: true, x: 100, y: 100, items: createMenuItems() },
-        global: { stubs: globalStubs }
-      })
-      await nextTick()
-      expect(document.body.style.overflow).toBe('hidden')
+      // 不应修改 body overflow
+      expect(document.body.style.overflow).toBe(originalOverflow)
+      
       await wrapper.setProps({ visible: false })
       await nextTick()
-      expect(document.body.style.overflow).toBe('')
+      // 关闭后也不应影响
+      expect(document.body.style.overflow).toBe(originalOverflow)
     })
   })
 
   describe('清理', () => {
-    it('组件卸载时清理事件监听和 overflow', async () => {
+    it('组件卸载时清理事件监听', async () => {
       wrapper = mount(ContextMenu, {
         props: { visible: true, x: 100, y: 100, items: createMenuItems() },
         global: { stubs: globalStubs }
       })
       await nextTick()
-      expect(document.body.style.overflow).toBe('hidden')
 
       // 卸载组件
       wrapper.unmount()
       await nextTick()
-
-      // overflow 应被恢复
-      expect(document.body.style.overflow).toBe('')
 
       // 卸载后点击不应再触发事件
       const listenerSpy = vi.fn()
