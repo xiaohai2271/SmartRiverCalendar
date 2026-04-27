@@ -35,7 +35,7 @@
           </div>
           <!-- 节日标识（右上角） -->
           <div v-if="showAnyBadge" class="day-badges">
-            <template v-for="(badge, index) in getBadgesForDay(day).slice(0, 3)" :key="badge.type">
+            <template v-for="badge in getBadgesForDay(day).slice(0, 3)" :key="badge.type">
               <span
                 :class="['badge', badge.type]"
                 :title="badge.title"
@@ -99,9 +99,9 @@
 import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
-import { getMonthDays, getWeekDays, isToday as isTodayFn, isEventOnDay, getEventSpanInfo, isMultiDayEvent } from '../../utils/date'
+import { getMonthDays, getWeekDays, isToday as isTodayFn, isEventOnDay } from '../../utils/date'
 import { getLunarInfo as fetchLunarInfo, type LunarInfo } from '../../utils/lunar'
-import { computeEventLanes, type EventLaneMap } from '../../composables/useEventLanes'
+import { computeEventLanes } from '../../composables/useEventLanes'
 import EventBar from './EventBar.vue'
 import type { CalendarEvent } from '../../types'
 

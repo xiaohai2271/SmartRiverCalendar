@@ -10,7 +10,17 @@ import ConfirmPopover from '@/components/common/ConfirmPopover.vue'
 
 describe('ConfirmPopover 组件', () => {
   // 默认的 targetRect
-  const defaultTargetRect = { x: 100, y: 200, width: 120, height: 32 }
+  const defaultTargetRect: DOMRect = {
+    x: 100,
+    y: 200,
+    width: 120,
+    height: 32,
+    top: 200,
+    left: 100,
+    right: 220,
+    bottom: 232,
+    toJSON: () => ({})
+  }
 
   // 每个测试前清理 DOM
   beforeEach(() => {
@@ -237,7 +247,7 @@ describe('ConfirmPopover 组件', () => {
       props: {
         visible: true,
         message: '确认删除？',
-        targetRect: { x: 300, y: 400, width: 120, height: 32 }
+        targetRect: { x: 300, y: 400, width: 120, height: 32, top: 400, left: 300, right: 420, bottom: 432, toJSON: () => ({}) } as DOMRect
       },
       attachTo: document.body
     })

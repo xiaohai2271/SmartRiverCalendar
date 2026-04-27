@@ -332,6 +332,7 @@ describe('月视图泳道集成场景', () => {
 
     // 计算泳道
     const laneMap = mockComputeEventLanes(events, monthDate)
+    void laneMap // 标记为已使用，避免 TS6133 警告
 
     // 排序（模拟 getEventsForDay 行为）
     const sorted = [...events].sort(mockGetEventsForDayWithLanes(events, day, monthDate))
