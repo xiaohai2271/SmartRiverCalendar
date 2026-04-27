@@ -2,11 +2,32 @@
 
 本文件为在小河日历 (SmartRiverCalendar) 项目中工作的智能体提供核心指导。
 
-## 沟通规范
+## 语言规范
 
-- **所有与用户的沟通交流必须使用中文**
-- **代码中的注释必须使用中文**
-- **文档和说明使用中文撰写**
+本项目严格遵守以下语言规范，所有开发者（包括 AI 智能体）必须遵守：
+
+| 内容类型 | 语言要求 | 示例 |
+|----------|----------|------|
+| 对话沟通 | **中文** | 与用户交流、问题讨论、PR 描述 |
+| 代码注释 | **中文** | `// 获取用户信息` |
+| 文档撰写 | **中文** | README、AGENTS.md、技能文档 |
+| Git 提交信息 | **中文** | `feat: 实现用户登录功能` |
+| 变量名/函数名 | **英文** (符合开发规范) | `getUserInfo`, `userName` |
+| 类名/类型名 | **英文** (PascalCase) | `UserService`, `UserInfo` |
+| 常量名 | **英文** (UPPER_SNAKE_CASE) | `MAX_RETRY_COUNT` |
+| 文件名 | **英文** (kebab-case 或 PascalCase) | `user-service.ts`, `UserModal.vue` |
+
+### 具体说明
+
+- **对话**：所有与用户的沟通交流必须使用中文
+- **注释**：代码中的注释必须使用中文，清晰说明代码意图
+- **文档**：README、CHANGELOG、技能文档等使用中文撰写
+- **命名**：
+  - 变量、函数、参数使用英文，遵循 camelCase
+  - 类、接口、类型使用英文，遵循 PascalCase
+  - 常量使用英文，遵循 UPPER_SNAKE_CASE
+  - 私有变量/方法可使用 `_` 前缀，如 `_privateMethod`
+- **提交信息**：Git commit message 使用中文，遵循 Angular Commit 规范
 
 ## 项目概述
 
