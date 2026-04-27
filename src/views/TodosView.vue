@@ -158,10 +158,9 @@
           </form>
         </div>
       </div>
-    </Transition>
-  </div>
+      </Transition>
 
-  <!-- 右键菜单 -->
+    <!-- 右键菜单 -->
   <ContextMenu
     :visible="contextMenuVisible"
     :x="contextMenuPosition.x"
@@ -188,6 +187,7 @@
     :todo="selectedTodo"
     @close="todoDetailVisible = false"
   />
+  </div>
 </template>
 
 <script setup lang="ts">
