@@ -24,7 +24,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import EventTooltip from './EventTooltip.vue'
-import { isMultiDayEvent, getEventSpanInfo } from '@/utils/date'
+import { getEventSpanInfo } from '@/utils/date'
 import type { CalendarEvent } from '@/types'
 
 // Props 定义
@@ -51,11 +51,6 @@ const tooltipPosition = ref({ x: 0, y: 0 })
 // 获取事件跨度信息
 const spanInfo = computed(() => {
   return getEventSpanInfo(props.event, props.day)
-})
-
-// 判断是否跨天事件
-const isMultiDay = computed(() => {
-  return isMultiDayEvent(props.event)
 })
 
 // 计算横条样式

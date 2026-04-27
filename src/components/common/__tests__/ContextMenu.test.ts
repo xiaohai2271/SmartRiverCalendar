@@ -16,7 +16,7 @@ function createMenuItems(): MenuItem[] {
   return [
     { label: '编辑', icon: '✏️', action: vi.fn() },
     { label: '删除', icon: '🗑️', action: vi.fn() },
-    { separator: true },
+    { label: '', separator: true },
     { label: '复制', action: vi.fn() },
   ]
 }

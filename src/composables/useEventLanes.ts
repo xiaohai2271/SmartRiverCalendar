@@ -47,7 +47,7 @@ export function eventsOverlapOnDate(a: CalendarEvent, b: CalendarEvent): boolean
  * @param monthDate 月份日期（用于过滤当月事件，当前实现未使用）
  * @returns 事件ID到泳道号的映射
  */
-export function computeEventLanes(events: CalendarEvent[], monthDate: Date): EventLaneMap {
+export function computeEventLanes(events: CalendarEvent[], _monthDate: Date): EventLaneMap {
   const laneMap = new Map<string, number>()
   const laneEndTimes: number[] = [] // 记录每个泳道的最后一个事件结束时间
 

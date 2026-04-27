@@ -55,7 +55,7 @@ const popoverStyle = computed(() => {
   top = Math.max(padding, top)
 
   return {
-    position: 'fixed',
+    position: 'fixed' as const,
     left: `${left}px`,
     top: `${top}px`
   }
