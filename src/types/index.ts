@@ -241,6 +241,20 @@ export interface WindowToggleRequest {
   }
 }
 
+// 通用右键菜单项
+export interface MenuItem {
+  /** 菜单项标签 */
+  label: string
+  /** 图标（emoji 或图标名称） */
+  icon?: string
+  /** 是否为分隔线 */
+  separator?: boolean
+  /** 点击回调 */
+  action?: () => void
+  /** 是否禁用 */
+  disabled?: boolean
+}
+
 // 更新信息
 export interface UpdateInfo {
   /** 新版本号 */

@@ -33,6 +33,7 @@
           :key="todo.id"
           class="todo-item fluent-card"
           :class="{ completed: todo.completed }"
+          @contextmenu.prevent="handleTodoContextMenu($event, todo)"
         >
           <label class="checkbox-wrapper">
             <input
@@ -159,6 +160,34 @@
       </div>
     </Transition>
   </div>
+
+  <!-- 右键菜单 -->
+  <ContextMenu
+    :visible="contextMenuVisible"
+    :x="contextMenuPosition.x"
+    :y="contextMenuPosition.y"
+    :items="contextMenuItems"
+    @update:visible="contextMenuVisible = $event"
+  />
+
+  <!-- 删除确认气泡 -->
+  <ConfirmPopover
+    :visible="confirmPopoverVisible"
+    message="确定删除这个待办吗？"
+    confirm-text="删除"
+    cancel-text="取消"
+    :target-rect="confirmTargetRect"
+    @confirm="handleConfirmDelete"
+    @cancel="handleCancelDelete"
+    @update:visible="confirmPopoverVisible = $event"
+  />
+
+  <!-- 待办详情弹窗 -->
+  <TodoDetailModal
+    :visible="todoDetailVisible"
+    :todo="selectedTodo"
+    @close="todoDetailVisible = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -166,11 +195,28 @@ import { ref, computed, onMounted, nextTick, watch } from 'vue'
 import { useTodoStore } from '../stores/todo'
 import { useCalendarStore } from '../stores/calendar'
 import { formatDate } from '../utils/date'
+import ContextMenu from '../components/common/ContextMenu.vue'
+import ConfirmPopover from '../components/common/ConfirmPopover.vue'
+import TodoDetailModal from '../components/common/TodoDetailModal.vue'
 import type { Todo } from '../types'
+import type { MenuItem } from '../types'
 
 const todoStore = useTodoStore()
 const calendarStore = useCalendarStore()
 const titleInput = ref<HTMLInputElement | null>(null)
+
+// 右键菜单状态
+const contextMenuVisible = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const contextMenuItems = ref<MenuItem[]>([])
+const selectedTodo = ref<Todo | null>(null)
+
+// 确认弹窗状态
+const confirmPopoverVisible = ref(false)
+const confirmTargetRect = ref<DOMRect | null>(null)
+
+// 详情弹窗状态
+const todoDetailVisible = ref(false)
 
 onMounted(() => {
   todoStore.initialize()
@@ -307,6 +353,45 @@ function isOverdue(timestamp: number): boolean {
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   return timestamp < today.getTime()
+}
+
+// 待办右键菜单
+function handleTodoContextMenu(e: MouseEvent, todo: Todo) {
+  e.preventDefault()
+  selectedTodo.value = todo
+  contextMenuItems.value = [
+    { label: '编辑', icon: '✏️', action: () => { openEditModal(todo); contextMenuVisible.value = false } },
+    { label: '删除', icon: '🗑️', separator: true, action: () => showDeleteConfirm(e) },
+    { label: todo.completed ? '标记未完成' : '标记完成', icon: '✅', action: () => handleToggleTodo() },
+    { label: '详情', icon: '📋', action: () => { todoDetailVisible.value = true; contextMenuVisible.value = false } }
+  ]
+  contextMenuPosition.value = { x: e.clientX, y: e.clientY }
+  contextMenuVisible.value = true
+}
+
+function showDeleteConfirm(e: MouseEvent) {
+  confirmTargetRect.value = (e.target as HTMLElement).getBoundingClientRect()
+  confirmPopoverVisible.value = true
+  contextMenuVisible.value = false
+}
+
+function handleConfirmDelete() {
+  if (selectedTodo.value) {
+    todoStore.deleteTodo(selectedTodo.value.id)
+  }
+  confirmPopoverVisible.value = false
+  selectedTodo.value = null
+}
+
+function handleCancelDelete() {
+  confirmPopoverVisible.value = false
+}
+
+function handleToggleTodo() {
+  if (selectedTodo.value) {
+    todoStore.toggleTodo(selectedTodo.value.id)
+  }
+  contextMenuVisible.value = false
 }
 </script>
 

@@ -124,6 +124,16 @@ function handleSelectionChange() {
   }
 }
 
+// 处理全局右键菜单 - 禁用默认浏览器菜单（保留输入框原生菜单）
+function handleContextMenu(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  // 允许输入框和可编辑元素的右键菜单
+  if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+    return
+  }
+  e.preventDefault()
+}
+
 // 处理键盘输入
 function handleKeyDown(event: KeyboardEvent) {
   // 只处理字母键
@@ -302,6 +312,8 @@ onMounted(async () => {
   // 添加调试页面触发监听器（全局）
   document.addEventListener('selectionchange', handleSelectionChange)
   document.addEventListener('keydown', handleKeyDown)
+  // 禁用默认右键菜单
+  document.addEventListener('contextmenu', handleContextMenu)
 })
 
 // 应用关闭时清理定时器
@@ -316,6 +328,8 @@ onUnmounted(() => {
   // 移除调试页面触发监听器
   document.removeEventListener('selectionchange', handleSelectionChange)
   document.removeEventListener('keydown', handleKeyDown)
+  // 移除右键菜单监听器
+  document.removeEventListener('contextmenu', handleContextMenu)
   // 清除输入缓冲定时器
   if (debugInputTimer.value) {
     clearTimeout(debugInputTimer.value)
