@@ -98,6 +98,7 @@ export interface AppSettings {
   showHoliday: boolean // 显示法定节假日
   showMakeupDay: boolean // 显示补休/调休
   showWeekend: boolean // 周末标识
+  monthEventDisplayStyle: 'dot' | 'bar' // 月视图事件显示模式：dot(圆点) | bar(横条)
   // 提醒设置
   allDayReminderTime: 'evening_before' | 'morning' // 全天事件提醒时间
   allDayReminderHour: number // 全天事件提醒小时（默认9）

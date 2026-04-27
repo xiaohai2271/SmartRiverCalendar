@@ -38,7 +38,8 @@ const mockSettings: AppSettings = {
   customReminderTitle: '',
   customReminderBody: '',
   clockHookEnabled: false,
-  clockHookBlockPopup: false
+  clockHookBlockPopup: false,
+  monthEventDisplayStyle: 'bar'
 }
 
 const mockSettingsStore = {

@@ -28,66 +28,67 @@
             <span
               v-if="showLunar"
               class="lunar-date"
-              :class="{ 'other-lunar': !isSameMonth(day, currentDate), 'festival': shouldShowFestival(day) }"
+              :class="{ 'festival': shouldShowFestival(day) }"
             >
               {{ getLunarInfo(day)?.lunarDate }}
             </span>
           </div>
-          <!-- 事件指示器（右上角） -->
-          <div v-if="getEventsForDay(day).length > 0" class="events-indicator">
+          <!-- 节日标识（右上角） -->
+          <div v-if="showAnyBadge" class="day-badges">
+            <template v-for="(badge, index) in getBadgesForDay(day).slice(0, 3)" :key="badge.type">
+              <span
+                :class="['badge', badge.type]"
+                :title="badge.title"
+              >
+                {{ badge.text }}
+              </span>
+            </template>
+          </div>
+        </div>
+
+        <!-- 事件显示区域 -->
+        <div class="events-container">
+          <!-- 横条模式 -->
+          <div v-if="displayStyle === 'bar'" class="event-bars">
+            <template v-for="(laneEvent, idx) in getLaneEventsForDay(day)" :key="idx">
+              <EventBar
+                v-if="laneEvent"
+                :event="laneEvent"
+                :day="day"
+                :calendar-color="getCalendarColor(laneEvent.calendarId)"
+                @edit-event="emit('edit-event', $event)"
+              />
+              <div v-else class="event-lane event-lane--empty"></div>
+            </template>
             <span
-              v-for="event in getEventsForDay(day).slice(0, maxEventDots)"
-              :key="event.id"
-              class="event-dot"
-              :style="{ background: getEventColor(event) }"
-              :title="event.title"
-              @click.stop="emit('edit-event', event)"
-            ></span>
-            <span
-              v-if="getEventsForDay(day).length > maxEventDots"
+              v-if="getEventsForDay(day).length > maxEventBars"
               class="more-events"
               :title="`${getEventsForDay(day).length} 个日程`"
               @click.stop="emit('view-day-schedules', day)"
             >
-              +{{ getEventsForDay(day).length - maxEventDots }}
+              +{{ getEventsForDay(day).length - maxEventBars }}
             </span>
           </div>
-        </div>
 
-        <!-- 节日标识 -->
-        <div v-if="showAnyBadge" class="day-badges">
-          <!-- 农历节日 -->
-          <span
-            v-if="showLunarFestival && getLunarInfo(day)?.lunarFestival"
-            class="badge festival"
-            :title="getLunarInfo(day)?.lunarFestival"
-          >
-            {{ getLunarInfo(day)?.lunarFestival }}
-          </span>
-          <!-- 法定节假日 -->
-          <span
-            v-if="showHoliday && getLunarInfo(day)?.holidayName"
-            class="badge holiday"
-            :title="getLunarInfo(day)?.holidayName"
-          >
-            {{ getLunarInfo(day)?.holidayName }}
-          </span>
-          <!-- 补休/调休 -->
-          <span
-            v-if="showMakeupDay && getLunarInfo(day)?.isWorkDay"
-            class="badge makeup"
-            :title="getLunarInfo(day)?.workDayName"
-          >
-            补
-          </span>
-          <!-- 节气 -->
-          <span
-            v-if="showSolarTerm && getLunarInfo(day)?.solarTerm"
-            class="badge solar-term"
-            :title="getLunarInfo(day)?.solarTerm"
-          >
-            {{ getLunarInfo(day)?.solarTerm }}
-          </span>
+          <!-- 圆点模式 -->
+          <div v-else class="events-indicator">
+            <span
+              v-for="event in getEventsForDay(day).slice(0, maxEventIndicators)"
+              :key="event.id"
+              class="event-dot"
+              :style="{ backgroundColor: getEventColor(event) }"
+              :title="event.title"
+              @click.stop="emit('edit-event', event)"
+            ></span>
+            <span
+              v-if="getEventsForDay(day).length > maxEventIndicators"
+              class="more-events"
+              :title="`${getEventsForDay(day).length} 个日程`"
+              @click.stop="emit('view-day-schedules', day)"
+            >
+              +{{ getEventsForDay(day).length - maxEventIndicators }}
+            </span>
+          </div>
         </div>
       </div>
     </div>
@@ -98,8 +99,10 @@
 import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
-import { getMonthDays, getWeekDays, isSameDay, isToday as isTodayFn } from '../../utils/date'
+import { getMonthDays, getWeekDays, isToday as isTodayFn, isEventOnDay, getEventSpanInfo, isMultiDayEvent } from '../../utils/date'
 import { getLunarInfo as fetchLunarInfo, type LunarInfo } from '../../utils/lunar'
+import { computeEventLanes, type EventLaneMap } from '../../composables/useEventLanes'
+import EventBar from './EventBar.vue'
 import type { CalendarEvent } from '../../types'
 
 const emit = defineEmits<{
@@ -113,8 +116,17 @@ const settingsStore = useSettingsStore()
 const currentDate = computed(() => calendarStore.currentDate)
 const settings = computed(() => settingsStore.settings)
 
-// 最大显示事件点数量
-const maxEventDots = 3
+// 事件泳道映射（用于多天事件排序）
+const eventLanes = computed(() => {
+  return computeEventLanes(calendarStore.events, currentDate.value)
+})
+
+// 事件显示模式
+const displayStyle = computed(() => settings.value.monthEventDisplayStyle)
+
+// 最大显示事件数量
+const maxEventBars = 5
+const maxEventIndicators = 9
 
 // 显示设置
 const showLunar = computed(() => settings.value.showLunar)
@@ -135,16 +147,11 @@ const weekDays = computed(() => getWeekDays(settings.value.firstDayOfWeek))
 
 const monthDays = computed(() => getMonthDays(currentDate.value, settings.value.firstDayOfWeek))
 
-// 缓存当月农历信息
+// 缓存所有日期的农历信息（包括上月末尾和下月开头）
 const lunarInfoCache = computed(() => {
-  const year = currentDate.value.getFullYear()
-  const month = currentDate.value.getMonth()
   const cache = new Map<string, LunarInfo>()
-  const daysInMonth = new Date(year, month + 1, 0).getDate()
-
-  for (let day = 1; day <= daysInMonth; day++) {
-    const date = new Date(year, month, day)
-    cache.set(date.toDateString(), fetchLunarInfo(date))
+  for (const day of monthDays.value) {
+    cache.set(day.toDateString(), fetchLunarInfo(day))
   }
   return cache
 })
@@ -174,14 +181,103 @@ function shouldShowFestival(day: Date): boolean {
 }
 
 function getEventsForDay(day: Date): CalendarEvent[] {
-  return calendarStore.events.filter(event => {
-    const eventDate = new Date(event.startTime)
-    return isSameDay(eventDate, day)
+  const events = calendarStore.events.filter(event => {
+    return isEventOnDay(event, day)
+  })
+  const lanes = eventLanes.value
+
+  // 排序：多天事件（有泳道）排在单天事件之前
+  // 同类型事件按泳道号/开始时间排序
+  return events.sort((a, b) => {
+    const laneA = lanes.get(a.id) ?? Infinity
+    const laneB = lanes.get(b.id) ?? Infinity
+
+    // 多天事件（有泳道）排在单天事件之前
+    if (laneA !== laneB) {
+      if (laneA !== Infinity && laneB !== Infinity) return laneA - laneB
+      if (laneA !== Infinity) return -1
+      if (laneB !== Infinity) return 1
+    }
+    // 单天事件按开始时间排序
+    return new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
   })
 }
 
+/** 获取某天的泳道事件列表（包含空泳道占位） */
+function getLaneEventsForDay(day: Date): (CalendarEvent | null)[] {
+  const events = getEventsForDay(day)
+  const lanes = eventLanes.value
+
+  // 计算最大泳道号
+  let maxLane = -1
+  for (const event of events) {
+    const lane = lanes.get(event.id)
+    if (lane !== undefined && lane > maxLane) maxLane = lane
+  }
+
+  // 无泳道事件（单天事件），直接返回
+  if (maxLane === -1) {
+    return events.slice(0, maxEventBars)
+  }
+
+  // 构建泳道→事件映射（空泳道为 null）
+  const result: (CalendarEvent | null)[] = []
+  for (let i = 0; i <= maxLane; i++) {
+    const event = events.find(e => lanes.get(e.id) === i)
+    result.push(event || null)
+  }
+
+  // 添加单天事件到末尾
+  const singleDayEvents = events.filter(e => !lanes.has(e.id))
+  result.push(...singleDayEvents)
+
+  // 返回结果（限制为 maxEventBars）
+  return result.slice(0, maxEventBars)
+}
+
+/** 徽标信息 */
+interface BadgeInfo {
+  type: string
+  text: string
+  title: string
+}
+
+/** 获取某天的徽标列表（已去重，最多3个） */
+function getBadgesForDay(day: Date): BadgeInfo[] {
+  const info = getLunarInfo(day)
+  if (!info) return []
+
+  const badges: BadgeInfo[] = []
+
+  // 法定节假日（优先级最高）
+  if (showHoliday.value && info.holidayName) {
+    badges.push({ type: 'holiday', text: info.holidayName, title: info.holidayName })
+  } else if (showLunarFestival.value && info.lunarFestival) {
+    // 农历节日（当没有法定节假日时显示）
+    badges.push({ type: 'festival', text: info.lunarFestival, title: info.lunarFestival })
+  }
+
+  // 节气（独立显示）
+  if (showSolarTerm.value && info.solarTerm) {
+    badges.push({ type: 'solar-term', text: info.solarTerm, title: info.solarTerm })
+  }
+
+  // 补休/调休（独立显示）
+  if (showMakeupDay.value && info.isWorkDay) {
+    badges.push({ type: 'makeup', text: '补', title: info.workDayName || '补班' })
+  }
+
+  return badges
+}
+
 function getEventColor(event: CalendarEvent): string {
+  if (event.color) return event.color
   const calendar = calendarStore.calendars.find(c => c.id === event.calendarId)
+  return calendar?.color || '#4A90D9'
+}
+
+function getCalendarColor(calendarId: string): string {
+  const calendar = calendarStore.calendars.find(c => c.id === calendarId)
   return calendar?.color || '#4A90D9'
 }
 
@@ -195,7 +291,7 @@ function selectDay(day: Date) {
 .month-view {
   background: var(--bg-secondary);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 12px;
 }
 
 .weekday-header {
@@ -206,7 +302,7 @@ function selectDay(day: Date) {
 
 .weekday {
   text-align: center;
-  padding: 12px;
+  padding: 8px;
   font-weight: 600;
   color: var(--text-secondary);
   font-size: 14px;
@@ -215,7 +311,6 @@ function selectDay(day: Date) {
 .month-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 1px;
   background: var(--border-color);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -223,12 +318,14 @@ function selectDay(day: Date) {
 }
 
 .day-cell {
-  min-height: 100px;
+  min-height: 80px;
   background: var(--bg-secondary);
-  padding: 6px 8px;
+  padding: 6px 0;
   cursor: pointer;
   transition: background var(--transition-fast);
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
 
 .day-cell:hover {
@@ -263,19 +360,30 @@ function selectDay(day: Date) {
 /* 今天 - 主题色 */
 .day-cell.today {
   background: var(--accent-light);
-  box-shadow: inset 0 0 0 2px var(--accent-color);
+  outline: 2px solid var(--accent-color);
+  outline-offset: -2px;
+}
+
+/* 修复 today 格子跨天事件横条对齐问题 */
+.day-cell.today .event-bars {
+  margin-top: 0;
 }
 
 .day-header {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
+  margin-bottom: 2px;
+  min-height: 26px;
+  height: 45px;
+  padding: 0 8px;
 }
 
 .day-header-left {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-height: 26px;  /* 确保与今日圆形日期高度一致 */
 }
 
 .day-number {
@@ -292,7 +400,6 @@ function selectDay(day: Date) {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin-bottom: 2px;
 }
 
 .lunar-date {
@@ -306,11 +413,32 @@ function selectDay(day: Date) {
   font-weight: 600;
 }
 
-/* 事件指示器（右上角） */
+/* 事件横条区域 - 使用负 margin 突破格子内边距，实现跨天事件视觉连续 */
+.event-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* 空泳道占位 - 保持多天事件视觉连续 */
+.event-lane--empty {
+  height: 4px;
+  margin-bottom: 2px;
+  visibility: hidden;
+}
+
+/* 事件容器 */
+.events-container {
+  margin-top: 4px;
+  height: 40px;
+}
+
+/* 事件圆点指示器 */
 .events-indicator {
   display: flex;
-  gap: 3px;
   align-items: center;
+  gap: 3px;
+  margin: 0 8px;
 }
 
 .event-dot {
@@ -322,7 +450,7 @@ function selectDay(day: Date) {
 }
 
 .event-dot:hover {
-  transform: scale(1.5);
+  transform: scale(1.2);
 }
 
 .more-events {
@@ -338,12 +466,13 @@ function selectDay(day: Date) {
   background: var(--bg-hover);
 }
 
-/* 节日标识 */
+/* 节日标识 - 右上角竖向排列 */
 .day-badges {
   display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  margin-top: 4px;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 1px;
+  flex-shrink: 0;
 }
 
 .badge {

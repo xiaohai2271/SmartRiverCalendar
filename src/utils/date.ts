@@ -190,7 +190,7 @@ export function getWeekDays(firstDay: number = 1): string[] {
 }
 
 /**
- * Format relative time (e.g., "3天前", "2小时后")
+ * 格式化相对时间（如 "3天前"、"2小时后"）
  */
 export function formatRelativeTime(timestamp: number, _locale: string = 'zh-CN'): string {
   const now = Date.now()
@@ -214,4 +214,105 @@ export function formatRelativeTime(timestamp: number, _locale: string = 'zh-CN')
   }
 
   return '刚刚'
+}
+
+// ===== 跨天事件工具函数 =====
+
+/** 跨天事件参数类型 */
+interface CrossDayEvent {
+  startTime: number
+  endTime: number
+}
+
+/** 事件跨度信息 */
+export interface EventSpanInfo {
+  /** 是否为事件开始天 */
+  isStart: boolean
+  /** 是否为事件结束天 */
+  isEnd: boolean
+  /** 是否为事件中间天 */
+  isMiddle: boolean
+  /** 事件跨越的总天数 */
+  spanDays: number
+}
+
+/**
+ * 获取事件的有效结束日期（处理全天事件 endTime 为次日 00:00 的情况）
+ * 全天事件如 1月15日 00:00 → 1月16日 00:00，实际只占1天
+ */
+function getEffectiveEndDate(endTime: number, startDate: Date): Date {
+  const endDate = new Date(endTime)
+  // 如果结束时间在开始日期次日的 00:00:00 附近（亚秒级容差），视为全天事件，回退到开始日期
+  // 容差处理：部分日历系统 endTime 存在毫秒级偏差（如 00:00:00.001），精确匹配会误判为跨天
+  const nextDayStart = new Date(startDate)
+  nextDayStart.setDate(nextDayStart.getDate() + 1)
+  nextDayStart.setHours(0, 0, 0, 0)
+  const TOLERANCE_MS = 1000 // 毫秒级容差，覆盖日历系统亚秒级偏差
+  if (Math.abs(endDate.getTime() - nextDayStart.getTime()) < TOLERANCE_MS) {
+    return new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate())
+  }
+  return endDate
+}
+
+/**
+ * 判断事件是否为跨天事件
+ * startTime 和 endTime 为毫秒级 Unix 时间戳
+ * 全天事件（结束时间为次日 00:00）不算跨天
+ */
+export function isMultiDayEvent(event: CrossDayEvent): boolean {
+  const startDate = new Date(event.startTime)
+  const effectiveEndDate = getEffectiveEndDate(event.endTime, startDate)
+  return !isSameDay(startDate, effectiveEndDate)
+}
+
+/**
+ * 判断事件是否覆盖某天
+ * 包括开始天、中间天和结束天
+ * 全天事件（结束时间为次日 00:00）不覆盖次日
+ */
+export function isEventOnDay(event: CrossDayEvent, day: Date): boolean {
+  const startDate = new Date(event.startTime)
+  const effectiveEndDate = getEffectiveEndDate(event.endTime, startDate)
+
+  const dayStart = startOfDay(day)
+  const eventStartDate = startOfDay(startDate)
+  const eventEndDate = startOfDay(effectiveEndDate)
+
+  return dayStart.getTime() >= eventStartDate.getTime() && dayStart.getTime() <= eventEndDate.getTime()
+}
+
+/**
+ * 获取事件在某天的跨度渲染信息
+ * - isStart: 是否为事件开始天
+ * - isEnd: 是否为事件结束天
+ * - isMiddle: 是否为事件中间天（非开始非结束）
+ * - spanDays: 事件跨越的总天数
+ */
+export function getEventSpanInfo(event: CrossDayEvent, day: Date): EventSpanInfo {
+  const startDate = new Date(event.startTime)
+  const effectiveEndDate = getEffectiveEndDate(event.endTime, startDate)
+
+  const eventStartDate = startOfDay(startDate)
+  const eventEndDate = startOfDay(effectiveEndDate)
+
+  // 计算跨越天数，使用 Math.floor 避免毫秒偏差导致向上取整
+  const diffMs = eventEndDate.getTime() - eventStartDate.getTime()
+  const spanDays = Math.floor(diffMs / 86400000) + 1
+
+  // 判断 day 是否在事件范围内
+  const dayStart = startOfDay(day)
+  const onDay = dayStart.getTime() >= eventStartDate.getTime() && dayStart.getTime() <= eventEndDate.getTime()
+
+  if (!onDay) {
+    return { isStart: false, isEnd: false, isMiddle: false, spanDays }
+  }
+
+  const isStart = isSameDay(day, startDate)
+  const isEnd = isSameDay(day, effectiveEndDate)
+
+  // 单日事件：既是开始也是结束
+  // 跨天事件：isStart/isEnd 互斥，其他情况为中间天
+  const isMiddle = !isStart && !isEnd
+
+  return { isStart, isEnd, isMiddle, spanDays }
 }
