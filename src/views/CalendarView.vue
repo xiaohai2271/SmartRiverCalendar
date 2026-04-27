@@ -54,8 +54,9 @@
           </div>
 
           <form @submit.prevent="handleEventSubmit" class="modal-body">
-            <!-- Title -->
-            <div class="form-group compact">
+            <!-- Title Section -->
+            <div class="form-section">
+              <label class="section-label">标题</label>
               <input
                 v-model="eventFormData.title"
                 type="text"
@@ -66,101 +67,113 @@
               />
             </div>
 
-            <!-- Quick Actions Row -->
-            <div class="quick-actions-row">
-              <!-- All Day Toggle -->
-              <label class="toggle-wrapper">
-                <input v-model="eventFormData.allDay" type="checkbox" class="toggle-input" />
-                <span class="toggle-slider"></span>
-                <span class="toggle-label">全天</span>
-              </label>
+            <!-- Quick Actions Section -->
+            <div class="form-section">
+              <label class="section-label">快捷设置</label>
+              <div class="quick-actions-row">
+                <!-- All Day Toggle -->
+                <label class="toggle-wrapper">
+                  <input v-model="eventFormData.allDay" type="checkbox" class="toggle-input" />
+                  <span class="toggle-slider"></span>
+                  <span class="toggle-label">全天</span>
+                </label>
 
-              <div class="divider"></div>
+                <div class="divider"></div>
 
-              <!-- Quick Dates -->
-              <div class="quick-dates">
-                <button
-                  v-for="quick in filteredQuickDates"
-                  :key="quick.label"
-                  type="button"
-                  class="quick-date-btn"
-                  :class="{ active: isQuickDateActive(quick) }"
-                  @click="applyQuickDate(quick)"
-                >
-                  {{ quick.label }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Date & Time -->
-            <div class="datetime-section">
-              <div class="datetime-row">
-                <div class="datetime-label">开始</div>
-                <div class="datetime-inputs">
-                  <input
-                    v-model="eventFormData.startDate"
-                    type="date"
-                    class="fluent-input date-input"
-                    required
-                  />
-                  <input
-                    v-if="!eventFormData.allDay"
-                    v-model="eventFormData.startTime"
-                    type="time"
-                    class="fluent-input time-input"
-                  />
-                </div>
-              </div>
-
-              <div class="datetime-row">
-                <div class="datetime-label">结束</div>
-                <div class="datetime-inputs">
-                  <input
-                    v-model="eventFormData.endDate"
-                    type="date"
-                    class="fluent-input date-input"
-                    required
-                  />
-                  <input
-                    v-if="!eventFormData.allDay"
-                    v-model="eventFormData.endTime"
-                    type="time"
-                    class="fluent-input time-input"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <!-- Bottom Row: Calendar + ColorPicker + Description -->
-            <div class="bottom-row">
-              <!-- Calendar Selection -->
-              <div class="calendar-selector">
-                <template v-for="cal in calendarStore.calendars" :key="cal.id">
+                <!-- Quick Dates -->
+                <div class="quick-dates">
                   <button
-                    v-if="!cal.readOnly"
+                    v-for="quick in filteredQuickDates"
+                    :key="quick.label"
                     type="button"
-                    :class="['calendar-option', { active: eventFormData.calendarId === cal.id }]"
-                    @click="eventFormData.calendarId = cal.id"
+                    class="quick-date-btn"
+                    :class="{ active: isQuickDateActive(quick) }"
+                    @click="applyQuickDate(quick)"
                   >
-                    <span class="calendar-color" :style="{ background: cal.color }"></span>
-                    <span>{{ cal.name }}</span>
+                    {{ quick.label }}
                   </button>
-                </template>
+                </div>
               </div>
+            </div>
 
-              <!-- Color Picker -->
-              <div class="color-picker-wrapper">
-                <ColorPicker
-                  v-model="eventFormData.color"
-                  :disabled="isReadOnlyCalendar"
-                />
+            <!-- Date & Time Section -->
+            <div class="form-section">
+              <label class="section-label">时间</label>
+              <div class="datetime-section">
+                <div class="datetime-row">
+                  <div class="datetime-label">开始</div>
+                  <div class="datetime-inputs">
+                    <input
+                      v-model="eventFormData.startDate"
+                      type="date"
+                      class="fluent-input date-input"
+                      required
+                    />
+                    <input
+                      v-if="!eventFormData.allDay"
+                      v-model="eventFormData.startTime"
+                      type="time"
+                      class="fluent-input time-input"
+                    />
+                  </div>
+                </div>
+
+                <div class="datetime-row">
+                  <div class="datetime-label">结束</div>
+                  <div class="datetime-inputs">
+                    <input
+                      v-model="eventFormData.endDate"
+                      type="date"
+                      class="fluent-input date-input"
+                      required
+                    />
+                    <input
+                      v-if="!eventFormData.allDay"
+                      v-model="eventFormData.endTime"
+                      type="time"
+                      class="fluent-input time-input"
+                    />
+                  </div>
+                </div>
               </div>
+            </div>
 
-              <!-- Description -->
+            <!-- Calendar & Color Section -->
+            <div class="form-section">
+              <label class="section-label">日历与颜色</label>
+              <div class="calendar-color-section">
+                <!-- Color Picker -->
+                <div class="color-picker-row">
+                  <ColorPicker
+                    v-model="eventFormData.color"
+                    :disabled="isReadOnlyCalendar"
+                  />
+                </div>
+
+                <!-- Calendar Selector -->
+                <div class="calendar-selector">
+                  <template v-for="cal in calendarStore.calendars" :key="cal.id">
+                    <button
+                      v-if="!cal.readOnly"
+                      type="button"
+                      :class="['calendar-option', { active: eventFormData.calendarId === cal.id }]"
+                      @click="eventFormData.calendarId = cal.id"
+                    >
+                      <span class="calendar-color" :style="{ background: cal.color }"></span>
+                      <span>{{ cal.name }}</span>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            <!-- Description Section -->
+            <div class="form-section">
+              <label class="section-label">描述</label>
               <input
                 v-model="eventFormData.description"
                 type="text"
-                class="fluent-input description-input"
+                class="fluent-input"
                 placeholder="添加描述..."
               />
             </div>
@@ -266,11 +279,9 @@ watch(() => eventFormData.value.allDay, (isAllDay) => {
   if (isAllDay) {
     eventFormData.value.startTime = '00:00'
     eventFormData.value.endTime = '23:59'
-  } else {
-    eventFormData.value.startTime = '09:00'
-    eventFormData.value.endTime = '10:00'
   }
-})
+  // 取消全天时保留当前时间值，因为回显时已正确设置
+}, { immediate: true })
 
 // 获取今天的日期字符串
 function getTodayString(): string {
@@ -387,16 +398,21 @@ function isQuickDateActive(quick: QuickDate): boolean {
     eventFormData.value.endTime === quick.endTime
 }
 
-// 格式化日期为 input[type=date] 格式
+// 格式化日期为 input[type=date] 格式（本地时间）
 function formatDateString(timestamp: number): string {
   const date = new Date(timestamp)
-  return date.toISOString().split('T')[0]
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-// 格式化时间为 input[type=time] 格式
+// 格式化时间为 input[type=time] 格式（本地时间）
 function formatTimeString(timestamp: number): string {
   const date = new Date(timestamp)
-  return date.toTimeString().slice(0, 5)
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
 }
 
 // 打开新建事件弹窗
@@ -409,9 +425,9 @@ function openAddEventModal() {
     title: '',
     allDay: true,
     startDate: today,
-    startTime: '09:00',
+    startTime: '00:00',
     endDate: today,
-    endTime: '10:00',
+    endTime: '23:59',
     calendarId: defaultCalendarId,
     description: '',
     color: getCalendarColor(defaultCalendarId)
@@ -455,7 +471,7 @@ function openEditEventModal(event: CalendarEvent) {
     allDay: event.allDay,
     startDate: formatDateString(event.startTime),
     startTime: formatTimeString(event.startTime),
-    endDate: formatDateString(event.endTime - (event.allDay ? 86400000 : 0)),
+    endDate: formatDateString(event.endTime),
     endTime: formatTimeString(event.endTime),
     calendarId: event.calendarId,
     description: event.description || '',
@@ -486,11 +502,11 @@ function handleEventSubmit() {
   if (!title) return
 
   const startDateTime = eventFormData.value.allDay
-    ? new Date(eventFormData.value.startDate).getTime()
+    ? new Date(eventFormData.value.startDate + 'T00:00:00').getTime()
     : new Date(`${eventFormData.value.startDate}T${eventFormData.value.startTime}`).getTime()
 
   const endDateTime = eventFormData.value.allDay
-    ? new Date(eventFormData.value.endDate + 'T00:00:00').getTime() + 86400000
+    ? new Date(eventFormData.value.endDate + 'T23:59:59').getTime()
     : new Date(`${eventFormData.value.endDate}T${eventFormData.value.endTime}`).getTime()
 
   if (isEditingEvent.value && editingEventId.value) {
@@ -717,8 +733,27 @@ function viewDaySchedules(date: Date) {
 }
 
 .modal-body {
-  padding: 16px 18px;
+  padding: var(--space-md);
   overflow-y: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Form Section - 统一的区块样式 */
+.form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* Section Label - 统一的标签样式 */
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 /* Toggle Switch */
@@ -777,7 +812,6 @@ function viewDaySchedules(date: Date) {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
   padding: 10px 14px;
   background: var(--bg-tertiary);
   border-radius: var(--radius-lg);
@@ -825,7 +859,6 @@ function viewDaySchedules(date: Date) {
   background: var(--bg-tertiary);
   border-radius: var(--radius-lg);
   padding: 12px 14px;
-  margin-bottom: 12px;
 }
 
 .datetime-row {
@@ -835,7 +868,7 @@ function viewDaySchedules(date: Date) {
 }
 
 .datetime-row:not(:last-child) {
-  margin-bottom: 10px;
+  margin-bottom: var(--space-sm);
 }
 
 .datetime-label {
@@ -859,11 +892,19 @@ function viewDaySchedules(date: Date) {
   width: 110px;
 }
 
-/* Bottom Row */
-.bottom-row {
+/* Calendar & Color Section */
+.calendar-color-section {
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-lg);
+  padding: 12px 14px;
   display: flex;
-  gap: 12px;
-  margin-bottom: 12px;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.color-picker-row {
+  display: flex;
+  align-items: center;
 }
 
 /* Calendar Selector */
@@ -878,7 +919,7 @@ function viewDaySchedules(date: Date) {
   align-items: center;
   gap: 6px;
   padding: 6px 12px;
-  background: var(--bg-tertiary);
+  background: var(--bg-secondary);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -902,24 +943,13 @@ function viewDaySchedules(date: Date) {
   border-radius: 50%;
 }
 
-/* Color Picker Wrapper */
-.color-picker-wrapper {
-  flex-shrink: 0;
-}
-
-/* Description Input */
-.description-input {
-  flex: 1;
-  min-width: 150px;
-}
-
 /* Modal Actions */
 .modal-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 12px;
-  padding-top: 12px;
+  margin-top: var(--space-md);
+  padding-top: var(--space-md);
   border-top: 1px solid var(--border-color);
 }
 
@@ -1035,6 +1065,6 @@ function viewDaySchedules(date: Date) {
 
 /* Form Group Compact */
 .form-group.compact {
-  margin-bottom: 12px;
+  margin-bottom: var(--space-md);
 }
 </style>
