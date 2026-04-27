@@ -50,14 +50,16 @@
         <div class="events-container">
           <!-- 横条模式 -->
           <div v-if="displayStyle === 'bar'" class="event-bars">
-            <EventBar
-              v-for="event in getEventsForDay(day).slice(0, maxEventBars)"
-              :key="event.id"
-              :event="event"
-              :day="day"
-              :calendar-color="getCalendarColor(event.calendarId)"
-              @edit-event="emit('edit-event', $event)"
-            />
+            <template v-for="(laneEvent, idx) in getLaneEventsForDay(day)" :key="idx">
+              <EventBar
+                v-if="laneEvent"
+                :event="laneEvent"
+                :day="day"
+                :calendar-color="getCalendarColor(laneEvent.calendarId)"
+                @edit-event="emit('edit-event', $event)"
+              />
+              <div v-else class="event-lane event-lane--empty"></div>
+            </template>
             <span
               v-if="getEventsForDay(day).length > maxEventBars"
               class="more-events"
@@ -97,8 +99,9 @@
 import { computed } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
-import { getMonthDays, getWeekDays, isToday as isTodayFn, isEventOnDay, getEventSpanInfo } from '../../utils/date'
+import { getMonthDays, getWeekDays, isToday as isTodayFn, isEventOnDay, getEventSpanInfo, isMultiDayEvent } from '../../utils/date'
 import { getLunarInfo as fetchLunarInfo, type LunarInfo } from '../../utils/lunar'
+import { computeEventLanes, type EventLaneMap } from '../../composables/useEventLanes'
 import EventBar from './EventBar.vue'
 import type { CalendarEvent } from '../../types'
 
@@ -112,6 +115,11 @@ const settingsStore = useSettingsStore()
 
 const currentDate = computed(() => calendarStore.currentDate)
 const settings = computed(() => settingsStore.settings)
+
+// 事件泳道映射（用于多天事件排序）
+const eventLanes = computed(() => {
+  return computeEventLanes(calendarStore.events, currentDate.value)
+})
 
 // 事件显示模式
 const displayStyle = computed(() => settings.value.monthEventDisplayStyle)
@@ -176,18 +184,55 @@ function getEventsForDay(day: Date): CalendarEvent[] {
   const events = calendarStore.events.filter(event => {
     return isEventOnDay(event, day)
   })
-  
-  // 按跨天数降序排序，跨天数多的排在前面
-  // 如果跨天数相同，按开始时间升序排序，确保顺序稳定
+  const lanes = eventLanes.value
+
+  // 排序：多天事件（有泳道）排在单天事件之前
+  // 同类型事件按泳道号/开始时间排序
   return events.sort((a, b) => {
-    const spanA = getEventSpanInfo(a, day).spanDays
-    const spanB = getEventSpanInfo(b, day).spanDays
-    if (spanB !== spanA) {
-      return spanB - spanA
+    const laneA = lanes.get(a.id) ?? Infinity
+    const laneB = lanes.get(b.id) ?? Infinity
+
+    // 多天事件（有泳道）排在单天事件之前
+    if (laneA !== laneB) {
+      if (laneA !== Infinity && laneB !== Infinity) return laneA - laneB
+      if (laneA !== Infinity) return -1
+      if (laneB !== Infinity) return 1
     }
-    // 跨天数相同时，按开始时间排序
+    // 单天事件按开始时间排序
     return new Date(a.startTime).getTime() - new Date(b.startTime).getTime()
   })
+}
+
+/** 获取某天的泳道事件列表（包含空泳道占位） */
+function getLaneEventsForDay(day: Date): (CalendarEvent | null)[] {
+  const events = getEventsForDay(day)
+  const lanes = eventLanes.value
+
+  // 计算最大泳道号
+  let maxLane = -1
+  for (const event of events) {
+    const lane = lanes.get(event.id)
+    if (lane !== undefined && lane > maxLane) maxLane = lane
+  }
+
+  // 无泳道事件（单天事件），直接返回
+  if (maxLane === -1) {
+    return events.slice(0, maxEventBars)
+  }
+
+  // 构建泳道→事件映射（空泳道为 null）
+  const result: (CalendarEvent | null)[] = []
+  for (let i = 0; i <= maxLane; i++) {
+    const event = events.find(e => lanes.get(e.id) === i)
+    result.push(event || null)
+  }
+
+  // 添加单天事件到末尾
+  const singleDayEvents = events.filter(e => !lanes.has(e.id))
+  result.push(...singleDayEvents)
+
+  // 返回结果（限制为 maxEventBars）
+  return result.slice(0, maxEventBars)
 }
 
 /** 徽标信息 */
@@ -373,6 +418,13 @@ function selectDay(day: Date) {
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+/* 空泳道占位 - 保持多天事件视觉连续 */
+.event-lane--empty {
+  height: 4px;
+  margin-bottom: 2px;
+  visibility: hidden;
 }
 
 /* 事件容器 */
