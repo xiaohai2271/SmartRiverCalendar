@@ -83,6 +83,7 @@
 import type { UpdateInfo } from '@/types'
 import { computed } from 'vue'
 import { marked } from 'marked'
+import DOMPurify from 'dompurify'
 
 /**
  * 组件 Props 定义
@@ -123,9 +124,10 @@ const emit = defineEmits<Emits>()
 const renderedBody = computed(() => {
   const body = props.updateInfo?.body
   if (!body || !body.trim()) return ''
-  // 将 Markdown 转换为 HTML，并拦截链接在新窗口打开
-  const html = marked.parse(body, { async: false }) as string
-  return html
+  // 将 Markdown 转换为 HTML，并进行安全净化
+  const rawHtml = marked.parse(body, { async: false }) as string
+  const cleanHtml = DOMPurify.sanitize(rawHtml)
+  return cleanHtml
 })
 </script>
 
