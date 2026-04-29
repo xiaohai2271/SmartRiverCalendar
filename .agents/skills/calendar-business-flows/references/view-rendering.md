@@ -66,6 +66,8 @@ src/components/calendar/
 ├── WeekView.vue
 ├── MonthView.vue
 ├── YearView.vue
+├── DateCellContextMenu.vue  # 日期单元格右键菜单
+├── EventBlockContextMenu.vue # 事件块右键菜单
 └── CalendarView.vue (主容器)
 ```
 
@@ -175,3 +177,25 @@ function prev() {
 - 状态管理: `src/stores/calendar.ts`
 - 类型定义: `src/types/index.ts`
 - 页面视图: `src/views/CalendarView.vue`
+
+## 右键菜单机制
+
+### 日期单元格右键菜单 (DateCellContextMenu)
+- **触发**: 在月视图日期单元格上右键
+- **菜单项**: 查看事件、创建事件、查看待办、创建待办、切换到日视图、切换到周视图
+- **实现**: 包装 ContextMenu.vue，通过 DateCellMenuAction 类型驱动菜单项
+- **集成**: MonthView.vue 中通过 @contextmenu 事件触发
+
+### 事件块右键菜单 (EventBlockContextMenu)
+- **触发**: 在日/周视图的事件块上右键
+- **菜单项**: 编辑事件、事件详情、删除事件
+- **实现**: 包装 ContextMenu.vue，通过 EventBlockMenuAction 类型驱动菜单项
+- **集成**: DayView.vue 和 WeekView.vue 中通过 @contextmenu 事件触发
+
+### 事件颜色优先级
+```
+event.color > calendar.color > '#4A90D9' (默认蓝色)
+```
+- `event.color`: 事件自定义颜色（最高优先级）
+- `calendar.color`: 所属日历的默认颜色
+- DayView 和 WeekView 之前有 bug：不检查 event.color，已在 Issue #40 中修复

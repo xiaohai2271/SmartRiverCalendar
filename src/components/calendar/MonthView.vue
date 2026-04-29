@@ -19,6 +19,7 @@
           'workday': showMakeupDay && getLunarInfo(day)?.isWorkDay
         }"
         @click="selectDay(day)"
+        @contextmenu="handleDayContextMenu($event, day)"
       >
         <!-- 日期头部 -->
         <div class="day-header">
@@ -92,11 +93,20 @@
         </div>
       </div>
     </div>
+    <!-- 日期右键菜单 -->
+    <DateCellContextMenu
+      v-model:visible="contextMenuVisible"
+      :x="contextMenuState.x"
+      :y="contextMenuState.y"
+      :event-count="contextMenuState.eventCount"
+      :todo-count="contextMenuState.todoCount"
+      @action="handleContextMenuAction"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
 import { getMonthDays, getWeekDays, isToday as isTodayFn, isEventOnDay } from '../../utils/date'
@@ -104,10 +114,16 @@ import { getLunarInfo as fetchLunarInfo, type LunarInfo } from '../../utils/luna
 import { computeEventLanes } from '../../composables/useEventLanes'
 import EventBar from './EventBar.vue'
 import type { CalendarEvent } from '../../types'
+import { REST_BADGE_CONFIG } from '../../types'
+import DateCellContextMenu from './DateCellContextMenu.vue'
+import type { DateCellMenuAction } from '../../types'
 
 const emit = defineEmits<{
   'edit-event': [event: CalendarEvent]
   'view-day-schedules': [date: Date]
+  'create-event': [date: Date]
+  'view-todos': [date: Date]
+  'create-todo': [date: Date]
 }>()
 
 const calendarStore = useCalendarStore()
@@ -129,12 +145,26 @@ const maxEventBars = 5
 const maxEventIndicators = 9
 
 // 显示设置
+const showWeekend = computed(() => settings.value.showWeekend)
 const showLunar = computed(() => settings.value.showLunar)
 const showLunarFestival = computed(() => settings.value.showLunarFestival && settings.value.showLunar)
 const showSolarTerm = computed(() => settings.value.showSolarTerm)
 const showHoliday = computed(() => settings.value.showHoliday)
 const showMakeupDay = computed(() => settings.value.showMakeupDay)
-const showWeekend = computed(() => settings.value.showWeekend)
+
+// 右键菜单状态
+const contextMenuVisible = computed({
+  get: () => contextMenuState.value.visible,
+  set: (val: boolean) => { contextMenuState.value.visible = val }
+})
+const contextMenuState = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  date: new Date() as Date,
+  eventCount: 0,
+  todoCount: 0,
+})
 
 const showAnyBadge = computed(() =>
   showLunarFestival.value ||
@@ -242,32 +272,45 @@ interface BadgeInfo {
   title: string
 }
 
-/** 获取某天的徽标列表（已去重，最多3个） */
+/** 获取某天的徽标列表（按优先级排序，最多3个） */
 function getBadgesForDay(day: Date): BadgeInfo[] {
   const info = getLunarInfo(day)
   if (!info) return []
 
   const badges: BadgeInfo[] = []
 
-  // 法定节假日（优先级最高）
-  if (showHoliday.value && info.holidayName) {
+  // 优先级 1：休息日（"休"） — 周末或法定节假日
+  if (showMakeupDay.value && (info.isWeekend || info.isHoliday)) {
+    badges.push({
+      type: 'rest',
+      text: REST_BADGE_CONFIG.rest.text,
+      title: info.isHoliday ? (info.holidayName || '节假日') : '周末'
+    })
+  }
+
+  // 优先级 1：补班日（"补"）— 调休补班
+  if (showMakeupDay.value && info.isWorkDay) {
+    badges.push({
+      type: 'makeup',
+      text: REST_BADGE_CONFIG.makeup.text,
+      title: info.workDayName || '补班'
+    })
+  }
+
+  // 优先级 2：法定节假日名称（仅在非休徽标时显示，避免重复）
+  if (showHoliday.value && info.holidayName && !badges.some(b => b.type === 'rest')) {
     badges.push({ type: 'holiday', text: info.holidayName, title: info.holidayName })
-  } else if (showLunarFestival.value && info.lunarFestival) {
-    // 农历节日（当没有法定节假日时显示）
+  } else if (showLunarFestival.value && info.lunarFestival && !badges.some(b => b.type === 'rest')) {
+    // 优先级 3：农历节日（当没有法定节假日和休徽标时显示）
     badges.push({ type: 'festival', text: info.lunarFestival, title: info.lunarFestival })
   }
 
-  // 节气（独立显示）
+  // 优先级 4：节气（独立显示）
   if (showSolarTerm.value && info.solarTerm) {
     badges.push({ type: 'solar-term', text: info.solarTerm, title: info.solarTerm })
   }
 
-  // 补休/调休（独立显示）
-  if (showMakeupDay.value && info.isWorkDay) {
-    badges.push({ type: 'makeup', text: '补', title: info.workDayName || '补班' })
-  }
-
-  return badges
+  return badges.slice(0, 3)
 }
 
 function getEventColor(event: CalendarEvent): string {
@@ -284,6 +327,49 @@ function getCalendarColor(calendarId: string): string {
 function selectDay(day: Date) {
   calendarStore.selectDate(day)
   calendarStore.navigateToDate(day)
+}
+
+/** 日期单元格右键菜单 */
+function handleDayContextMenu(event: MouseEvent, day: Date) {
+  event.preventDefault()
+  const eventsForDay = getEventsForDay(day)
+  contextMenuState.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    date: day,
+    eventCount: eventsForDay.length,
+    todoCount: 0, // 待办功能后续集成
+  }
+}
+
+/** 处理右键菜单动作 */
+function handleContextMenuAction(action: DateCellMenuAction) {
+  const date = contextMenuState.value.date
+  switch (action) {
+    case 'viewEvents':
+      emit('view-day-schedules', date)
+      break
+    case 'createEvent':
+      emit('create-event', date)
+      break
+    case 'viewTodos':
+      emit('view-todos', date)
+      break
+    case 'createTodo':
+      emit('create-todo', date)
+      break
+    case 'switchToDayView':
+      calendarStore.selectDate(date)
+      calendarStore.navigateToDate(date)
+      calendarStore.setView('day')
+      break
+    case 'switchToWeekView':
+      calendarStore.selectDate(date)
+      calendarStore.navigateToDate(date)
+      calendarStore.setView('week')
+      break
+  }
 }
 </script>
 
@@ -340,28 +426,12 @@ function selectDay(day: Date) {
   color: var(--text-tertiary);
 }
 
-/* 周末 - 极浅绿色 */
-.day-cell.weekend:not(.holiday):not(.workday) {
-  background: rgba(220, 252, 231, 0.35);
-}
-
-/* 法定节假日 - 极浅绿色，带左侧色条 */
-.day-cell.holiday {
-  background: rgba(220, 252, 231, 0.4);
-  border-left: 3px solid #86efac;
-}
-
-/* 补班日 - 极浅红色，带左侧色条 */
-.day-cell.workday {
-  background: rgba(254, 226, 226, 0.35);
-  border-left: 3px solid #fca5a5;
-}
-
 /* 今天 - 主题色 */
 .day-cell.today {
   background: var(--accent-light);
-  outline: 2px solid var(--accent-color);
-  outline-offset: -2px;
+  outline: 1.5px solid var(--accent-color);
+  outline-offset: -1.5px;
+  border-radius: var(--radius-md);
 }
 
 /* 修复 today 格子跨天事件横条对齐问题 */
@@ -502,22 +572,21 @@ function selectDay(day: Date) {
   color: #16a34a;
 }
 
+.badge.rest {
+  background: #dcfce7;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.badge.makeup {
+  background: #fee2e2;
+  color: #dc2626;
+  font-weight: 600;
+}
+
 @media (prefers-color-scheme: dark) {
-  /* 周末 - 深色模式极浅绿色 */
-  .day-cell.weekend:not(.holiday):not(.workday) {
-    background: rgba(34, 197, 94, 0.08);
-  }
-
-  /* 法定节假日 - 深色模式极浅绿色 */
-  .day-cell.holiday {
-    background: rgba(34, 197, 94, 0.1);
-    border-left-color: #86efac;
-  }
-
-  /* 补班日 - 深色模式极浅红色 */
-  .day-cell.workday {
-    background: rgba(239, 68, 68, 0.1);
-    border-left-color: #fca5a5;
+  .day-cell.today {
+    background: var(--accent-light);
   }
 
   .badge.festival,
@@ -533,6 +602,16 @@ function selectDay(day: Date) {
 
   .badge.solar-term {
     background: rgba(22, 163, 74, 0.15);
+  }
+
+  .badge.rest {
+    background: rgba(34, 197, 94, 0.15);
+    color: #86efac;
+  }
+
+  .badge.makeup {
+    background: rgba(239, 68, 68, 0.15);
+    color: #fca5a5;
   }
 }
 </style>

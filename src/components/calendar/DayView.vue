@@ -4,18 +4,19 @@
       <h3>{{ formattedDate }}</h3>
     </div>
 
-    <!-- All day events -->
+    <!-- 全天事件区域（内联排列） -->
     <div v-if="allDayEvents.length > 0" class="all-day-section">
       <div class="all-day-label">全天</div>
       <div class="all-day-events">
         <div
           v-for="event in allDayEvents"
           :key="event.id"
-          class="day-event all-day"
-          :style="{ background: getEventColor(event) }"
+          class="all-day-event"
+          :style="{ borderLeftColor: getEventColor(event), backgroundColor: getEventColor(event) + '18' }"
           @click.stop="emit('edit-event', event)"
+          @contextmenu="handleEventContextMenu($event, event)"
         >
-          {{ event.title }}
+          <span class="all-day-event-title">{{ event.title }}</span>
         </div>
       </div>
     </div>
@@ -45,6 +46,7 @@
             class="day-event timed"
             :style="{ top: layout.top, height: layout.height, left: layout.left, width: layout.width, background: layout.background }"
             @click.stop="emit('edit-event', layout.event)"
+            @contextmenu="handleEventContextMenu($event, layout.event)"
           >
             <div class="event-time">{{ formatEventTime(layout.event) }}</div>
             <div class="event-title">{{ layout.event.title }}</div>
@@ -52,6 +54,14 @@
         </div>
       </div>
     </div>
+
+    <!-- 事件块右键菜单 -->
+    <EventBlockContextMenu
+      v-model:visible="eventContextMenuVisible"
+      :x="eventContextMenuState.x"
+      :y="eventContextMenuState.y"
+      @action="handleEventContextMenuAction"
+    />
   </div>
 </template>
 
@@ -60,10 +70,13 @@ import { computed, ref } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
 import { formatDateLocale, formatTime, isSameDay } from '../../utils/date'
 import type { CalendarEvent } from '../../types'
+import EventBlockContextMenu from './EventBlockContextMenu.vue'
+import type { EventBlockMenuAction } from '../../types'
 
 const emit = defineEmits<{
   'edit-event': [event: CalendarEvent]
   'create-event': [startHour: number, endHour: number]
+  'delete-event': [event: CalendarEvent]
 }>()
 
 const calendarStore = useCalendarStore()
@@ -72,6 +85,18 @@ const calendarStore = useCalendarStore()
 const isDragging = ref(false)
 const dragStartHour = ref(0)
 const dragEndHour = ref(0)
+
+// 事件块右键菜单状态
+const eventContextMenuVisible = computed({
+  get: () => eventContextMenuState.value.visible,
+  set: (val: boolean) => { eventContextMenuState.value.visible = val }
+})
+const eventContextMenuState = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  event: null as CalendarEvent | null,
+})
 
 const hours = Array.from({ length: 24 }, (_, i) => i)
 
@@ -94,6 +119,7 @@ const timedEvents = computed(() => {
 })
 
 function getEventColor(event: CalendarEvent): string {
+  if (event.color) return event.color
   const calendar = calendarStore.calendars.find(c => c.id === event.calendarId)
   return calendar?.color || '#4A90D9'
 }
@@ -219,6 +245,33 @@ function handleMouseUp(_hour: number, event: MouseEvent) {
   dragStartHour.value = 0
   dragEndHour.value = 0
 }
+
+/** 事件块右键菜单 */
+function handleEventContextMenu(event: MouseEvent, calendarEvent: CalendarEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  eventContextMenuState.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    event: calendarEvent,
+  }
+}
+
+/** 处理事件块右键菜单动作 */
+function handleEventContextMenuAction(action: EventBlockMenuAction) {
+  const event = eventContextMenuState.value.event
+  if (!event) return
+  switch (action) {
+    case 'edit':
+    case 'detail':
+      emit('edit-event', event)
+      break
+    case 'delete':
+      emit('delete-event', event)
+      break
+  }
+}
 </script>
 
 <style scoped>
@@ -241,11 +294,12 @@ function handleMouseUp(_hour: number, event: MouseEvent) {
   font-size: 16px;
 }
 
-/* All day section */
+/* 全天事件区域 */
 .all-day-section {
   display: flex;
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
+  padding: 4px 0;
 }
 
 .all-day-label {
@@ -259,23 +313,34 @@ function handleMouseUp(_hour: number, event: MouseEvent) {
 
 .all-day-events {
   flex: 1;
-  padding: 4px;
+  padding: 2px 4px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
 }
 
-.day-event.all-day {
-  background: var(--accent-color);
-  color: white;
+.all-day-event {
+  display: flex;
+  align-items: center;
+  border-left: 3px solid var(--accent-color);
   border-radius: 4px;
-  padding: 6px 10px;
+  padding: 4px 8px;
   cursor: pointer;
-  transition: opacity var(--transition-fast);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
 
-.day-event.all-day:hover {
-  opacity: 0.9;
+.all-day-event:hover {
+  opacity: 0.85;
+  transform: scale(1.01);
+}
+
+.all-day-event-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .day-body {

@@ -16,7 +16,7 @@
       </div>
     </div>
 
-    <!-- All day events row -->
+    <!-- 全天事件区域 -->
     <div class="all-day-row">
       <div class="time-gutter">
         <div class="all-day-label">全天</div>
@@ -26,11 +26,12 @@
           <div
             v-for="event in getAllDayEvents(day.date)"
             :key="event.id"
-            class="week-event all-day"
-            :style="{ background: getEventColor(event) }"
+            class="all-day-event"
+            :style="{ borderLeftColor: getEventColor(event), backgroundColor: getEventColor(event) + '18' }"
             @click.stop="emit('edit-event', event)"
+            @contextmenu="handleEventContextMenu($event, event)"
           >
-            {{ event.title }}
+            <span class="all-day-event-title">{{ event.title }}</span>
           </div>
         </div>
       </div>
@@ -65,6 +66,7 @@
               class="week-event timed"
               :style="{ top: `${layout.top}px`, height: `${layout.height}px`, left: layout.left, width: layout.width, background: layout.background }"
               @click.stop="emit('edit-event', layout.event)"
+              @contextmenu="handleEventContextMenu($event, layout.event)"
             >
               <div class="event-time">{{ formatEventTime(layout.event) }}</div>
               <div class="event-title">{{ layout.event.title }}</div>
@@ -73,6 +75,13 @@
         </div>
       </div>
     </div>
+    <!-- 事件块右键菜单 -->
+    <EventBlockContextMenu
+      v-model:visible="eventContextMenuVisible"
+      :x="eventContextMenuState.x"
+      :y="eventContextMenuState.y"
+      @action="handleEventContextMenuAction"
+    />
   </div>
 </template>
 
@@ -82,10 +91,13 @@ import { useCalendarStore } from '../../stores/calendar'
 import { useSettingsStore } from '../../stores/settings'
 import { isSameDay, isToday as isTodayFn, startOfWeek, getWeekDays, formatTime } from '../../utils/date'
 import type { CalendarEvent } from '../../types'
+import EventBlockContextMenu from './EventBlockContextMenu.vue'
+import type { EventBlockMenuAction } from '../../types'
 
 const emit = defineEmits<{
   'edit-event': [event: CalendarEvent]
   'create-event': [date: Date, startHour: number, endHour: number]
+  'delete-event': [event: CalendarEvent]
 }>()
 
 const calendarStore = useCalendarStore()
@@ -96,6 +108,18 @@ const isDragging = ref(false)
 const dragStartDay = ref<Date | null>(null)
 const dragStartHour = ref(0)
 const dragEndHour = ref(0)
+
+// 事件块右键菜单状态
+const eventContextMenuVisible = computed({
+  get: () => eventContextMenuState.value.visible,
+  set: (val: boolean) => { eventContextMenuState.value.visible = val }
+})
+const eventContextMenuState = ref({
+  visible: false,
+  x: 0,
+  y: 0,
+  event: null as CalendarEvent | null,
+})
 
 const hours = Array.from({ length: 24 }, (_, i) => i)
 
@@ -136,6 +160,7 @@ function getTimedEvents(day: Date): CalendarEvent[] {
 }
 
 function getEventColor(event: CalendarEvent): string {
+  if (event.color) return event.color
   const calendar = calendarStore.calendars.find(c => c.id === event.calendarId)
   return calendar?.color || '#4A90D9'
 }
@@ -269,6 +294,33 @@ function formatEventTime(event: CalendarEvent): string {
   const end = formatTime(new Date(event.endTime))
   return `${start}-${end}`
 }
+
+/** 事件块右键菜单 */
+function handleEventContextMenu(event: MouseEvent, calendarEvent: CalendarEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+  eventContextMenuState.value = {
+    visible: true,
+    x: event.clientX,
+    y: event.clientY,
+    event: calendarEvent,
+  }
+}
+
+/** 处理事件块右键菜单动作 */
+function handleEventContextMenuAction(action: EventBlockMenuAction) {
+  const event = eventContextMenuState.value.event
+  if (!event) return
+  switch (action) {
+    case 'edit':
+    case 'detail':
+      emit('edit-event', event)
+      break
+    case 'delete':
+      emit('delete-event', event)
+      break
+  }
+}
 </script>
 
 <style scoped>
@@ -332,7 +384,7 @@ function formatEventTime(event: CalendarEvent): string {
   margin-top: 2px;
 }
 
-/* All day row */
+/* 全天事件区域 */
 .all-day-row {
   display: flex;
   border-bottom: 1px solid var(--border-color);
@@ -355,26 +407,34 @@ function formatEventTime(event: CalendarEvent): string {
 .day-all-day {
   flex: 1;
   border-left: 1px solid var(--border-color);
-  padding: 2px;
+  padding: 2px 4px;
   min-height: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-.week-event.all-day {
-  background: var(--accent-color);
-  color: white;
+.all-day-event {
+  display: flex;
+  align-items: center;
+  border-left: 3px solid var(--accent-color);
   border-radius: 3px;
   padding: 2px 6px;
-  font-size: 10px;
-  margin-bottom: 2px;
   cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   transition: opacity var(--transition-fast);
 }
 
-.week-event.all-day:hover {
-  opacity: 0.9;
+.all-day-event:hover {
+  opacity: 0.85;
+}
+
+.all-day-event-title {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Week body */

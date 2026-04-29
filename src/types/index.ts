@@ -244,8 +244,8 @@ export interface WindowToggleRequest {
 
 // 通用右键菜单项
 export interface MenuItem {
-  /** 菜单项标签 */
-  label: string
+  /** 菜单项标签（分隔线时可省略） */
+  label?: string
   /** 图标（emoji 或图标名称） */
   icon?: string
   /** 是否为分隔线 */
@@ -281,4 +281,29 @@ export interface UserHolidayEntry {
   source: 'custom' | 'api'
   /** 创建时间（Unix 时间戳，秒） */
   created_at: number
+}
+
+// ────────────────────────────────────────────
+// 日历 UI 优化相关类型 (Issue #40)
+// ────────────────────────────────────────────
+
+/** 日期单元格右键菜单动作 */
+export type DateCellMenuAction =
+  | 'viewEvents'
+  | 'createEvent'
+  | 'viewTodos'
+  | 'createTodo'
+  | 'switchToDayView'
+  | 'switchToWeekView'
+
+/** 事件块右键菜单动作 */
+export type EventBlockMenuAction = 'edit' | 'detail' | 'delete'
+
+/** 休息日徽标类型 */
+export type RestBadgeType = 'rest' | 'makeup'
+
+/** 休息日徽标配置常量 */
+export const REST_BADGE_CONFIG: Record<RestBadgeType, { text: string; cssClass: string; priority: number }> = {
+  rest: { text: '休', cssClass: 'badge-rest', priority: 1 },
+  makeup: { text: '补', cssClass: 'badge-makeup', priority: 1 }
 }
