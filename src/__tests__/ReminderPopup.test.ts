@@ -234,8 +234,9 @@ describe('ReminderPopup 组件', () => {
 
       await wrapper.find('.btn-snooze').trigger('click')
 
+      // 稍后提醒只触发 snooze，不触发 dismiss（由父组件控制窗口隐藏）
       expect(wrapper.emitted('snooze')).toBeTruthy()
-      expect(wrapper.emitted('dismiss')).toBeTruthy()
+      expect(wrapper.emitted('dismiss')).toBeFalsy()
     })
 
     it('点击标记完成应该触发 complete 事件', async () => {

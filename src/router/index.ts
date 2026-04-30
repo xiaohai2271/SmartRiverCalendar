@@ -52,4 +52,9 @@ const router = createRouter({
   ]
 })
 
+// 调试：路由导航完成后打印当前路由
+router.afterEach((to) => {
+  console.log('[Router] 导航完成 →', to.fullPath, '| 路由名:', to.name, '| BASE_URL:', import.meta.env.BASE_URL)
+})
+
 export default router

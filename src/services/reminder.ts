@@ -344,27 +344,38 @@ async function showReminderInWindow(data: ReminderQueueItem): Promise<void> {
       // 检查窗口是否可见
       const isVisible = await reminderWindow.isVisible()
 
+      // 无论窗口是否可见，都需要定位
+      const { positionReminderWindow } = await import('@/composables/useReminderPopup')
+
       if (!isVisible) {
-        // 窗口存在但不可见，显示窗口
+        // 先定位窗口，再显示（避免白屏闪烁）
+        await positionReminderWindow(reminderWindow)
+
+        // 显示窗口（此时已在正确位置）
         await reminderWindow.show()
         await reminderWindow.setFocus()
         console.log('[reminder] 提醒窗口已显示')
-      }
 
-      // 等待提醒窗口就绪（避免事件在监听器设置前发送）
-      console.log('[reminder] 等待提醒窗口就绪...')
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          console.log('[reminder] 等待窗口就绪超时，强制继续')
-          resolve()
-        }, 5000)
+        // 等待提醒窗口就绪（仅在窗口刚显示时等待，避免事件在监听器设置前发送）
+        console.log('[reminder] 等待提醒窗口就绪...')
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            console.log('[reminder] 等待窗口就绪超时，强制继续')
+            resolve()
+          }, 5000)
 
-        listen('reminder-window-ready', () => {
-          console.log('[reminder] 提醒窗口已就绪')
-          clearTimeout(timeout)
-          resolve()
+          listen('reminder-window-ready', () => {
+            console.log('[reminder] 提醒窗口已就绪')
+            clearTimeout(timeout)
+            resolve()
+          })
         })
-      })
+      } else {
+        // 窗口已可见，重新定位并直接发送事件
+        console.log('[reminder] 提醒窗口已可见，重新定位并发送事件')
+        await positionReminderWindow(reminderWindow)
+        await reminderWindow.setFocus()
+      }
 
       // 发送提醒事件到窗口
       await tauriEmit('show-reminder', {
@@ -460,6 +471,7 @@ function getSnoozeTime(id: string): number | null {
   if (value) {
     const timestamp = parseInt(value, 10)
     if (!isNaN(timestamp)) {
+      console.log(`[reminder] 获取稍后提醒: ${id}, 时间: ${new Date(timestamp).toLocaleString()}, key: ${key}`)
       return timestamp
     }
   }
@@ -474,6 +486,7 @@ function getSnoozeTime(id: string): number | null {
 function setSnoozeTime(id: string, timestamp: number): void {
   const key = generateSnoozeKey(id)
   localStorage.setItem(key, timestamp.toString())
+  console.log(`[reminder] 设置稍后提醒: ${id}, 时间: ${new Date(timestamp).toLocaleString()}, key: ${key}`)
 }
 
 /**
@@ -660,31 +673,30 @@ async function sendReminderNotification(
       }
     }
 
-    // 根据提醒强度决定是否发送系统通知
-    // standard 和 strong 模式发送系统通知，silent 模式不发送
-    if (mode !== 'silent') {
+    // 根据提醒强度决定提醒方式
+    if (mode === 'strong') {
+      // 强提醒：使用提醒窗口，不发送系统通知
+      const popupId = `popup_${itemId}_${triggerTime}`
+      enqueueReminder({
+        id: popupId,
+        type,
+        title,
+        body,
+        triggerTime,
+        itemId,
+        itemData
+      })
+
+      // 尝试显示下一个提醒（如果当前没有显示的）
+      processNextReminder()
+
+      // 闪烁任务栏标题
+      startBlinkTitle(title)
+    } else if (mode === 'standard') {
+      // 标准提醒：只发送系统通知，不显示提醒窗口
       await sendNotification({ title, body })
     }
-
-    // 入队而不是直接显示（实现排队逻辑）
-    const popupId = `popup_${itemId}_${triggerTime}`
-    enqueueReminder({
-      id: popupId,
-      type,
-      title,
-      body,
-      triggerTime,
-      itemId,
-      itemData
-    })
-
-    // 尝试显示下一个提醒（如果当前没有显示的）
-    processNextReminder()
-
-    // strong 模式额外闪烁任务栏标题
-    if (mode === 'strong') {
-      startBlinkTitle(title)
-    }
+    // silent 模式：都不展示
   } catch (error) {
     console.error('发送提醒通知失败:', error)
   }
@@ -744,9 +756,11 @@ function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSetti
   if (snoozeTime !== null) {
     if (now >= snoozeTime) {
       // 稍后提醒时间已到，返回 true（稍后提醒将在 checkAndSendReminders 中清除）
+      console.log(`[reminder] 事件 ${event.id} 稍后提醒时间已到: ${new Date(snoozeTime).toLocaleString()}`)
       return true
     }
     // 稍后提醒时间未到，不触发提醒
+    console.log(`[reminder] 事件 ${event.id} 稍后提醒时间未到: ${new Date(snoozeTime).toLocaleString()}, 当前: ${new Date(now).toLocaleString()}`)
     return false
   }
 
@@ -955,6 +969,7 @@ export function handleSnoozeReminder(
   itemId: string,
   snoozeTime: number
 ): void {
+  console.log(`[reminder] handleSnoozeReminder 被调用: itemId=${itemId}, snoozeTime=${new Date(snoozeTime).toLocaleString()}`)
   setSnoozeTime(itemId, snoozeTime)
 }
 

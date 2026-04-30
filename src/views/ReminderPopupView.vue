@@ -12,7 +12,7 @@
  * 路由路径: /reminder-popup
  */
 import { ref, onMounted, onUnmounted } from 'vue'
-import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import { useSettingsStore } from '@/stores/settings'
 import * as settingsService from '@/services/settings'
@@ -28,8 +28,8 @@ const settingsStore = useSettingsStore()
 // 当前显示的提醒数据
 const currentReminder = ref<ReminderPopupData | null>(null)
 
-// 加载状态
-const isLoading = ref(true)
+// 是否已收到过提醒数据（用于控制空状态显示）
+const hasReceivedReminder = ref(false)
 
 // 事件监听器清理函数
 let unlistenReminder: (() => void) | null = null
@@ -77,7 +77,7 @@ async function applyPopupTheme(theme?: 'light' | 'dark' | 'auto') {
 function handleReminderReceived(reminder: ReminderPopupData) {
   console.log('[ReminderPopupView] 收到提醒:', reminder.title)
   currentReminder.value = reminder
-  isLoading.value = false
+  hasReceivedReminder.value = true
 }
 
 // ==================== 用户操作处理 ====================
@@ -108,10 +108,12 @@ async function handleDismiss() {
 async function handleSnooze(snoozeTime: number) {
   console.log('[ReminderPopupView] 稍后提醒:', new Date(snoozeTime).toLocaleString())
 
-  // 发送事件到主窗口
+  // 发送事件到主窗口（必须包含 itemId）
   await tauriEmit('reminder-action', {
     action: 'snooze',
     reminderId: currentReminder.value?.id,
+    itemId: currentReminder.value?.itemId,
+    type: currentReminder.value?.type,
     snoozeTime
   })
 
@@ -170,23 +172,27 @@ async function handleView() {
 // ==================== 生命周期 ====================
 
 onMounted(async () => {
-  console.log('[ReminderPopupView] 视图挂载')
+  console.log('[ReminderPopupView] 视图挂载，当前窗口 label:', getCurrentWebviewWindow().label)
 
   // 应用初始主题
   await applyPopupTheme()
 
-  // 定位窗口到右下角
-  await positionReminderWindow(getCurrentWebviewWindow())
-
-  // 监听来自主窗口的提醒事件
+  // 监听来自主窗口的提醒事件（先注册监听器，避免遗漏事件）
   unlistenReminder = await listen<ReminderPopupData>('show-reminder', (event) => {
     handleReminderReceived(event.payload)
   })
 
-  // 告知主窗口：提醒窗口已准备好接收事件
+  // 定位窗口到右下角（必须 await，确保定位完成）
+  const reminderWindow = await WebviewWindow.getByLabel('reminder-popup')
+  if (reminderWindow) {
+    await positionReminderWindow(reminderWindow)
+  }
+
+  // 告知主窗口：提醒窗口已准备好接收事件（定位完成后再发送）
   await tauriEmit('reminder-window-ready')
 
   console.log('[ReminderPopupView] 已准备好接收提醒事件')
+  
 })
 
 onUnmounted(() => {
@@ -202,12 +208,10 @@ onUnmounted(() => {
 
 <template>
   <div class="reminder-popup-view">
-    <!-- 加载状态 -->
-    <div v-if="isLoading" class="loading-overlay">
-      <span class="loading-text">等待提醒...</span>
-    </div>
+    <!-- 未收到提醒数据前不显示任何内容 -->
+    <div v-if="!hasReceivedReminder" class="waiting-state"></div>
 
-    <!-- 空状态 -->
+    <!-- 空状态（提醒被关闭后） -->
     <div v-else-if="!currentReminder" class="empty-state">
       <span class="empty-icon">🔔</span>
       <span class="empty-text">暂无提醒</span>
@@ -217,7 +221,7 @@ onUnmounted(() => {
     <div v-else class="reminder-container">
       <ReminderPopup
         :reminder="currentReminder"
-        reminder-mode="standard"
+        reminder-mode="strong"
         @dismiss="handleDismiss"
         @snooze="handleSnooze"
         @complete="handleComplete"
@@ -235,12 +239,16 @@ onUnmounted(() => {
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: var(--bg-primary);
+  background: transparent;
   overflow: hidden;
   position: relative;
 }
 
-.loading-overlay,
+.waiting-state {
+  width: 100%;
+  height: 100%;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -248,15 +256,9 @@ onUnmounted(() => {
   justify-content: center;
   gap: 16px;
   color: var(--text-secondary);
-}
-
-.loading-text {
-  font-size: 14px;
-  color: var(--text-tertiary);
-}
-
-.empty-state {
   padding: 40px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-lg);
 }
 
 .empty-icon {
@@ -271,10 +273,10 @@ onUnmounted(() => {
 
 .reminder-container {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: center;
   width: 100%;
   height: 100%;
-  padding: 20px;
+  padding: 0;
 }
 </style>

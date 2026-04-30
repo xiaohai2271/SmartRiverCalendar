@@ -81,8 +81,7 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch, provide, ref } from 'vue'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
@@ -107,8 +106,15 @@ const showUpdateDialog = ref(false)
 const updateInfo = ref<import('@/types').UpdateInfo | null>(null)
 const isUpdating = ref(false)
 
-// 检测当前是否为弹出窗口
-const isPopupWindow = getCurrentWindow().label === 'calendar-popup' || getCurrentWindow().label === 'reminder-popup'
+// 检测当前是否为弹出窗口（安全防护：API 不可用时默认为主窗口）
+let currentWindowLabel = 'main'
+try {
+  currentWindowLabel = getCurrentWebviewWindow().label
+} catch (e) {
+  console.warn('[App.vue] 获取窗口 label 失败，使用默认值 "main":', e)
+}
+console.log('[App.vue] 当前窗口 label:', currentWindowLabel, '| isPopupWindow 判断值:', currentWindowLabel === 'calendar-popup' || currentWindowLabel === 'reminder-popup')
+const isPopupWindow = currentWindowLabel === 'calendar-popup' || currentWindowLabel === 'reminder-popup'
 
 // popup-navigate 事件监听器取消函数
 const unlistenPopupNavigate = ref<UnlistenFn | null>(null)
@@ -265,7 +271,7 @@ interface ReminderActionPayload {
 // 处理提醒窗口操作事件
 async function handleReminderAction(payload: ReminderActionPayload) {
   try {
-    console.log('[App] 收到提醒操作:', payload.action)
+    console.log('[App] 收到提醒操作:', payload.action, JSON.stringify(payload))
 
     // 显示并聚焦主窗口
     const mainWindow = await WebviewWindow.getByLabel('main')
@@ -286,10 +292,13 @@ async function handleReminderAction(payload: ReminderActionPayload) {
 
       case 'snooze':
         // 稍后提醒
+        console.log('[App] 稍后提醒参数:', { itemId: payload.itemId, snoozeTime: payload.snoozeTime })
         if (payload.itemId && payload.snoozeTime) {
           handleSnoozeReminder(payload.itemId, payload.snoozeTime)
           markReminderProcessed()
           console.log('[App] 稍后提醒已设置:', payload.itemId, new Date(payload.snoozeTime).toLocaleString())
+        } else {
+          console.warn('[App] 稍后提醒参数不完整:', payload)
         }
         break
 
@@ -329,11 +338,8 @@ async function handleReminderAction(payload: ReminderActionPayload) {
 }
 
 onMounted(async () => {
-  // 获取窗口标签
-  const windowLabel = getCurrentWindow().label
-  
   // 弹出窗口只做最小化初始化
-  if (windowLabel === 'calendar-popup') {
+  if (isPopupWindow) {
     calendarStore.initialize()
     applyTheme()
     return

@@ -140,9 +140,8 @@ let autoDismissTimeout: ReturnType<typeof setTimeout> | null = null
 const router = useRouter()
 const todoStore = useTodoStore()
 
-// 稍后提醒时间（毫秒）
-// 开发模式：30秒，生产模式：5分钟
-const SNOOZE_DURATION = import.meta.env.DEV ? 30 * 1000 : 5 * 60 * 1000
+// 稍后提醒时间（毫秒）- 统一使用5分钟
+const SNOOZE_DURATION = 5 * 60 * 1000
 
 // 计算实际显示时长
 const actualDuration = computed(() => {
@@ -221,23 +220,17 @@ function showToast(message: string, duration: number = 2000) {
 
 // 稍后提醒
 function snoozeReminder() {
+  // 先清除自动消失定时器，防止定时器触发 dismiss
+  clearTimers()
+
   const snoozeTime = Date.now() + SNOOZE_DURATION
 
-  // 发出稍后提醒事件
-  emit('snooze', snoozeTime)
-
-  // 动态生成提示消息
-  const snoozeMinutes = Math.floor(SNOOZE_DURATION / 60000)
-  const snoozeSeconds = Math.floor(SNOOZE_DURATION / 1000)
-  const toastMsg = import.meta.env.DEV
-    ? `${snoozeSeconds}秒后再提醒`
-    : `${snoozeMinutes}分钟后再提醒`
-
   // 显示提示消息
-  showToast(toastMsg)
+  showToast('5分钟后再提醒')
 
-  // 立即关闭弹窗
-  dismissReminder()
+  // 只发出 snooze 事件，不调用 dismissReminder()
+  // 由 ReminderPopupView 的 handleSnooze 控制窗口隐藏
+  emit('snooze', snoozeTime)
 }
 
 // 标记待办完成
@@ -296,7 +289,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 单个提醒弹窗 - 独立窗口中居中显示 */
+/* 弹窗样式 - 适配独立窗口（320x160） */
 .reminder-popup {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -308,7 +301,9 @@ onUnmounted(() => {
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   width: 100%;
-  max-width: 380px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 待办类型弹窗的特殊样式 */
@@ -319,13 +314,14 @@ onUnmounted(() => {
 /* 弹窗头部 */
 .popup-header {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px 16px 12px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
 }
 
 .popup-icon {
-  font-size: 24px;
+  font-size: 20px;
   flex-shrink: 0;
   line-height: 1;
 }
@@ -336,16 +332,18 @@ onUnmounted(() => {
 }
 
 .popup-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.3;
-  margin-bottom: 4px;
   word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .popup-time {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
 }
 
@@ -369,23 +367,31 @@ onUnmounted(() => {
 
 /* 弹窗内容 */
 .popup-body {
-  padding: 0 16px 12px;
+  padding: 0 12px 6px;
+  flex: 1;
+  overflow: hidden;
 }
 
 .popup-description {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.4;
   word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-/* 操作按钮 */
+/* 操作按钮 - 始终水平排列 */
 .popup-actions {
   display: flex;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 6px;
+  padding: 8px 12px;
   background: var(--bg-tertiary);
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .popup-btn {
@@ -393,13 +399,13 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 4px;
+  padding: 6px 8px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -416,7 +422,7 @@ onUnmounted(() => {
 }
 
 .btn-icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* 稍后提醒按钮 */
@@ -446,6 +452,7 @@ onUnmounted(() => {
   background: var(--bg-tertiary);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .progress-bar {
@@ -535,27 +542,6 @@ onUnmounted(() => {
   to {
     opacity: 0;
     transform: translateX(-50%) translateY(10px);
-  }
-}
-
-/* 响应式适配 */
-@media (max-width: 480px) {
-  .reminder-popup {
-    max-width: none;
-    margin: 10px;
-  }
-
-  .popup-actions {
-    flex-wrap: wrap;
-  }
-
-  .popup-btn {
-    flex: 1 1 calc(50% - 4px);
-    min-width: 0;
-  }
-
-  .popup-btn:last-child {
-    flex: 1 1 100%;
   }
 }
 </style>

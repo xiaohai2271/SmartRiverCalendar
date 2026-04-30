@@ -41,7 +41,7 @@
         "label": "reminder-popup",
         "title": "提醒",
         "width": 320,
-        "height": 200,
+        "height": 160,
         "decorations": false,
         "transparent": false,
         "skipTaskbar": true,

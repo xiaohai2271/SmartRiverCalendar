@@ -604,7 +604,7 @@ describe('提醒服务', () => {
       expect(mockSendNotification).toHaveBeenCalledTimes(1)
     })
 
-    it('强提醒模式应该发送通知', async () => {
+    it('强提醒模式应该使用提醒窗口（不发送系统通知）', async () => {
       const now = Date.now()
       const eventStartTime = now + 15 * 60 * 1000
 
@@ -625,7 +625,8 @@ describe('提醒服务', () => {
       vi.setSystemTime(now)
       await reminderService.triggerReminderCheck()
 
-      expect(mockSendNotification).toHaveBeenCalledTimes(1)
+      // 强提醒模式不发送系统通知，只使用提醒窗口
+      expect(mockSendNotification).not.toHaveBeenCalled()
     })
 
     it('静默模式应该发送通知（Tauri暂不支持静默）', async () => {

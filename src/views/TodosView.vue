@@ -288,10 +288,19 @@ function openAddModal() {
 function openEditModal(todo: Todo) {
   isEditing.value = true
   editingTodoId.value = todo.id
+  // 格式化为本地时间的日期字符串
+  let dueDateStr = ''
+  if (todo.dueDate) {
+    const date = new Date(todo.dueDate)
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    dueDateStr = `${year}-${month}-${day}`
+  }
   formData.value = {
     title: todo.title,
     priority: todo.priority,
-    dueDate: todo.dueDate ? new Date(todo.dueDate).toISOString().split('T')[0] : '',
+    dueDate: dueDateStr,
     calendarId: todo.calendarId || getFirstWritableCalendarId()
   }
   showModal.value = true
@@ -308,19 +317,26 @@ async function handleSubmit() {
   const title = formData.value.title.trim()
   if (!title) return
 
+  // 解析日期字符串为本地时间（避免UTC偏移）
+  function parseLocalDate(dateStr: string): number | undefined {
+    if (!dateStr) return undefined
+    const [year, month, day] = dateStr.split('-').map(Number)
+    return new Date(year, month - 1, day).getTime()
+  }
+
   if (isEditing.value && editingTodoId.value) {
     // 编辑模式
     await todoStore.updateTodo(editingTodoId.value, {
       title,
       priority: formData.value.priority,
-      dueDate: formData.value.dueDate ? new Date(formData.value.dueDate).getTime() : undefined
+      dueDate: parseLocalDate(formData.value.dueDate)
     })
   } else {
     // 新建模式
     await todoStore.addTodo({
       title,
       priority: formData.value.priority,
-      dueDate: formData.value.dueDate ? new Date(formData.value.dueDate).getTime() : undefined,
+      dueDate: parseLocalDate(formData.value.dueDate),
       completed: false,
       calendarId: formData.value.calendarId || getFirstWritableCalendarId()
     })

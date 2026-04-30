@@ -44,6 +44,27 @@ vi.mock('@tauri-apps/api/window', () => ({
       this.y = y
     }
   },
+  PhysicalSize: class PhysicalSize {
+    width: number
+    height: number
+    constructor(width: number, height: number) {
+      this.width = width
+      this.height = height
+    }
+  },
+  LogicalSize: class LogicalSize {
+    width: number
+    height: number
+    constructor(width: number, height: number) {
+      this.width = width
+      this.height = height
+    }
+  },
+}))
+
+// 模拟事件 API
+vi.mock('@tauri-apps/api/event', () => ({
+  listen: vi.fn().mockResolvedValue(() => {}),
 }))
 
 /**
@@ -51,10 +72,12 @@ vi.mock('@tauri-apps/api/window', () => ({
  * @param options 配置选项
  * @param options.visible 窗口初始可见状态（默认 false）
  * @param options.position 窗口初始位置（默认 { x: 0, y: 0 }）
+ * @param options.size 窗口初始尺寸（默认 { width: 320, height: 160 }）
  */
-function createMockReminderWindow(options: { visible?: boolean; position?: { x: number; y: number } } = {}) {
+function createMockReminderWindow(options: { visible?: boolean; position?: { x: number; y: number }; size?: { width: number; height: number } } = {}) {
   let visible = options.visible ?? false
   const position = options.position ?? { x: 0, y: 0 }
+  const size = options.size ?? { width: 320, height: 160 }
   mockIsVisible.mockImplementation(() => Promise.resolve(visible))
   mockShow.mockImplementation(async () => { visible = true })
   mockHide.mockImplementation(async () => { visible = false })
@@ -66,7 +89,9 @@ function createMockReminderWindow(options: { visible?: boolean; position?: { x: 
     setFocus: mockSetFocus,
     isVisible: mockIsVisible,
     setPosition: vi.fn(),
+    setSize: vi.fn(),
     innerPosition: mockInnerPosition,
+    innerSize: vi.fn().mockResolvedValue(size),
   }
 }
 
@@ -218,8 +243,8 @@ describe('useReminderPopup', () => {
 
       // 右边缘对齐：0 + 1920 - 320 - 8 = 1592
       expect(position.x).toBe(1592)
-      // 底部对齐（工作区域）：0 + 1032 - 200 - 8 = 824
-      expect(position.y).toBe(824)
+      // 底部对齐（工作区域）：0 + 1032 - 160 - 8 = 864
+      expect(position.y).toBe(864)
     })
 
     it('处理多显示器坐标系统', async () => {
@@ -240,8 +265,8 @@ describe('useReminderPopup', () => {
 
       // 右边缘对齐：1920 + 1920 - 320 - 8 = 3512
       expect(position.x).toBe(3512)
-      // 底部对齐：0 + 1032 - 200 - 8 = 824
-      expect(position.y).toBe(824)
+      // 底部对齐：0 + 1032 - 160 - 8 = 864
+      expect(position.y).toBe(864)
     })
 
     it('任务栏在顶部时定位到右上角', async () => {
@@ -282,47 +307,48 @@ describe('useReminderPopup', () => {
 
       // 右边缘对齐（基于工作区域）：60 + 1860 - 320 - 8 = 1592
       expect(position.x).toBe(1592)
-      // 底部对齐（工作区域）：0 + 1080 - 200 - 8 = 872
-      expect(position.y).toBe(872)
+      // 底部对齐（工作区域）：0 + 1080 - 160 - 8 = 912
+      expect(position.y).toBe(912)
     })
   })
 
   describe('adjustPositionForPopup', () => {
-    it('精简面板未显示时返回基础位置', async () => {
+    it('精简面板未显示时返回基础位置和默认宽度', async () => {
       const { adjustPositionForPopup } = await import('../composables/useReminderPopup')
 
       const basePosition = { x: 1592, y: 824 }
       const adjusted = adjustPositionForPopup(basePosition, null)
 
-      // 精简面板未显示，位置不变
+      // 精简面板未显示，位置不变，使用默认宽度
       expect(adjusted.x).toBe(1592)
       expect(adjusted.y).toBe(824)
+      expect(adjusted.width).toBe(320) // 默认宽度
     })
 
-    it('精简面板显示时上移 POPUP_OFFSET（任务栏在底部）', async () => {
-      const { adjustPositionForPopup, getPopupOffset } = await import('../composables/useReminderPopup')
+    it('精简面板显示时紧贴其上方（任务栏在底部）', async () => {
+      const { adjustPositionForPopup } = await import('../composables/useReminderPopup')
 
       const basePosition = { x: 1592, y: 824 }
-      const calendarPopupPosition = { x: 1592, y: 600 }
-      const adjusted = adjustPositionForPopup(basePosition, calendarPopupPosition, 'bottom')
+      const calendarPopupInfo = { x: 1572, y: 500, width: 340, height: 480 }
+      const adjusted = adjustPositionForPopup(basePosition, calendarPopupInfo, 'bottom')
 
-      const offset = getPopupOffset()
-      // 精简面板显示，上移 100px
-      expect(adjusted.x).toBe(1592)
-      expect(adjusted.y).toBe(824 - offset)
+      // 精简面板显示，提醒窗口紧贴其上方
+      expect(adjusted.x).toBe(1572) // X 与精简面板对齐
+      expect(adjusted.y).toBe(500 - 160 - 8) // 精简面板顶部 - 提醒窗口高度 - 间距
+      expect(adjusted.width).toBe(340) // 宽度与精简面板一致
     })
 
-    it('任务栏在顶部时精简面板显示下移 POPUP_OFFSET', async () => {
-      const { adjustPositionForPopup, getPopupOffset } = await import('../composables/useReminderPopup')
+    it('任务栏在顶部时精简面板显示下移', async () => {
+      const { adjustPositionForPopup } = await import('../composables/useReminderPopup')
 
       const basePosition = { x: 1592, y: 48 }
-      const calendarPopupPosition = { x: 1592, y: 100 }
-      const adjusted = adjustPositionForPopup(basePosition, calendarPopupPosition, 'top')
+      const calendarPopupInfo = { x: 1572, y: 100, width: 340, height: 480 }
+      const adjusted = adjustPositionForPopup(basePosition, calendarPopupInfo, 'top')
 
-      const offset = getPopupOffset()
-      // 任务栏在顶部，下移
-      expect(adjusted.x).toBe(1592)
-      expect(adjusted.y).toBe(48 + offset)
+      // 任务栏在顶部，提醒窗口显示在精简面板下方
+      expect(adjusted.x).toBe(1572) // X 与精简面板对齐
+      expect(adjusted.y).toBe(100 + 480 + 8) // 精简面板底部 + 间距
+      expect(adjusted.width).toBe(340) // 宽度与精简面板一致
     })
   })
 
@@ -435,7 +461,7 @@ describe('useReminderPopup', () => {
 
       const size = getReminderWindowSize()
       expect(size.width).toBe(320)
-      expect(size.height).toBe(200)
+      expect(size.height).toBe(160)
     })
   })
 
@@ -617,16 +643,18 @@ describe('精简面板协调定位', () => {
     vi.restoreAllMocks()
   })
 
-  it('精简面板显示时提醒窗口上移', async () => {
+  it('精简面板显示时提醒窗口紧贴其上方', async () => {
     // 创建精简面板窗口模拟（可见）
     const mockCalendarWindow = {
       isVisible: vi.fn().mockResolvedValue(true),
-      innerPosition: vi.fn().mockResolvedValue({ x: 1592, y: 600 }),
+      innerPosition: vi.fn().mockResolvedValue({ x: 1572, y: 500 }),
+      innerSize: vi.fn().mockResolvedValue({ width: 340, height: 480 }),
     }
 
     // 创建提醒窗口模拟
     const mockReminderWindow = createMockReminderWindow()
     const setPositionMock = mockReminderWindow.setPosition as ReturnType<typeof vi.fn>
+    const setSizeMock = mockReminderWindow.setSize as ReturnType<typeof vi.fn>
 
     // 设置 getByLabel 根据标签返回不同窗口
     mockGetByLabel.mockImplementation(async (label: string) => {
@@ -647,12 +675,15 @@ describe('精简面板协调定位', () => {
     // 验证 setPosition 被调用
     expect(setPositionMock).toHaveBeenCalled()
 
+    // 验证 setSize 被调用（宽度与精简面板一致）
+    expect(setSizeMock).toHaveBeenCalled()
+
     // 验证日志包含精简面板信息
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining('精简面板显示在')
     )
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('提醒窗口上移 100px')
+      expect.stringContaining('提醒窗口宽度调整为')
     )
   })
 
