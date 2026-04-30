@@ -36,6 +36,18 @@
         "alwaysOnTop": true,
         "visible": false,
         "url": "/calendar-popup"
+      },
+      {
+        "label": "reminder-popup",
+        "title": "提醒",
+        "width": 320,
+        "height": 200,
+        "decorations": false,
+        "transparent": false,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "visible": false,
+        "url": "/reminder-popup"
       }
     ],
     "security": {

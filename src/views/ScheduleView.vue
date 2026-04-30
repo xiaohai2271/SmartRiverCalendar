@@ -393,16 +393,6 @@ interface EventGroup {
   events: CalendarEvent[]
 }
 
-// 获取分组标题（YYYY年M月D日 周X 格式）
-function getGroupTitle(date: Date): string {
-  const weekDays = ['日', '一', '二', '三', '四', '五', '六']
-  const year = date.getFullYear()
-  const month = date.getMonth() + 1
-  const day = date.getDate()
-  const weekDay = weekDays[date.getDay()]
-  return `${year}年${month}月${day}日 周${weekDay}`
-}
-
 const groupedEvents = computed((): EventGroup[] => {
   // 获取基准日期（今天）
   const today = new Date()

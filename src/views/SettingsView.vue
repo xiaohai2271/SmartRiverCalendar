@@ -125,13 +125,6 @@ async function handleThemeChange(event: Event) {
   const newTheme = select.value as 'light' | 'dark' | 'auto'
   await settingsStore.updateSettings({ theme: newTheme })
 }
-
-/**
- * 保存设置
- */
-async function saveSettings() {
-  settingsStore.saveSettings()
-}
 </script>
 
 <style scoped>

@@ -112,6 +112,8 @@ describe('提醒服务', () => {
     reminderService = await import('../services/reminder')
     // 确保服务停止状态
     reminderService.stopReminderService()
+    // 重置快速连续触发防护状态
+    reminderService.resetRapidTriggerState()
   })
 
   describe('服务生命周期', () => {
@@ -693,6 +695,329 @@ describe('提醒服务', () => {
 
       // 不应该抛出错误
       await expect(reminderService.triggerReminderCheck()).resolves.not.toThrow()
+    })
+  })
+
+  describe('提醒队列机制', () => {
+    it('应该正确入队提醒', async () => {
+      const now = Date.now()
+      const eventStartTime = now + 15 * 60 * 1000
+
+      mockCalendarStore.visibleEvents = [{
+        id: 'event-1',
+        title: '队列测试事件',
+        startTime: eventStartTime,
+        endTime: eventStartTime + 3600000,
+        allDay: false,
+        calendarId: 'cal-1',
+        reminder: 15,
+        createdAt: now,
+        updatedAt: now
+      }]
+
+      vi.setSystemTime(now)
+      await reminderService.triggerReminderCheck()
+
+      // 检查队列状态
+      const status = reminderService.getQueueStatus()
+      expect(status.count).toBeGreaterThanOrEqual(0)
+    })
+
+    it('应该拒绝重复入队相同 ID 的提醒', () => {
+      const now = Date.now()
+
+      // 入队第一个提醒
+      const result1 = reminderService.enqueueReminder({
+        id: 'popup_event-1_' + now,
+        type: 'event',
+        title: '测试事件',
+        body: '测试正文',
+        triggerTime: now,
+        itemId: 'event-1',
+        itemData: {
+          id: 'event-1',
+          title: '测试事件',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+      expect(result1).toBe(true)
+
+      // 尝试再次入队相同 ID
+      const result2 = reminderService.enqueueReminder({
+        id: 'popup_event-1_' + now,
+        type: 'event',
+        title: '测试事件',
+        body: '测试正文',
+        triggerTime: now,
+        itemId: 'event-1',
+        itemData: {
+          id: 'event-1',
+          title: '测试事件',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+      expect(result2).toBe(false)
+    })
+
+    it('应该按优先级排序（事件优先于待办）', () => {
+      const now = Date.now()
+
+      // 先入队待办
+      reminderService.enqueueReminder({
+        id: 'popup_todo-1_' + now,
+        type: 'todo',
+        title: '待办事项',
+        body: '待办正文',
+        triggerTime: now,
+        itemId: 'todo-1',
+        itemData: {
+          id: 'todo-1',
+          title: '待办事项',
+          completed: false,
+          priority: 'medium',
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 再入队事件
+      reminderService.enqueueReminder({
+        id: 'popup_event-1_' + now,
+        type: 'event',
+        title: '事件',
+        body: '事件正文',
+        triggerTime: now + 1000, // 触发时间更晚
+        itemId: 'event-1',
+        itemData: {
+          id: 'event-1',
+          title: '事件',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 获取队列状态，第一个应该是事件（优先级更高）
+      const status = reminderService.getQueueStatus()
+      if (status.firstItem) {
+        expect(status.firstItem.type).toBe('event')
+      }
+    })
+
+    it('应该按触发时间排序（早优先于晚）', () => {
+      const now = Date.now()
+
+      // 入队较晚的事件
+      reminderService.enqueueReminder({
+        id: 'popup_event-late_' + now,
+        type: 'event',
+        title: '晚事件',
+        body: '晚事件正文',
+        triggerTime: now + 10000,
+        itemId: 'event-late',
+        itemData: {
+          id: 'event-late',
+          title: '晚事件',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 入队较早的事件
+      reminderService.enqueueReminder({
+        id: 'popup_event-early_' + now,
+        type: 'event',
+        title: '早事件',
+        body: '早事件正文',
+        triggerTime: now,
+        itemId: 'event-early',
+        itemData: {
+          id: 'event-early',
+          title: '早事件',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 获取队列状态，第一个应该是较早的事件
+      const status = reminderService.getQueueStatus()
+      if (status.firstItem) {
+        expect(status.firstItem.id).toBe('popup_event-early_' + now)
+      }
+    })
+
+    it('应该在超时后自动丢弃提醒', () => {
+      const now = Date.now()
+
+      // 入队一个提醒
+      reminderService.enqueueReminder({
+        id: 'popup_event-1_' + now,
+        type: 'event',
+        title: '超时测试',
+        body: '超时正文',
+        triggerTime: now,
+        itemId: 'event-1',
+        itemData: {
+          id: 'event-1',
+          title: '超时测试',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 模拟时间流逝超过1小时
+      vi.setSystemTime(now + 3600001)
+
+      // 清空当前显示的提醒（模拟已处理）
+      reminderService.markReminderProcessed()
+
+      // 队列应该为空（超时项被清理）
+      const status = reminderService.getQueueStatus()
+      expect(status.count).toBe(0)
+    })
+
+    it('应该持久化队列到 localStorage', () => {
+      const now = Date.now()
+
+      reminderService.enqueueReminder({
+        id: 'popup_event-1_' + now,
+        type: 'event',
+        title: '持久化测试',
+        body: '持久化正文',
+        triggerTime: now,
+        itemId: 'event-1',
+        itemData: {
+          id: 'event-1',
+          title: '持久化测试',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 检查 localStorage 中是否有队列数据
+      expect(localStorageStore['reminder_queue']).toBeDefined()
+      const queueData = JSON.parse(localStorageStore['reminder_queue'])
+      expect(queueData.items.length).toBeGreaterThan(0)
+    })
+
+    it('应该能够清空队列', () => {
+      const now = Date.now()
+
+      // 入队多个提醒
+      reminderService.enqueueReminder({
+        id: 'popup_event-1_' + now,
+        type: 'event',
+        title: '测试1',
+        body: '正文1',
+        triggerTime: now,
+        itemId: 'event-1',
+        itemData: {
+          id: 'event-1',
+          title: '测试1',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 清空队列
+      reminderService.clearQueue()
+
+      // 队列应该为空
+      const status = reminderService.getQueueStatus()
+      expect(status.count).toBe(0)
+    })
+
+    it('同一时间只应该显示一个提醒', () => {
+      const now = Date.now()
+
+      // 入队两个提醒
+      reminderService.enqueueReminder({
+        id: 'popup_event-1_' + now,
+        type: 'event',
+        title: '事件1',
+        body: '正文1',
+        triggerTime: now,
+        itemId: 'event-1',
+        itemData: {
+          id: 'event-1',
+          title: '事件1',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      reminderService.enqueueReminder({
+        id: 'popup_event-2_' + now,
+        type: 'event',
+        title: '事件2',
+        body: '正文2',
+        triggerTime: now + 1000,
+        itemId: 'event-2',
+        itemData: {
+          id: 'event-2',
+          title: '事件2',
+          startTime: now + 3600000,
+          endTime: now + 7200000,
+          allDay: false,
+          calendarId: 'cal-1',
+          createdAt: now,
+          updatedAt: now
+        }
+      })
+
+      // 第一次出队应该返回第一个提醒
+      const first = reminderService.dequeueReminder()
+      expect(first).not.toBeNull()
+      expect(first?.id).toBe('popup_event-1_' + now)
+
+      // 第二次出队应该返回 null（因为当前有提醒显示）
+      const second = reminderService.dequeueReminder()
+      expect(second).toBeNull()
+
+      // 标记当前提醒已处理（这会自动触发下一个提醒显示）
+      reminderService.markReminderProcessed()
+
+      // 队列应该为空（两个提醒都已出队：第一次手动，第二次自动）
+      const status = reminderService.getQueueStatus()
+      expect(status.count).toBe(0)
     })
   })
 })

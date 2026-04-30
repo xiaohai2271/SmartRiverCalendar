@@ -38,6 +38,11 @@ const router = createRouter({
       name: 'calendar-popup',
       component: () => import('../views/CalendarPopupView.vue')
     },
+    {
+      path: '/reminder-popup',
+      name: 'reminder-popup',
+      component: () => import('../views/ReminderPopupView.vue')
+    },
     // 隐藏的调试页面（不在导航中显示）
     {
       path: '/debug',
