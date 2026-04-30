@@ -120,6 +120,9 @@ pub fn run() {
                     .id("auto_hide")
                     .checked(false)
                     .build(app)?;
+                let settings = MenuItemBuilder::new("系统设置")
+                    .id("settings")
+                    .build(app)?;
                 let check_update = MenuItemBuilder::new("检查更新")
                     .id("check_update")
                     .build(app)?;
@@ -133,6 +136,7 @@ pub fn run() {
                     .item(&always_on_top)
                     .item(&auto_hide)
                     .separator()
+                    .item(&settings)
                     .item(&check_update)
                     .separator()
                     .item(&quit)
@@ -189,6 +193,15 @@ pub fn run() {
                             let state = app.state::<Mutex<commands::AppState>>();
                             let is_auto_hide = commands::toggle_auto_hide(state);
                             println!("自动隐藏: {}", is_auto_hide);
+                        }
+                        "settings" => {
+                            // 显示主窗口并导航到设置页面
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.set_focus();
+                            }
+                            // 发射事件到前端，由前端控制导航
+                            let _ = app.emit("navigate-to-settings", ());
                         }
                         "check_update" => {
                             // 用户点击"检查更新"菜单项
@@ -362,6 +375,8 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::get_all_settings,
+            commands::get_proxy_config,
+            commands::test_proxy_connection,
             commands::get_setting_entry,
             commands::get_all_setting_entries,
             // 用户节假日命令

@@ -43,6 +43,85 @@
         </div>
       </div>
     </div>
+
+    <!-- 网络代理 -->
+    <div class="settings-section">
+      <h3>网络代理</h3>
+      <div class="setting-item">
+        <label>代理模式</label>
+        <select v-model="settings.proxyMode" @change="handleProxyModeChange">
+          <option value="none">不走代理</option>
+          <option value="system">系统代理</option>
+          <option value="custom">自定义代理</option>
+        </select>
+      </div>
+      <div v-if="settings.proxyMode === 'custom'" class="setting-subsection">
+        <div class="setting-item">
+          <label>代理地址</label>
+          <input
+            type="text"
+            v-model="settings.proxyHost"
+            @change="saveSettings"
+            placeholder="例如：127.0.0.1"
+            class="proxy-input"
+          />
+        </div>
+        <div class="setting-item">
+          <label>代理端口</label>
+          <input
+            type="number"
+            v-model.number="settings.proxyPort"
+            @change="saveSettings"
+            placeholder="例如：7890"
+            class="proxy-input proxy-port"
+          />
+        </div>
+        <div class="setting-item">
+          <label>认证用户名</label>
+          <input
+            type="text"
+            v-model="settings.proxyUsername"
+            @change="saveSettings"
+            placeholder="可选"
+            class="proxy-input"
+          />
+        </div>
+        <div class="setting-item">
+          <label>认证密码</label>
+          <input
+            type="password"
+            v-model="settings.proxyPassword"
+            @change="saveSettings"
+            placeholder="可选"
+            class="proxy-input"
+          />
+        </div>
+      </div>
+      <!-- 测试连接 -->
+      <div class="setting-subsection proxy-test-section">
+        <div class="setting-item">
+          <label>测试地址</label>
+          <input
+            type="text"
+            v-model="proxyTestUrl"
+            placeholder="例如：https://www.baidu.com"
+            class="proxy-input"
+          />
+        </div>
+        <div class="setting-item proxy-test-row">
+          <button
+            class="proxy-test-btn"
+            :disabled="isTestingProxy"
+            @click="handleTestProxyConnection"
+          >
+            {{ isTestingProxy ? '测试中...' : '测试连接' }}
+          </button>
+          <span v-if="proxyTestResult" :class="['proxy-test-result', proxyTestResult.success ? 'success' : 'error']">
+            {{ proxyTestResult.message }}
+          </span>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -76,6 +155,16 @@ const settings = computed(() => settingsStore.settings)
 // ==================== State ====================
 // 时钟点击检测状态
 const clockHookDetectionMethod = ref('未启用')
+// 代理测试状态
+const isTestingProxy = ref(false)
+interface ProxyTestResult {
+  success: boolean
+  message: string
+  elapsedMs: number
+}
+const proxyTestResult = ref<ProxyTestResult | null>(null)
+// 代理测试地址
+const proxyTestUrl = ref('https://www.baidu.com')
 
 // ==================== Lifecycle ====================
 // 初始化自启动状态
@@ -175,6 +264,49 @@ async function handleClockHookBlockPopupChange(): Promise<void> {
     await setClockHookBlockPopup(settings.value.clockHookBlockPopup)
   }
 }
+
+/**
+ * 处理代理模式变更
+ */
+function handleProxyModeChange(): void {
+  saveSettings()
+  // 切换模式时清空之前的测试结果
+  proxyTestResult.value = null
+}
+
+/**
+ * 测试代理连接
+ * 先保存当前设置，再调用后端测试命令
+ */
+async function handleTestProxyConnection(): Promise<void> {
+  if (!isTauri()) return
+
+  const testUrl = proxyTestUrl.value.trim()
+  if (!testUrl) {
+    proxyTestResult.value = { success: false, message: '请输入测试地址', elapsedMs: 0 }
+    return
+  }
+
+  // 先保存设置，确保后端能读取到最新配置
+  await settingsStore.saveSettings()
+
+  isTestingProxy.value = true
+  proxyTestResult.value = null
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core')
+    const result = await invoke<ProxyTestResult>('test_proxy_connection', { testUrl })
+    proxyTestResult.value = result
+  } catch (e) {
+    proxyTestResult.value = {
+      success: false,
+      message: `调用失败: ${e}`,
+      elapsedMs: 0,
+    }
+  } finally {
+    isTestingProxy.value = false
+  }
+}
 </script>
 
 <style scoped>
@@ -233,5 +365,69 @@ async function handleClockHookBlockPopupChange(): Promise<void> {
 .status-value {
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+/* 代理输入框样式 */
+.proxy-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  min-width: 150px;
+  font-size: 14px;
+}
+
+.proxy-port {
+  width: 100px;
+  min-width: 80px;
+}
+
+/* 代理测试区域样式 */
+.proxy-test-section {
+  margin-top: 8px;
+  padding-left: 16px;
+  border-left: 2px solid var(--border-color);
+}
+
+.proxy-test-row {
+  margin-top: 8px;
+  gap: 12px;
+}
+
+.proxy-test-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.proxy-test-btn:hover:not(:disabled) {
+  background: var(--accent-color);
+  color: white;
+  border-color: var(--accent-color);
+}
+
+.proxy-test-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.proxy-test-result {
+  font-size: 13px;
+  flex: 1;
+}
+
+.proxy-test-result.success {
+  color: #107c10;
+}
+
+.proxy-test-result.error {
+  color: #d13438;
 }
 </style>
