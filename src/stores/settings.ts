@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { AppSettings } from '../types'
 import * as settingsService from '../services/settings'
+import { broadcastSettingsChange } from '../utils/broadcast'
 
 const DEFAULT_SETTINGS: AppSettings = {
   theme: 'light',
@@ -104,11 +105,13 @@ export const useSettingsStore = defineStore('settings', () => {
     }
   }
 
-  /**
-   * 更新设置并自动保存
-   * @param updates 部分设置更新
-   */
+  // 更新设置并自动保存，主题变更时广播给其他窗口（如弹窗）
   async function updateSettings(updates: Partial<AppSettings>): Promise<void> {
+    // 检测主题变更，广播给其他窗口
+    if (updates.theme !== undefined && updates.theme !== settings.value.theme) {
+      broadcastSettingsChange('theme', updates.theme)
+    }
+
     settings.value = { ...settings.value, ...updates }
     await saveSettings()
   }

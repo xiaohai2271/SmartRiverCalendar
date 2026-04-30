@@ -12,7 +12,6 @@ const DEFAULT_POPUP_SETTINGS: PopupSettings = {
   popupShowHoliday: true,
   popupShowEvents: true,
   popupCalendarShowLunar: true,
-  popupCalendarHolidayColor: 'default',
   popupWindowSize: 'medium'
 }
 

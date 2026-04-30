@@ -12,6 +12,8 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCalendarStore } from '@/stores/calendar'
 import { usePopupSettingsStore } from '@/stores/popupSettings'
+import { useSettingsStore } from '@/stores/settings'
+import * as settingsService from '@/services/settings'
 import { emit as tauriEmit } from '@tauri-apps/api/event'
 import { setPopupWindowSize } from '@/composables/useCalendarPopup'
 import { onSettingsChange } from '@/utils/broadcast'
@@ -27,6 +29,7 @@ import PopupContextMenu from '@/components/popup/PopupContextMenu.vue'
 // Store 实例
 const calendarStore = useCalendarStore()
 const popupSettings = usePopupSettingsStore()
+const settingsStore = useSettingsStore()
 
 // ==================== 状态管理 ====================
 
@@ -113,6 +116,39 @@ watch(
     }
   }
 )
+
+// ==================== 主题同步 ====================
+
+// 应用主题到弹窗根元素
+// 优先使用传入的 theme 参数，否则从数据库读取最新主题设置
+async function applyPopupTheme(theme?: 'light' | 'dark' | 'auto') {
+  let targetTheme = theme
+  if (!targetTheme) {
+    // 从数据库读取最新的主题设置（不依赖 settingsStore 内存状态）
+    try {
+      const dbValue = await settingsService.getSetting('app.theme')
+      targetTheme = dbValue ? JSON.parse(dbValue) : 'light'
+    } catch {
+      // 数据库读取失败，使用 settingsStore 作为降级
+      targetTheme = settingsStore.settings.theme
+    }
+  }
+
+  const root = document.documentElement
+  root.classList.remove('dark', 'light')
+
+  if (targetTheme === 'dark') {
+    root.classList.add('dark')
+  } else if (targetTheme === 'light') {
+    root.classList.add('light')
+  }
+  // 'auto' 模式依赖 CSS 媒体查询，不添加额外 class
+
+  // 同步更新 settingsStore（保持内存状态一致）
+  if (targetTheme !== settingsStore.settings.theme) {
+    settingsStore.settings.theme = targetTheme
+  }
+}
 
 // ==================== 月份导航 ====================
 
@@ -317,6 +353,9 @@ onMounted(async () => {
   // 加载数据
   await loadData()
 
+  // 应用初始主题
+  await applyPopupTheme()
+
   // 应用初始窗口尺寸
   await applyWindowSize()
 
@@ -334,6 +373,8 @@ onMounted(async () => {
       await win.setFocus()
       // 窗口获得焦点时，重新加载数据和应用尺寸设置
       loadData()
+      // 同步最新主题（响应主窗口可能的设置变更）
+      await applyPopupTheme()
       // 应用最新尺寸设置（响应主窗口可能的设置变更）
       applyWindowSize()
     }
@@ -343,6 +384,11 @@ onMounted(async () => {
   unlistenSettings = onSettingsChange((key, value) => {
     console.log(`[CalendarPopup] 收到设置变更广播: ${key} =`, value)
     
+    // 处理主题变更
+    if (key === 'theme' && typeof value === 'string') {
+      applyPopupTheme(value as 'light' | 'dark' | 'auto')
+    }
+
     // 处理窗口尺寸变更
     if (key === 'popupWindowSize' && typeof value === 'string') {
       // 同步更新 store 中的设置，避免后续 loadPopupSettings() 覆盖

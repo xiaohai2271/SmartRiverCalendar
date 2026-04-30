@@ -1,18 +1,5 @@
 <template>
   <div class="calendar-display-tab">
-    <!-- 外观设置 -->
-    <div class="settings-section">
-      <h3>外观</h3>
-      <div class="setting-item">
-        <label>主题</label>
-        <select v-model="settings.theme" @change="saveSettings">
-          <option value="light">浅色</option>
-          <option value="dark">深色</option>
-          <option value="auto">跟随系统</option>
-        </select>
-      </div>
-    </div>
-
     <!-- 日历显示设置 -->
     <div class="settings-section">
       <h3>显示选项</h3>

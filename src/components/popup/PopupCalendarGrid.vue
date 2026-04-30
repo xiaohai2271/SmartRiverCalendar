@@ -22,32 +22,42 @@
           <span class="day-number">{{ day.getDate() }}</span>
 
           <!-- 农历日期 -->
-          <span
-            v-if="showLunar && getLunarInfo(day)"
-            class="lunar-text"
-            :class="{ 'festival': hasFestival(day) }"
-          >
+          <span v-if="showLunar && getLunarInfo(day)" class="lunar-text">
             {{ getLunarDisplay(day) }}
           </span>
         </div>
 
-        <!-- 事件圆点 -->
-        <div v-if="showEvents && getEventsForDay(day).length > 0" class="event-dots">
+        <!-- 休/补徽标 -->
+        <div v-if="getBadgesForDay(day).length > 0" class="day-badges">
           <span
-            v-for="event in getEventsForDay(day).slice(0, maxEventDots)"
-            :key="event.id"
-            class="event-dot"
-            :style="{ background: getEventColor(event) }"
-            :title="event.title"
-            @click.stop="handleViewEvent(event)"
-          ></span>
-          <span
-            v-if="getEventsForDay(day).length > maxEventDots"
-            class="more-dots"
-            @click.stop="handleContextMenu(day, $event)"
+            v-for="badge in getBadgesForDay(day)"
+            :key="badge.type"
+            :class="['badge', badge.type]"
+            :title="badge.title"
           >
-            +{{ getEventsForDay(day).length - maxEventDots }}
+            {{ badge.text }}
           </span>
+        </div>
+
+        <!-- 事件圆点（始终渲染容器，避免对齐问题） -->
+        <div class="event-dots" :class="{ 'event-dots--empty': getEventsForDay(day).length === 0 }">
+          <template v-if="showEvents && getEventsForDay(day).length > 0">
+            <span
+              v-for="event in getEventsForDay(day).slice(0, maxEventDots)"
+              :key="event.id"
+              class="event-dot"
+              :style="{ background: getEventColor(event) }"
+              :title="event.title"
+              @click.stop="handleViewEvent(event)"
+            ></span>
+            <span
+              v-if="getEventsForDay(day).length > maxEventDots"
+              class="more-dots"
+              @click.stop="handleContextMenu(day, $event)"
+            >
+              +{{ getEventsForDay(day).length - maxEventDots }}
+            </span>
+          </template>
         </div>
       </div>
     </div>
@@ -86,8 +96,6 @@ const maxEventDots = 3
 // 显示设置
 const showLunar = computed(() => popupSettings.settings.popupCalendarShowLunar)
 const showEvents = computed(() => popupSettings.settings.popupShowEvents)
-const showHoliday = computed(() => popupSettings.settings.popupShowHoliday)
-const holidayColorMode = computed(() => popupSettings.settings.popupCalendarHolidayColor)
 
 // 周几显示（固定从周日开始）
 const weekDays = ['日', '一', '二', '三', '四', '五', '六']
@@ -148,19 +156,6 @@ function isSelected(day: Date): boolean {
   return props.selectedDate ? isSameDay(day, props.selectedDate) : false
 }
 
-// 判断是否为周末
-function isWeekend(day: Date): boolean {
-  const dayOfWeek = day.getDay()
-  return dayOfWeek === 0 || dayOfWeek === 6
-}
-
-// 判断是否有节日
-function hasFestival(day: Date): boolean {
-  const info = getLunarInfo(day)
-  if (!info) return false
-  return !!(info.lunarFestival || info.holidayName)
-}
-
 // 获取农历显示文本
 function getLunarDisplay(day: Date): string {
   const info = getLunarInfo(day)
@@ -180,22 +175,31 @@ function getLunarDisplay(day: Date): string {
 
 // 获取日期单元格的类名
 function getDayCellClass(day: Date): Record<string, boolean> {
-  const info = getLunarInfo(day)
-  const classes: Record<string, boolean> = {
+  return {
     'other-month': !isCurrentMonth(day),
     'today': isToday(day),
-    'selected': isSelected(day),
-    'weekend': isWeekend(day) && !info?.isHoliday && !info?.isWorkDay,
-    'holiday': showHoliday.value && !!info?.isHoliday && !info?.isWorkDay,
-    'workday': showHoliday.value && !!info?.isWorkDay
+    'selected': isSelected(day)
+  }
+}
+
+// 获取某天的徽标列表（仅休/补）
+function getBadgesForDay(day: Date): Array<{ type: string; text: string; title: string }> {
+  const info = getLunarInfo(day)
+  if (!info) return []
+
+  const badges: Array<{ type: string; text: string; title: string }> = []
+
+  // 补班日（"补"）— 优先判断
+  if (info.isWorkDay) {
+    badges.push({ type: 'makeup', text: '补', title: info.workDayName || '补班' })
   }
 
-  // 添加节假日颜色模式类
-  if (showHoliday.value && holidayColorMode.value !== 'default') {
-    classes[`holiday-mode-${holidayColorMode.value}`] = true
+  // 休息日（"休"）— 周末或法定节假日（排除补班日）
+  if ((info.isWeekend || info.isHoliday) && !info.isWorkDay) {
+    badges.push({ type: 'rest', text: '休', title: info.isHoliday ? (info.holidayName || '节假日') : '周末' })
   }
 
-  return classes
+  return badges
 }
 
 // 获取某天的事件列表
@@ -257,8 +261,7 @@ function handleViewEvent(event: CalendarEvent) {
   grid-template-columns: repeat(7, 1fr);
   grid-template-rows: repeat(6, 1fr);
   flex: 1;
-  gap: 1px;
-  background: var(--popup-border-color);
+  border: 1px solid var(--popup-border-color);
   border-radius: var(--popup-radius-md);
   overflow: hidden;
 }
@@ -287,45 +290,6 @@ function handleViewEvent(event: CalendarEvent) {
 .day-cell.other-month .day-number,
 .day-cell.other-month .lunar-text {
   color: var(--popup-text-tertiary);
-}
-
-/* 周末样式 */
-.day-cell.weekend:not(.holiday):not(.workday) {
-  background: rgba(255, 237, 213, 0.3);
-}
-
-/* 节假日样式 - 默认模式 */
-.day-cell.holiday {
-  background: rgba(254, 226, 226, 0.5);
-  border-left: 2px solid var(--popup-holiday-text);
-}
-
-/* 节假日样式 - 柔和模式 */
-.day-cell.holiday.holiday-mode-soft {
-  background: rgba(254, 226, 226, 0.25);
-}
-
-/* 节假日样式 - 高对比度模式 */
-.day-cell.holiday.holiday-mode-high-contrast {
-  background: rgba(239, 68, 68, 0.2);
-  border-left: 3px solid var(--popup-holiday-text);
-}
-
-/* 补班日样式 - 默认模式 */
-.day-cell.workday {
-  background: rgba(254, 243, 199, 0.5);
-  border-left: 2px solid var(--popup-workday-text);
-}
-
-/* 补班日样式 - 柔和模式 */
-.day-cell.workday.holiday-mode-soft {
-  background: rgba(254, 243, 199, 0.25);
-}
-
-/* 补班日样式 - 高对比度模式 */
-.day-cell.workday.holiday-mode-high-contrast {
-  background: rgba(217, 119, 6, 0.2);
-  border-left: 3px solid var(--popup-workday-text);
 }
 
 /* 今天样式 */
@@ -382,18 +346,13 @@ function handleViewEvent(event: CalendarEvent) {
   white-space: nowrap;
 }
 
-.lunar-text.festival {
-  color: var(--popup-festival-text);
-  font-weight: 500;
-}
-
 /* 事件圆点 */
 .event-dots {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  margin-top: 2px;
+  margin-top: 8px;
   flex-wrap: wrap;
   max-width: 100%;
 }
@@ -427,28 +386,47 @@ function handleViewEvent(event: CalendarEvent) {
   color: var(--popup-text-primary);
 }
 
+.event-dots--empty {
+  visibility: hidden;
+}
+
+/* 休/补徽标 - 右上角绝对定位，不影响布局 */
+.day-badges {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: flex;
+  gap: 1px;
+}
+
+.badge {
+  font-size: 9px;
+  padding: 0 3px;
+  border-radius: 2px;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+
+.badge.rest {
+  background: #f0fdf4;
+  color: #16a34a;
+  font-weight: 600;
+}
+
+.badge.makeup {
+  background: #fee2e2;
+  color: #dc2626;
+  font-weight: 600;
+}
+
 /* 深色模式适配 */
-:global(.dark) .day-cell.weekend:not(.holiday):not(.workday) {
-  background: rgba(255, 255, 255, 0.03);
+:global(.dark) .badge.rest {
+  background: rgba(22, 163, 74, 0.15);
+  color: #86efac;
 }
 
-:global(.dark) .day-cell.holiday {
+:global(.dark) .badge.makeup {
   background: rgba(239, 68, 68, 0.15);
-}
-
-:global(.dark) .day-cell.holiday.holiday-mode-high-contrast {
-  background: rgba(239, 68, 68, 0.25);
-}
-
-:global(.dark) .day-cell.workday {
-  background: rgba(217, 119, 6, 0.15);
-}
-
-:global(.dark) .day-cell.workday.holiday-mode-high-contrast {
-  background: rgba(217, 119, 6, 0.25);
-}
-
-:global(.dark) .lunar-text.festival {
-  color: var(--popup-festival-text-dark);
+  color: #fca5a5;
 }
 </style>

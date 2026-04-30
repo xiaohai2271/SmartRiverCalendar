@@ -69,6 +69,11 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **涉及组件**: MonthView组件、EventBar组件、EventTooltip组件、ColorPicker组件、设置存储
 - **详细文档**: 参考 [references/month-view-event-display.md](references/month-view-event-display.md)
 
+### 12. 日历界面优化
+- **功能**: 日期单元格右键菜单、事件块右键菜单、休/补徽标、全天事件内联显示、事件颜色优先级修复
+- **涉及组件**: DateCellContextMenu组件、EventBlockContextMenu组件、MonthView/DayView/WeekView组件、ContextMenu基础组件
+- **详细文档**: 参考 [references/calendar-ui-optimization.md](references/calendar-ui-optimization.md)
+
 ## 快速参考
 
 ### 关键文件路径
@@ -89,6 +94,10 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **权限配置**: `src-tauri/capabilities/default.json`
 - 月视图组件: `src/components/calendar/MonthView.vue`
 - 事件横条: `src/components/calendar/EventBar.vue`
+- 右键菜单组件: `src/components/calendar/DateCellContextMenu.vue`
+- 事件块右键菜单: `src/components/calendar/EventBlockContextMenu.vue`
+- 基础菜单组件: `src/components/common/ContextMenu.vue`
+- 事件颜色工具: `src/types/index.ts` (REST_BADGE_CONFIG)
 - 悬浮提示: `src/components/calendar/EventTooltip.vue`
 - 颜色选择器: `src/components/calendar/ColorPicker.vue`
 - 跨天工具函数: `src/utils/date.ts`
