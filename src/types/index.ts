@@ -108,6 +108,12 @@ export interface AppSettings {
   // 系统集成设置
   clockHookEnabled: boolean // 是否启用系统时钟点击唤醒
   clockHookBlockPopup: boolean // 是否阻止系统日历弹窗
+  // 网络代理设置
+  proxyMode: 'none' | 'system' | 'custom' // 代理模式：none(不走代理) | system(系统代理) | custom(自定义代理)
+  proxyHost: string // 自定义代理主机地址
+  proxyPort: number // 自定义代理端口
+  proxyUsername: string // 代理认证用户名
+  proxyPassword: string // 代理认证密码
 }
 
 // View types

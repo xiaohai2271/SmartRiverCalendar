@@ -1547,6 +1547,201 @@ mod tests {
 }
 
 // ============================================================
+// 网络代理命令
+// ============================================================
+
+/// 代理配置信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyConfig {
+    /// 代理模式：none(不走代理) | system(系统代理) | custom(自定义代理)
+    pub proxy_mode: String,
+    /// 自定义代理主机地址
+    pub proxy_host: String,
+    /// 自定义代理端口
+    pub proxy_port: u16,
+    /// 代理认证用户名
+    pub proxy_username: String,
+    /// 代理认证密码
+    pub proxy_password: String,
+}
+
+/// 获取代理配置
+#[tauri::command]
+pub fn get_proxy_config(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<ProxyConfig, DatabaseError> {
+    info!("[get_proxy_config] 获取代理配置");
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let conn = db.get_connection();
+    let repo = SettingsRepository::new(&conn);
+    
+    let proxy_mode = repo.get("app.proxyMode").ok().flatten()
+        .and_then(|v| serde_json::from_str::<String>(&v).ok())
+        .unwrap_or_else(|| "none".to_string());
+    let proxy_host = repo.get("app.proxyHost").ok().flatten()
+        .and_then(|v| serde_json::from_str::<String>(&v).ok())
+        .unwrap_or_default();
+    let proxy_port = repo.get("app.proxyPort").ok().flatten()
+        .and_then(|v| serde_json::from_str::<u16>(&v).ok())
+        .unwrap_or(0);
+    let proxy_username = repo.get("app.proxyUsername").ok().flatten()
+        .and_then(|v| serde_json::from_str::<String>(&v).ok())
+        .unwrap_or_default();
+    let proxy_password = repo.get("app.proxyPassword").ok().flatten()
+        .and_then(|v| serde_json::from_str::<String>(&v).ok())
+        .unwrap_or_default();
+    
+    Ok(ProxyConfig {
+        proxy_mode,
+        proxy_host,
+        proxy_port,
+        proxy_username,
+        proxy_password,
+    })
+}
+
+/// 应用代理配置到 reqwest 客户端
+/// 返回配置好的 reqwest::Client，供 CalDAV、sync 等模块后续使用
+pub fn create_proxied_client(
+    db: &Mutex<DatabaseConnection>,
+) -> Result<reqwest::Client, String> {
+    let db_lock = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+    let conn = db_lock.get_connection();
+    let repo = SettingsRepository::new(&conn);
+    
+    let proxy_mode = repo.get("app.proxyMode").ok().flatten()
+        .and_then(|v| serde_json::from_str::<String>(&v).ok())
+        .unwrap_or_else(|| "none".to_string());
+    
+    let mut client_builder = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30));
+    
+    match proxy_mode.as_str() {
+        "system" => {
+            // 使用系统代理（reqwest 默认从环境变量 HTTP_PROXY/HTTPS_PROXY 读取）
+            // 无需额外配置，保持默认行为即可
+            info!("[create_proxied_client] 使用系统代理");
+        }
+        "custom" => {
+            let proxy_host = repo.get("app.proxyHost").ok().flatten()
+                .and_then(|v| serde_json::from_str::<String>(&v).ok())
+                .unwrap_or_default();
+            let proxy_port = repo.get("app.proxyPort").ok().flatten()
+                .and_then(|v| serde_json::from_str::<u16>(&v).ok())
+                .unwrap_or(0);
+            let proxy_username = repo.get("app.proxyUsername").ok().flatten()
+                .and_then(|v| serde_json::from_str::<String>(&v).ok())
+                .unwrap_or_default();
+            let proxy_password = repo.get("app.proxyPassword").ok().flatten()
+                .and_then(|v| serde_json::from_str::<String>(&v).ok())
+                .unwrap_or_default();
+            
+            if !proxy_host.is_empty() && proxy_port > 0 {
+                let proxy_url = if !proxy_username.is_empty() {
+                    format!("http://{}:{}@{}:{}", proxy_username, proxy_password, proxy_host, proxy_port)
+                } else {
+                    format!("http://{}:{}", proxy_host, proxy_port)
+                };
+                match reqwest::Proxy::all(&proxy_url) {
+                    Ok(proxy) => {
+                        client_builder = client_builder.proxy(proxy);
+                        info!("[create_proxied_client] 使用自定义代理: {}:{}", proxy_host, proxy_port);
+                    }
+                    Err(e) => {
+                        error!("[create_proxied_client] 代理配置无效: {}", e);
+                        return Err(format!("代理配置无效: {}", e));
+                    }
+                }
+            } else {
+                error!("[create_proxied_client] 自定义代理配置不完整");
+                return Err("自定义代理配置不完整，请填写代理地址和端口".to_string());
+            }
+        }
+        _ => {
+            // none - 不使用代理，显式禁用系统代理（阻止读取环境变量）
+            client_builder = client_builder.no_proxy();
+            info!("[create_proxied_client] 不使用代理");
+        }
+    }
+    
+    client_builder.build().map_err(|e| format!("创建HTTP客户端失败: {}", e))
+}
+
+/// 代理连接测试结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProxyTestResult {
+    /// 是否成功
+    pub success: bool,
+    /// 结果描述
+    pub message: String,
+    /// 响应耗时（毫秒）
+    pub elapsed_ms: u64,
+}
+
+/// 测试代理连接
+/// 使用当前代理配置对指定地址发起 HTTP 请求，验证代理是否可用
+#[tauri::command]
+pub async fn test_proxy_connection(
+    test_url: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<ProxyTestResult, String> {
+    info!("[test_proxy_connection] 开始测试代理连接, 目标地址: {}", test_url);
+
+    // 校验 URL 格式
+    if test_url.is_empty() || !test_url.starts_with("http") {
+        return Err("测试地址格式无效，请以 http:// 或 https:// 开头".to_string());
+    }
+    
+    // 先获取当前代理模式
+    let proxy_mode = {
+        let db_lock = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_lock.get_connection();
+        let repo = SettingsRepository::new(&conn);
+        repo.get("app.proxyMode").ok().flatten()
+            .and_then(|v| serde_json::from_str::<String>(&v).ok())
+            .unwrap_or_else(|| "none".to_string())
+    };
+    
+    // 创建带代理配置的 HTTP 客户端
+    let client = create_proxied_client(&db)?;
+    
+    let start = std::time::Instant::now();
+    
+    match client.get(&test_url).send().await {
+        Ok(response) => {
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            if response.status().is_success() {
+                info!("[test_proxy_connection] 测试成功, 耗时: {}ms, 状态码: {}", elapsed_ms, response.status());
+                Ok(ProxyTestResult {
+                    success: true,
+                    message: format!("连接成功（{}模式，耗时 {}ms，状态码 {}）", proxy_mode, elapsed_ms, response.status()),
+                    elapsed_ms,
+                })
+            } else {
+                let status = response.status();
+                error!("[test_proxy_connection] 服务器返回错误: {}", status);
+                Ok(ProxyTestResult {
+                    success: false,
+                    message: format!("服务器返回错误: {}（耗时 {}ms）", status, elapsed_ms),
+                    elapsed_ms,
+                })
+            }
+        }
+        Err(e) => {
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            error!("[test_proxy_connection] 连接失败: {}", e);
+            Ok(ProxyTestResult {
+                success: false,
+                message: format!("连接失败: {}（耗时 {}ms）", e, elapsed_ms),
+                elapsed_ms,
+            })
+        }
+    }
+}
+
+// ============================================================
 // 调试命令
 // ============================================================
 

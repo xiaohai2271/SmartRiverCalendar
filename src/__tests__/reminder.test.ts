@@ -39,7 +39,12 @@ const mockSettings: AppSettings = {
   customReminderBody: '',
   clockHookEnabled: false,
   clockHookBlockPopup: false,
-  monthEventDisplayStyle: 'bar'
+  monthEventDisplayStyle: 'bar',
+  proxyMode: 'none',
+  proxyHost: '',
+  proxyPort: 0,
+  proxyUsername: '',
+  proxyPassword: ''
 }
 
 const mockSettingsStore = {

@@ -307,6 +307,11 @@ onMounted(async () => {
         showUpdateDialog.value = true
       }
     })
+
+    // 监听托盘"系统设置"事件
+    listen('navigate-to-settings', async () => {
+      await router.push('/settings')
+    })
   }
 
   // 添加调试页面触发监听器（全局）
