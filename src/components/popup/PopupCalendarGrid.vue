@@ -261,8 +261,7 @@ function handleViewEvent(event: CalendarEvent) {
   grid-template-columns: repeat(7, 1fr);
   grid-template-rows: repeat(6, 1fr);
   flex: 1;
-  gap: 1px;
-  background: var(--popup-border-color);
+  border: 1px solid var(--popup-border-color);
   border-radius: var(--popup-radius-md);
   overflow: hidden;
 }
@@ -391,11 +390,13 @@ function handleViewEvent(event: CalendarEvent) {
   visibility: hidden;
 }
 
-/* 休/补徽标 */
+/* 休/补徽标 - 右上角绝对定位 */
 .day-badges {
+  position: absolute;
+  top: 2px;
+  right: 2px;
   display: flex;
   gap: 1px;
-  margin-top: 1px;
 }
 
 .badge {
