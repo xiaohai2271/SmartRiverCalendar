@@ -59,10 +59,12 @@ defineEmits<{
   cursor: pointer;
   font-size: 14px;
   transition: all 0.2s ease;
+  color: var(--text-primary);
 }
 
 .tab-btn:hover {
   background: var(--bg-secondary);
+  color: var(--text-primary);
 }
 
 .tab-btn.active {

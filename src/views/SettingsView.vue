@@ -35,7 +35,7 @@
           <h3>外观</h3>
           <div class="setting-item">
             <label>主题</label>
-            <select v-model="settingsStore.settings.theme" @change="saveSettings">
+            <select :value="settingsStore.settings.theme" @change="handleThemeChange">
               <option value="light">浅色</option>
               <option value="dark">深色</option>
               <option value="auto">跟随系统</option>
@@ -117,6 +117,15 @@ const activeTab = ref('display')
 // 初始化完成
 
 // ==================== Methods ====================
+/**
+ * 处理主题变更（通过 updateSettings 触发广播）
+ */
+async function handleThemeChange(event: Event) {
+  const select = event.target as HTMLSelectElement
+  const newTheme = select.value as 'light' | 'dark' | 'auto'
+  await settingsStore.updateSettings({ theme: newTheme })
+}
+
 /**
  * 保存设置
  */
