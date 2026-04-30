@@ -346,13 +346,13 @@ function handleViewEvent(event: CalendarEvent) {
   white-space: nowrap;
 }
 
-/* 休/补徽标 */
+/* 事件圆点 */
 .event-dots {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 2px;
-  margin-top: 2px;
+  margin-top: 4px;
   flex-wrap: wrap;
   max-width: 100%;
 }
@@ -390,15 +390,13 @@ function handleViewEvent(event: CalendarEvent) {
   visibility: hidden;
 }
 
-/* 休/补徽标 - 右上角绝对定位 */
-.event-dots {
+/* 休/补徽标 - 右上角绝对定位，不影响布局 */
+.day-badges {
+  position: absolute;
+  top: 2px;
+  right: 2px;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  margin-top: 4px;
-  flex-wrap: wrap;
-  max-width: 100%;
+  gap: 1px;
 }
 
 .badge {
