@@ -272,45 +272,51 @@ interface BadgeInfo {
   title: string
 }
 
-/** 获取某天的徽标列表（按优先级排序，最多3个） */
+/** 获取某天的徽标列表（文字徽标在左，休/补在右，最多3个） */
 function getBadgesForDay(day: Date): BadgeInfo[] {
   const info = getLunarInfo(day)
   if (!info) return []
 
-  const badges: BadgeInfo[] = []
+  const textBadges: BadgeInfo[] = []
+  const restBadges: BadgeInfo[] = []
 
-  // 优先级 1：补班日（"补"）— 调休补班（优先判断，避免与"休"冲突）
+  // 判断是否会显示"休"徽标（用于避免节假日名称重复显示）
+  const willShowRest = showMakeupDay.value && (info.isWeekend || info.isHoliday) && !info.isWorkDay
+  // 判断是否会显示"补"徽标
+  const willShowMakeup = showMakeupDay.value && info.isWorkDay
+
+  // 法定节假日名称（有休/补徽标时不显示，避免重复）
+  if (showHoliday.value && info.holidayName && !willShowRest && !willShowMakeup) {
+    textBadges.push({ type: 'holiday', text: info.holidayName, title: info.holidayName })
+  } else if (showLunarFestival.value && info.lunarFestival && !willShowRest && !willShowMakeup) {
+    // 农历节日（有休/补徽标时不显示）
+    textBadges.push({ type: 'festival', text: info.lunarFestival, title: info.lunarFestival })
+  }
+
+  // 节气（独立显示）
+  if (showSolarTerm.value && info.solarTerm) {
+    textBadges.push({ type: 'solar-term', text: info.solarTerm, title: info.solarTerm })
+  }
+
+  // 补班日（"补"）
   if (showMakeupDay.value && info.isWorkDay) {
-    badges.push({
+    restBadges.push({
       type: 'makeup',
       text: REST_BADGE_CONFIG.makeup.text,
       title: info.workDayName || '补班'
     })
   }
 
-  // 优先级 1：休息日（"休"） — 周末或法定节假日（排除补班日）
+  // 休息日（"休"）（排除补班日）
   if (showMakeupDay.value && (info.isWeekend || info.isHoliday) && !info.isWorkDay) {
-    badges.push({
+    restBadges.push({
       type: 'rest',
       text: REST_BADGE_CONFIG.rest.text,
       title: info.isHoliday ? (info.holidayName || '节假日') : '周末'
     })
   }
 
-  // 优先级 2：法定节假日名称（仅在非休/补徽标时显示，避免重复）
-  if (showHoliday.value && info.holidayName && !badges.some(b => b.type === 'rest' || b.type === 'makeup')) {
-    badges.push({ type: 'holiday', text: info.holidayName, title: info.holidayName })
-  } else if (showLunarFestival.value && info.lunarFestival && !badges.some(b => b.type === 'rest' || b.type === 'makeup')) {
-    // 优先级 3：农历节日（当没有法定节假日和休/补徽标时显示）
-    badges.push({ type: 'festival', text: info.lunarFestival, title: info.lunarFestival })
-  }
-
-  // 优先级 4：节气（独立显示）
-  if (showSolarTerm.value && info.solarTerm) {
-    badges.push({ type: 'solar-term', text: info.solarTerm, title: info.solarTerm })
-  }
-
-  return badges.slice(0, 3)
+  return [...textBadges, ...restBadges].slice(0, 3)
 }
 
 function getEventColor(event: CalendarEvent): string {
