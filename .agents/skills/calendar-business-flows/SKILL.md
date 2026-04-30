@@ -74,6 +74,11 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **涉及组件**: DateCellContextMenu组件、EventBlockContextMenu组件、MonthView/DayView/WeekView组件、ContextMenu基础组件
 - **详细文档**: 参考 [references/calendar-ui-optimization.md](references/calendar-ui-optimization.md)
 
+### 13. 提醒窗口优化
+- **功能**: 独立提醒窗口、提醒排队机制、按强度调整显示时长、与精简面板协调位置、跨窗口通信、夜间模式/勿扰模式响应
+- **涉及组件**: Tauri 多窗口、ReminderPopup组件、ReminderPopupView视图、useReminderPopup composable、提醒服务、App.vue跨窗口通信
+- **详细文档**: 参考 [references/reminder-window-optimization.md](references/reminder-window-optimization.md)
+
 ## 快速参考
 
 ### 关键文件路径
@@ -91,6 +96,13 @@ description: SmartRiverCalendar项目核心业务流程文档。当需要了解�
 - **弹出窗口视图**: `src/views/CalendarPopupView.vue`
 - **弹出窗口组件**: `src/components/popup/`
 - **弹出窗口设置**: `src/stores/popupSettings.ts`
+- **提醒窗口配置**: `src-tauri/tauri.conf.json` (windows[reminder-popup])
+- **提醒服务**: `src/services/reminder.ts`
+- **提醒弹窗组件**: `src/components/reminder/ReminderPopup.vue`
+- **提醒窗口视图**: `src/views/ReminderPopupView.vue`
+- **窗口定位逻辑**: `src/composables/useReminderPopup.ts`
+- **跨窗口通信**: `src/App.vue`
+- **提醒测试**: `src/__tests__/reminder.test.ts`, `src/__tests__/ReminderPopup.test.ts`, `src/__tests__/useReminderPopup.test.ts`
 - **权限配置**: `src-tauri/capabilities/default.json`
 - 月视图组件: `src/components/calendar/MonthView.vue`
 - 事件横条: `src/components/calendar/EventBar.vue`
