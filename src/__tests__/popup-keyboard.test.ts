@@ -51,8 +51,7 @@ vi.mock('@/stores/popupSettings', () => ({
     settings: {
       popupCalendarShowLunar: true,
       popupShowEvents: true,
-      popupShowHoliday: true,
-      popupCalendarHolidayColor: 'default'
+      popupShowHoliday: true
     },
     loadSettings: vi.fn()
   }))

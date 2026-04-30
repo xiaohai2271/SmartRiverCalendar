@@ -74,7 +74,6 @@ describe('弹出窗口尺寸类型定义', () => {
         popupShowHoliday: true,
         popupShowEvents: true,
         popupCalendarShowLunar: true,
-        popupCalendarHolidayColor: 'default',
         popupWindowSize: 'medium'
       }
 
@@ -88,8 +87,7 @@ describe('弹出窗口尺寸类型定义', () => {
         popupShowSolarTerm: true,
         popupShowHoliday: true,
         popupShowEvents: true,
-        popupCalendarShowLunar: true,
-        popupCalendarHolidayColor: 'default'
+        popupCalendarShowLunar: true
         // popupWindowSize 未设置，应该允许
       }
 
@@ -104,7 +102,6 @@ describe('弹出窗口尺寸类型定义', () => {
         popupShowHoliday: true,
         popupShowEvents: true,
         popupCalendarShowLunar: true,
-        popupCalendarHolidayColor: 'default',
         popupWindowSize: 'small'
       }
 
@@ -115,7 +112,6 @@ describe('弹出窗口尺寸类型定义', () => {
         popupShowHoliday: true,
         popupShowEvents: true,
         popupCalendarShowLunar: true,
-        popupCalendarHolidayColor: 'default',
         popupWindowSize: 'medium'
       }
 
@@ -126,7 +122,6 @@ describe('弹出窗口尺寸类型定义', () => {
         popupShowHoliday: true,
         popupShowEvents: true,
         popupCalendarShowLunar: true,
-        popupCalendarHolidayColor: 'default',
         popupWindowSize: 'large'
       }
 

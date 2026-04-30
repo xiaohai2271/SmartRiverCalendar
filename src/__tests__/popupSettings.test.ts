@@ -79,7 +79,6 @@ describe('popupSettings Store', () => {
     expect(store.settings.popupShowHoliday).toBe(true)
     expect(store.settings.popupShowEvents).toBe(true)
     expect(store.settings.popupCalendarShowLunar).toBe(true)
-    expect(store.settings.popupCalendarHolidayColor).toBe('default')
     expect(store.settings.popupWindowSize).toBe('medium')
   })
 
@@ -101,13 +100,11 @@ describe('popupSettings Store', () => {
 
     await store.updatePopupSettings({
       popupShowLunar: false,
-      popupShowSolarTerm: false,
-      popupCalendarHolidayColor: 'high-contrast'
+      popupShowSolarTerm: false
     })
 
     expect(store.settings.popupShowLunar).toBe(false)
     expect(store.settings.popupShowSolarTerm).toBe(false)
-    expect(store.settings.popupCalendarHolidayColor).toBe('high-contrast')
     // 未更新的设置保持不变
     expect(store.settings.popupShowLunarFestival).toBe(true)
   })
@@ -146,8 +143,7 @@ describe('popupSettings Store', () => {
     // 修改多个设置
     await store.updatePopupSettings({
       popupShowLunar: false,
-      popupShowHoliday: false,
-      popupCalendarHolidayColor: 'soft'
+      popupShowHoliday: false
     })
 
     // 重置
@@ -156,7 +152,6 @@ describe('popupSettings Store', () => {
     // 验证恢复默认值
     expect(store.settings.popupShowLunar).toBe(true)
     expect(store.settings.popupShowHoliday).toBe(true)
-    expect(store.settings.popupCalendarHolidayColor).toBe('default')
   })
 
   it('BroadcastChannel 广播设置变更', async () => {
@@ -182,7 +177,7 @@ describe('popupSettings Store', () => {
       'popup-settings',
       JSON.stringify({
         popupShowLunar: false,
-        popupCalendarHolidayColor: 'soft'
+        popupShowSolarTerm: false
       })
     )
 
@@ -194,7 +189,7 @@ describe('popupSettings Store', () => {
 
     // 验证设置被正确加载
     expect(store.settings.popupShowLunar).toBe(false)
-    expect(store.settings.popupCalendarHolidayColor).toBe('soft')
+    expect(store.settings.popupShowSolarTerm).toBe(false)
     // 未指定的设置使用默认值
     expect(store.settings.popupShowLunarFestival).toBe(true)
   })
@@ -254,7 +249,7 @@ describe('popupSettings Store', () => {
       'popup-settings',
       JSON.stringify({
         popupShowLunar: false,
-        popupCalendarHolidayColor: 'soft'
+        popupShowSolarTerm: false
       })
     )
 
@@ -266,7 +261,7 @@ describe('popupSettings Store', () => {
 
     // 旧数据应正确加载
     expect(store.settings.popupShowLunar).toBe(false)
-    expect(store.settings.popupCalendarHolidayColor).toBe('soft')
+    expect(store.settings.popupShowSolarTerm).toBe(false)
 
     // popupWindowSize 应使用默认值
     expect(store.settings.popupWindowSize).toBe('medium')

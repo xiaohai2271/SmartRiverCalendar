@@ -3,9 +3,9 @@
     <div class="settings-section">
       <h3>精简面板设置</h3>
 
-      <!-- 显示农历 -->
+      <!-- 日期详情显示农历 -->
       <div class="setting-item">
-        <label>显示农历</label>
+        <label>日期详情显示农历</label>
         <input
           type="checkbox"
           v-model="popupSettingsStore.settings.popupShowLunar"
@@ -53,9 +53,9 @@
         />
       </div>
 
-      <!-- 日历面板显示农历 -->
+      <!-- 日历格子显示农历 -->
       <div class="setting-item">
-        <label>日历面板显示农历</label>
+        <label>日历格子显示农历</label>
         <input
           type="checkbox"
           v-model="popupSettingsStore.settings.popupCalendarShowLunar"
@@ -63,18 +63,7 @@
         />
       </div>
 
-      <!-- 日历面板节假日颜色 -->
-      <div class="setting-item">
-        <label>日历面板节假日颜色</label>
-        <select
-          v-model="popupSettingsStore.settings.popupCalendarHolidayColor"
-          @change="savePopupSettings"
-        >
-          <option value="default">默认</option>
-          <option value="soft">柔和</option>
-          <option value="high-contrast">高对比</option>
-        </select>
-      </div>
+
     </div>
   </div>
 </template>

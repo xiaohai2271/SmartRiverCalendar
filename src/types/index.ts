@@ -203,13 +203,12 @@ export const POPUP_WINDOW_SIZES = {
  * - popupWindowSize → 数据库 key: 'popup.popupWindowSize'
  */
 export interface PopupSettings {
-  popupShowLunar: boolean // 显示农历
+  popupShowLunar: boolean // 日期详情显示农历
   popupShowLunarFestival: boolean // 显示农历节日
   popupShowSolarTerm: boolean // 显示节气
   popupShowHoliday: boolean // 显示法定节假日
   popupShowEvents: boolean // 显示事件
-  popupCalendarShowLunar: boolean // 日历网格显示农历
-  popupCalendarHolidayColor: 'default' | 'soft' | 'high-contrast' // 节假日颜色模式
+  popupCalendarShowLunar: boolean // 日历格子显示农历
   popupWindowSize?: PopupWindowSize // 弹出窗口尺寸
 }
 
