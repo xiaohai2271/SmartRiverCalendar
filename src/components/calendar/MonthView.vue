@@ -573,8 +573,8 @@ function handleContextMenuAction(action: DateCellMenuAction) {
 }
 
 .badge.rest {
-  background: #dcfce7;
-  color: #16a34a;
+  background: #e0f2fe;
+  color: #0284c7;
   font-weight: 600;
 }
 
@@ -605,13 +605,8 @@ function handleContextMenuAction(action: DateCellMenuAction) {
   }
 
   .badge.rest {
-    background: rgba(34, 197, 94, 0.15);
-    color: #86efac;
-  }
-
-  .badge.makeup {
-    background: rgba(239, 68, 68, 0.15);
-    color: #fca5a5;
+    background: rgba(14, 165, 233, 0.15);
+    color: #7dd3fc;
   }
 }
 </style>
