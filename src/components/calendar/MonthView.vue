@@ -279,16 +279,7 @@ function getBadgesForDay(day: Date): BadgeInfo[] {
 
   const badges: BadgeInfo[] = []
 
-  // 优先级 1：休息日（"休"） — 周末或法定节假日
-  if (showMakeupDay.value && (info.isWeekend || info.isHoliday)) {
-    badges.push({
-      type: 'rest',
-      text: REST_BADGE_CONFIG.rest.text,
-      title: info.isHoliday ? (info.holidayName || '节假日') : '周末'
-    })
-  }
-
-  // 优先级 1：补班日（"补"）— 调休补班
+  // 优先级 1：补班日（"补"）— 调休补班（优先判断，避免与"休"冲突）
   if (showMakeupDay.value && info.isWorkDay) {
     badges.push({
       type: 'makeup',
@@ -297,11 +288,20 @@ function getBadgesForDay(day: Date): BadgeInfo[] {
     })
   }
 
-  // 优先级 2：法定节假日名称（仅在非休徽标时显示，避免重复）
-  if (showHoliday.value && info.holidayName && !badges.some(b => b.type === 'rest')) {
+  // 优先级 1：休息日（"休"） — 周末或法定节假日（排除补班日）
+  if (showMakeupDay.value && (info.isWeekend || info.isHoliday) && !info.isWorkDay) {
+    badges.push({
+      type: 'rest',
+      text: REST_BADGE_CONFIG.rest.text,
+      title: info.isHoliday ? (info.holidayName || '节假日') : '周末'
+    })
+  }
+
+  // 优先级 2：法定节假日名称（仅在非休/补徽标时显示，避免重复）
+  if (showHoliday.value && info.holidayName && !badges.some(b => b.type === 'rest' || b.type === 'makeup')) {
     badges.push({ type: 'holiday', text: info.holidayName, title: info.holidayName })
-  } else if (showLunarFestival.value && info.lunarFestival && !badges.some(b => b.type === 'rest')) {
-    // 优先级 3：农历节日（当没有法定节假日和休徽标时显示）
+  } else if (showLunarFestival.value && info.lunarFestival && !badges.some(b => b.type === 'rest' || b.type === 'makeup')) {
+    // 优先级 3：农历节日（当没有法定节假日和休/补徽标时显示）
     badges.push({ type: 'festival', text: info.lunarFestival, title: info.lunarFestival })
   }
 
