@@ -62,10 +62,10 @@
 
     <!-- Events List -->
     <div class="events-list">
-      <template v-for="group in groupedEvents" :key="group.date">
+      <template v-for="group in groupedEvents" :key="group.key">
         <div class="date-group">
           <div class="date-header">
-            <span class="date-label">{{ formatGroupDate(group.date) }}</span>
+            <span class="date-label">{{ group.title }}</span>
             <span class="date-count">{{ group.events.length }} 个日程</span>
           </div>
           <div class="date-events">
@@ -114,7 +114,7 @@
           </svg>
         </div>
         <div class="empty-text">
-          {{ searchQuery || startDate || endDate ? '没有找到匹配的日程' : '暂无日程' }}
+          当前前后七天无日程数据
         </div>
       </div>
     </div>
@@ -276,7 +276,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCalendarStore } from '../stores/calendar'
-import { formatDate, formatTime } from '../utils/date'
+import { formatDate, formatTime, isEventOnDay } from '../utils/date'
 import ContextMenu from '../components/common/ContextMenu.vue'
 import ConfirmPopover from '../components/common/ConfirmPopover.vue'
 import EventDetailModal from '../components/common/EventDetailModal.vue'
@@ -287,8 +287,12 @@ const calendarStore = useCalendarStore()
 
 // 筛选状态
 const searchQuery = ref('')
-const startDate = ref('')
-const endDate = ref('')
+// 默认时间范围：今天前后7天
+const today = new Date()
+const defaultStart = new Date(today.getTime() - 7 * 86400000)
+const defaultEnd = new Date(today.getTime() + 7 * 86400000)
+const startDate = ref(formatDate(defaultStart))
+const endDate = ref(formatDate(defaultEnd))
 const selectedCalendars = ref<string[]>([])
 
 // 弹窗状态
@@ -330,8 +334,10 @@ watch(() => calendarStore.calendars, (cals) => {
 // 从路由查询参数中获取日期并填充筛选
 watch(() => route.query.date, (dateParam) => {
   if (dateParam && typeof dateParam === 'string') {
-    startDate.value = dateParam
-    endDate.value = dateParam
+    const [year, month, day] = dateParam.split('-').map(Number)
+    const targetDate = new Date(year, month - 1, day, 0, 0, 0)
+    startDate.value = formatDate(new Date(targetDate.getTime() - 7 * 86400000))
+    endDate.value = formatDate(new Date(targetDate.getTime() + 7 * 86400000))
   }
 }, { immediate: true })
 
@@ -344,14 +350,27 @@ const filteredEvents = computed(() => {
     events = events.filter(e => selectedCalendars.value.includes(e.calendarId))
   }
 
-  // 按日期范围筛选
-  if (startDate.value) {
-    const start = new Date(startDate.value).getTime()
-    events = events.filter(e => e.startTime >= start)
+  // 辅助函数：将日期字符串解析为本地时间的 startOfDay
+  function parseDateLocal(dateStr: string): Date {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    return new Date(year, month - 1, day, 0, 0, 0, 0)
   }
-  if (endDate.value) {
-    const end = new Date(endDate.value).getTime() + 86400000 // 包含结束日期当天
-    events = events.filter(e => e.startTime < end)
+
+  // 按日期范围筛选（时间交集匹配：事件与搜索范围有重叠即匹配）
+  if (startDate.value) {
+    const searchStart = parseDateLocal(startDate.value).getTime()
+    if (endDate.value) {
+      const searchEnd = parseDateLocal(endDate.value).getTime() + 86400000 // 包含结束日期当天
+      // 重叠条件：event.startTime < searchEnd && event.endTime > searchStart
+      events = events.filter(e => e.startTime < searchEnd && e.endTime > searchStart)
+    } else {
+      // 只有开始日期时，匹配 endTime > searchStart 的事件
+      events = events.filter(e => e.endTime > searchStart)
+    }
+  } else if (endDate.value) {
+    const searchEnd = parseDateLocal(endDate.value).getTime() + 86400000
+    // 只有结束日期时，匹配 startTime < searchEnd 的事件
+    events = events.filter(e => e.startTime < searchEnd)
   }
 
   // 按搜索词筛选
@@ -363,31 +382,79 @@ const filteredEvents = computed(() => {
     )
   }
 
-  // 按结束时间倒序排序（最新的在前）
-  return [...events].sort((a, b) => b.endTime - a.endTime)
+  // 按开始时间倒序排序（最新的在前）
+  return [...events].sort((a, b) => b.startTime - a.startTime)
 })
 
-// 按日期分组的事件
+// 固定分组类型
 interface EventGroup {
-  date: string
+  key: 'yesterday' | 'today' | 'tomorrow' | 'nextWeek'
+  title: string
   events: CalendarEvent[]
 }
 
-const groupedEvents = computed((): EventGroup[] => {
-  const groups: Map<string, CalendarEvent[]> = new Map()
+// 获取分组标题（YYYY年M月D日 周X 格式）
+function getGroupTitle(date: Date): string {
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六']
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const weekDay = weekDays[date.getDay()]
+  return `${year}年${month}月${day}日 周${weekDay}`
+}
 
+const groupedEvents = computed((): EventGroup[] => {
+  // 获取基准日期（今天）
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  const tomorrow = new Date(today)
+  tomorrow.setDate(tomorrow.getDate() + 1)
+
+  // 创建固定分组结构
+  const groups: EventGroup[] = [
+    { key: 'today', title: '今天', events: [] },
+    { key: 'tomorrow', title: '明天', events: [] },
+    { key: 'nextWeek', title: '未来一周', events: [] },
+    { key: 'yesterday', title: '昨天', events: [] }
+  ]
+
+  // 为每个事件分配到对应的分组
   for (const event of filteredEvents.value) {
-    const dateKey = new Date(event.startTime).toISOString().split('T')[0]
-    if (!groups.has(dateKey)) {
-      groups.set(dateKey, [])
+    // 检查事件是否属于未来一周分组（未来2-7天）
+    for (let i = 2; i <= 7; i++) {
+      const futureDate = new Date(today)
+      futureDate.setDate(futureDate.getDate() + i)
+      if (isEventOnDay(event, futureDate)) {
+        groups[2].events.push(event)
+        break // 每个跨天事件在未来一周分组只显示一次
+      }
     }
-    groups.get(dateKey)!.push(event)
+    // 检查事件是否属于明日分组
+    if (isEventOnDay(event, tomorrow)) {
+      groups[1].events.push(event)
+    }
+    // 检查事件是否属于今日分组
+    if (isEventOnDay(event, today)) {
+      groups[0].events.push(event)
+    }
+    // 检查事件是否属于昨日分组
+    if (isEventOnDay(event, yesterday)) {
+      groups[3].events.push(event)
+    }
   }
 
-  return Array.from(groups.entries()).map(([date, events]) => ({
-    date,
-    events
-  }))
+  // 过滤掉空分组，并移除重复事件（使用事件ID去重），并按开始时间倒序排序
+  return groups
+    .map(group => ({
+      ...group,
+      events: [...new Map(group.events.map(e => [e.id, e])).values()]
+        .sort((a, b) => b.startTime - a.startTime)
+    }))
+    .filter(group => group.events.length > 0)
 })
 
 // 切换日历筛选
@@ -410,27 +477,6 @@ function clearDateRange() {
 function getEventColor(event: CalendarEvent): string {
   const calendar = calendarStore.calendars.find(c => c.id === event.calendarId)
   return calendar?.color || '#4A90D9'
-}
-
-// 格式化分组日期
-function formatGroupDate(dateString: string): string {
-  const date = new Date(dateString)
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-
-  const targetDate = new Date(date)
-  targetDate.setHours(0, 0, 0, 0)
-
-  if (targetDate.getTime() === today.getTime()) {
-    return '今天'
-  } else if (targetDate.getTime() === tomorrow.getTime()) {
-    return '明天'
-  } else {
-    return formatDate(date)
-  }
 }
 
 // 格式化事件时间
@@ -746,11 +792,6 @@ function handleDeleteEvent(id: string) {
 
 .event-item:hover {
   box-shadow: var(--shadow-md);
-}
-
-.event-item.all-day {
-  background: var(--accent-light);
-  border-left: 3px solid var(--accent-color);
 }
 
 .event-title-row {
