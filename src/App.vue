@@ -108,7 +108,7 @@ const updateInfo = ref<import('@/types').UpdateInfo | null>(null)
 const isUpdating = ref(false)
 
 // 检测当前是否为弹出窗口
-const isPopupWindow = getCurrentWindow().label === 'calendar-popup'
+const isPopupWindow = getCurrentWindow().label === 'calendar-popup' || getCurrentWindow().label === 'reminder-popup'
 
 // popup-navigate 事件监听器取消函数
 const unlistenPopupNavigate = ref<UnlistenFn | null>(null)

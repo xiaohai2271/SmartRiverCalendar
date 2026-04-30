@@ -1,6 +1,6 @@
 import { sendNotification } from '@tauri-apps/plugin-notification'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { emit as tauriEmit } from '@tauri-apps/api/event'
+import { emit as tauriEmit, listen } from '@tauri-apps/api/event'
 import { useCalendarStore } from '../stores/calendar'
 import { useTodoStore } from '../stores/todo'
 import { useSettingsStore } from '../stores/settings'
@@ -350,6 +350,21 @@ async function showReminderInWindow(data: ReminderQueueItem): Promise<void> {
         await reminderWindow.setFocus()
         console.log('[reminder] 提醒窗口已显示')
       }
+
+      // 等待提醒窗口就绪（避免事件在监听器设置前发送）
+      console.log('[reminder] 等待提醒窗口就绪...')
+      await new Promise<void>((resolve) => {
+        const timeout = setTimeout(() => {
+          console.log('[reminder] 等待窗口就绪超时，强制继续')
+          resolve()
+        }, 5000)
+
+        listen('reminder-window-ready', () => {
+          console.log('[reminder] 提醒窗口已就绪')
+          clearTimeout(timeout)
+          resolve()
+        })
+      })
 
       // 发送提醒事件到窗口
       await tauriEmit('show-reminder', {

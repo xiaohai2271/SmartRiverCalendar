@@ -16,6 +16,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import { useSettingsStore } from '@/stores/settings'
 import * as settingsService from '@/services/settings'
+import { positionReminderWindow } from '@/composables/useReminderPopup'
 import ReminderPopup from '@/components/reminder/ReminderPopup.vue'
 import type { ReminderPopupData } from '@/components/reminder/ReminderPopup.vue'
 
@@ -174,6 +175,9 @@ onMounted(async () => {
   // 应用初始主题
   await applyPopupTheme()
 
+  // 定位窗口到右下角
+  await positionReminderWindow(getCurrentWebviewWindow())
+
   // 监听来自主窗口的提醒事件
   unlistenReminder = await listen<ReminderPopupData>('show-reminder', (event) => {
     handleReminderReceived(event.payload)
@@ -230,7 +234,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   width: 100%;
-  height: 100vh;
+  height: 100%;
   background: var(--bg-primary);
   overflow: hidden;
   position: relative;

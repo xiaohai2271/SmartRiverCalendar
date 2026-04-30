@@ -263,7 +263,7 @@ export function checkAndAdjustBounds(
  * 定位提醒弹出窗口
  * @param reminderWindow 提醒窗口实例
  */
-async function positionReminderWindow(reminderWindow: WebviewWindow): Promise<void> {
+export async function positionReminderWindow(reminderWindow: WebviewWindow): Promise<void> {
   // 获取所有可用显示器
   const monitors = await availableMonitors()
   console.log(`[useReminderPopup] 检测到 ${monitors.length} 个显示器`)
