@@ -574,13 +574,13 @@ function handleContextMenuAction(action: DateCellMenuAction) {
 }
 
 .badge.solar-term {
-  background: #f0fdf4;
-  color: #16a34a;
+  background: #e0f2fe;
+  color: #0284c7;
 }
 
 .badge.rest {
-  background: #e0f2fe;
-  color: #0284c7;
+  background: #f0fdf4;
+  color: #16a34a;
   font-weight: 600;
 }
 
@@ -607,12 +607,13 @@ function handleContextMenuAction(action: DateCellMenuAction) {
   }
 
   .badge.solar-term {
-    background: rgba(22, 163, 74, 0.15);
+    background: rgba(14, 165, 233, 0.15);
+    color: #7dd3fc;
   }
 
   .badge.rest {
-    background: rgba(14, 165, 233, 0.15);
-    color: #7dd3fc;
+    background: rgba(22, 163, 74, 0.15);
+    color: #86efac;
   }
 }
 </style>

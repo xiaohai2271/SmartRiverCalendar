@@ -352,7 +352,7 @@ function handleViewEvent(event: CalendarEvent) {
   align-items: center;
   justify-content: center;
   gap: 2px;
-  margin-top: 4px;
+  margin-top: 8px;
   flex-wrap: wrap;
   max-width: 100%;
 }
@@ -408,8 +408,8 @@ function handleViewEvent(event: CalendarEvent) {
 }
 
 .badge.rest {
-  background: #e0f2fe;
-  color: #0284c7;
+  background: #f0fdf4;
+  color: #16a34a;
   font-weight: 600;
 }
 
@@ -421,8 +421,8 @@ function handleViewEvent(event: CalendarEvent) {
 
 /* 深色模式适配 */
 :global(.dark) .badge.rest {
-  background: rgba(14, 165, 233, 0.15);
-  color: #7dd3fc;
+  background: rgba(22, 163, 74, 0.15);
+  color: #86efac;
 }
 
 :global(.dark) .badge.makeup {
