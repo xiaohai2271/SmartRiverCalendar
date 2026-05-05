@@ -11,22 +11,19 @@
       <div class="weekday">{{ weekdayName }}</div>
     </div>
 
-    <!-- 农历和节气区域 -->
+    <!-- 农历、节气、节假日、补休徽标（单行内联） -->
     <div class="lunar-section">
-      <span class="lunar-date">{{ lunarInfo.lunarDate }}</span>
-      <span v-if="lunarInfo.solarTerm" class="solar-term">{{ lunarInfo.solarTerm }}</span>
-    </div>
-
-    <!-- 节假日标签 -->
-    <div v-if="lunarInfo.holidayName" class="holiday-tag">
-      <span class="holiday-icon">🎉</span>
-      {{ lunarInfo.holidayName }}
-    </div>
-
-    <!-- 补休班提醒 -->
-    <div v-if="lunarInfo.isWorkDay && lunarInfo.workDayName" class="workday-reminder">
-      <span class="workday-icon">⚠️</span>
-      今日调休上班（{{ lunarInfo.workDayName }}）
+      <span class="lunar-badge lunar-date">{{ lunarInfo.lunarMonth }}{{ lunarInfo.lunarDay }}</span>
+      <span v-if="lunarInfo.solarTerm" class="lunar-badge solar-term">{{ lunarInfo.solarTerm }}</span>
+      <span v-if="lunarInfo.lunarFestival" class="lunar-badge lunar-festival">{{ lunarInfo.lunarFestival }}</span>
+      <span v-if="lunarInfo.holidayName && !lunarInfo.isWorkDay" class="lunar-badge holiday-badge">
+        <span class="holiday-icon">🎉</span>
+        {{ lunarInfo.holidayName }}
+      </span>
+      <span v-if="lunarInfo.isWorkDay && lunarInfo.workDayName" class="lunar-badge workday-badge">
+        <span class="workday-icon">⚠️</span>
+        补休（{{ lunarInfo.workDayName }}）
+      </span>
     </div>
   </div>
 </template>
@@ -141,66 +138,63 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-/* 农历和节气区域 - 使用标签样式 */
+/* 农历、节气、节假日徽标区域 - 单行内联 */
 .lunar-section {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 12px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
-.lunar-date {
-  font-size: 14px;
-  color: var(--text-secondary);
-  padding: 4px 10px;
-  background: var(--bg-hover);
-  border-radius: 8px;
-}
-
-.solar-term {
-  font-size: 13px;
-  color: var(--accent-color);
-  padding: 4px 10px;
-  background: rgba(74, 144, 217, 0.1);
-  border-radius: 8px;
-  font-weight: 500;
-}
-
-/* 节假日标签 */
-.holiday-tag {
+/* 统一徽标基础样式 */
+.lunar-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, rgba(255, 107, 107, 0.15), rgba(255, 159, 67, 0.15));
-  border-radius: 20px;
-  font-size: 14px;
+  gap: 4px;
+  font-size: 13px;
   font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+/* 农历日期徽标 */
+.lunar-badge.lunar-date {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+/* 节气徽标 */
+.lunar-badge.solar-term {
+  color: var(--accent-color);
+  background: rgba(74, 144, 217, 0.1);
+}
+
+/* 农历节日徽标 */
+.lunar-badge.lunar-festival {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+}
+
+/* 节假日徽标 */
+.lunar-badge.holiday-badge {
   color: #e74c3c;
+  background: linear-gradient(135deg, rgba(255, 107, 107, 0.15), rgba(255, 159, 67, 0.15));
+}
+
+/* 补休徽标 */
+.lunar-badge.workday-badge {
+  color: #e67e22;
+  background: linear-gradient(135deg, rgba(241, 196, 15, 0.15), rgba(243, 156, 18, 0.15));
 }
 
 .holiday-icon {
-  font-size: 16px;
-}
-
-/* 补休班提醒 */
-.workday-reminder {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: linear-gradient(135deg, rgba(241, 196, 15, 0.15), rgba(243, 156, 18, 0.15));
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 500;
-  color: #e67e22;
-  margin-top: 8px;
+  font-size: 12px;
 }
 
 .workday-icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* 响应式 */
@@ -219,8 +213,12 @@ onUnmounted(() => {
   }
 
   .lunar-section {
-    flex-direction: column;
     gap: 6px;
+  }
+
+  .lunar-badge {
+    font-size: 12px;
+    padding: 3px 8px;
   }
 }
 
@@ -229,15 +227,15 @@ onUnmounted(() => {
   background: rgba(74, 144, 217, 0.2);
 }
 
-:root.dark .solar-term {
+:root.dark .lunar-badge.solar-term {
   background: rgba(74, 144, 217, 0.2);
 }
 
-:root.dark .holiday-tag {
+:root.dark .lunar-badge.holiday-badge {
   background: linear-gradient(135deg, rgba(255, 107, 107, 0.2), rgba(255, 159, 67, 0.2));
 }
 
-:root.dark .workday-reminder {
+:root.dark .lunar-badge.workday-badge {
   background: linear-gradient(135deg, rgba(241, 196, 15, 0.2), rgba(243, 156, 18, 0.2));
 }
 </style>
