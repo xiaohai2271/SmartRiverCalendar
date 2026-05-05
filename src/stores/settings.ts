@@ -29,6 +29,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   // 系统集成设置
   clockHookEnabled: false, // 默认关闭，需用户主动开启
   clockHookBlockPopup: false, // 默认不阻止系统弹窗
+  // 网络代理设置
+  proxyMode: 'none', // 默认不走代理
+  proxyHost: '',
+  proxyPort: 0,
+  proxyUsername: '',
+  proxyPassword: '',
 }
 
 /**
