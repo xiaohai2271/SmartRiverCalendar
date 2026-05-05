@@ -429,7 +429,7 @@ onUnmounted(() => {
     <template v-else>
       <!-- 日期信息区域 -->
       <div class="popup-section date-info-section">
-        <PopupDateInfo :date="today" />
+        <PopupDateInfo :date="today" :size="currentSize" />
       </div>
       
       <!-- 月份导航区域 -->
@@ -448,6 +448,7 @@ onUnmounted(() => {
           :key="currentSize"
           :current-date="currentDate"
           :selected-date="selectedDate"
+          :size="currentSize"
           @select-date="handleSelectDate"
           @create-event="handleCreateEvent"
           @context-menu="handleContextMenu"
