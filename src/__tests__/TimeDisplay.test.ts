@@ -60,15 +60,15 @@ describe('TimeDisplay 组件', () => {
     it('应该在节假日显示标签', () => {
       const wrapper = mount(TimeDisplay)
       // 2024年1月1日是元旦
-      expect(wrapper.find('.holiday-tag').exists()).toBe(true)
-      expect(wrapper.find('.holiday-tag').text()).toContain('元旦')
+      expect(wrapper.find('.holiday-badge').exists()).toBe(true)
+      expect(wrapper.find('.holiday-badge').text()).toContain('元旦')
     })
 
     it('应该在非节假日隐藏标签', async () => {
       // 设置为非节假日
       vi.setSystemTime(new Date(2024, 0, 2)) // 2024年1月2日
       const wrapper = mount(TimeDisplay)
-      expect(wrapper.find('.holiday-tag').exists()).toBe(false)
+      expect(wrapper.find('.holiday-badge').exists()).toBe(false)
     })
   })
 
@@ -77,13 +77,13 @@ describe('TimeDisplay 组件', () => {
       // 2024年2月4日是春节调休补班
       vi.setSystemTime(new Date(2024, 1, 4, 9, 0, 0))
       const wrapper = mount(TimeDisplay)
-      expect(wrapper.find('.workday-reminder').exists()).toBe(true)
-      expect(wrapper.find('.workday-reminder').text()).toContain('调休上班')
+      expect(wrapper.find('.workday-badge').exists()).toBe(true)
+      expect(wrapper.find('.workday-badge').text()).toContain('补休')
     })
 
     it('应该在非补班日隐藏提醒', () => {
       const wrapper = mount(TimeDisplay)
-      expect(wrapper.find('.workday-reminder').exists()).toBe(false)
+      expect(wrapper.find('.workday-badge').exists()).toBe(false)
     })
   })
 
