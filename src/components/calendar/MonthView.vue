@@ -432,6 +432,26 @@ function handleContextMenuAction(action: DateCellMenuAction) {
   color: var(--text-tertiary);
 }
 
+/* 非本月日期 - 日数字体调淡 */
+.day-cell.other-month .day-number {
+  color: var(--text-tertiary);
+}
+
+/* 非本月日期 - 农历日期调淡（覆盖 .lunar-date.festival 的红色） */
+.day-cell.other-month .lunar-date {
+  color: var(--text-tertiary);
+}
+
+.day-cell.other-month .lunar-date.festival {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+
+/* 非本月日期 - 徽标调淡 */
+.day-cell.other-month .badge {
+  opacity: 0.4;
+}
+
 /* 今天 - 主题色 */
 .day-cell.today {
   background: var(--accent-light);
