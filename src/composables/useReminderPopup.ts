@@ -380,14 +380,22 @@ export async function positionReminderWindow(reminderWindow: WebviewWindow): Pro
   // 根据精简面板和任务栏位置调整（返回位置和宽度）
   const adjusted = adjustPositionForPopup(basePosition, calendarPopupInfo, taskbar.position)
 
-  // 如果精简面板显示，调整提醒窗口宽度与精简面板一致
+  // 始终更新窗口尺寸：精简面板显示时同步其宽度，隐藏时恢复默认宽度
+  await reminderWindow.setSize(new LogicalSize(adjusted.width, REMINDER_HEIGHT))
   if (calendarPopupInfo) {
-    await reminderWindow.setSize(new LogicalSize(adjusted.width, REMINDER_HEIGHT))
     console.log(`[useReminderPopup] 提醒窗口宽度调整为 ${adjusted.width}px（与精简面板一致）`)
+  } else {
+    console.log(`[useReminderPopup] 提醒窗口宽度恢复为默认 ${REMINDER_WIDTH}px`)
   }
 
-  // 边界检查（使用工作区域，传入实际宽度）
-  const finalPosition = checkAndAdjustBounds({ x: adjusted.x, y: adjusted.y }, primaryMonitor, adjusted.width)
+  // 边界检查：精简面板显示时信任其 x 位置（精简面板已在边界内），仅检查 y 方向
+  let finalPosition: { x: number; y: number }
+  if (calendarPopupInfo) {
+    const yChecked = checkAndAdjustBounds({ x: adjusted.x, y: adjusted.y }, primaryMonitor, adjusted.width)
+    finalPosition = { x: adjusted.x, y: yChecked.y }
+  } else {
+    finalPosition = checkAndAdjustBounds({ x: adjusted.x, y: adjusted.y }, primaryMonitor, adjusted.width)
+  }
 
   // 设置窗口位置
   await reminderWindow.setPosition(new PhysicalPosition(finalPosition.x, finalPosition.y))
