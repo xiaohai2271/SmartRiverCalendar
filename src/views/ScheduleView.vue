@@ -393,16 +393,6 @@ interface EventGroup {
   events: CalendarEvent[]
 }
 
-// 获取分组标题（YYYY年M月D日 周X 格式）
-function getGroupTitle(date: Date): string {
-  const weekDays = ['日', '一', '二', '三', '四', '五', '六']
-  const year = date.getFullYear()
-  const month = date.getMonth() + 1
-  const day = date.getDate()
-  const weekDay = weekDays[date.getDay()]
-  return `${year}年${month}月${day}日 周${weekDay}`
-}
-
 const groupedEvents = computed((): EventGroup[] => {
   // 获取基准日期（今天）
   const today = new Date()
@@ -486,16 +476,21 @@ function formatEventTime(event: CalendarEvent): string {
   return `${start} - ${end}`
 }
 
-// 格式化日期为 input[type=date] 格式
+// 格式化日期为 input[type=date] 格式（本地时间）
 function formatDateString(timestamp: number): string {
   const date = new Date(timestamp)
-  return date.toISOString().split('T')[0]
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
-// 格式化时间为 input[type=time] 格式
+// 格式化时间为 input[type=time] 格式（本地时间）
 function formatTimeString(timestamp: number): string {
   const date = new Date(timestamp)
-  return date.toTimeString().slice(0, 5)
+  const hours = String(date.getHours()).padStart(2, '0')
+  const minutes = String(date.getMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
 }
 
 // 日程右键菜单
@@ -565,13 +560,23 @@ function handleSubmit() {
   const title = formData.value.title.trim()
   if (!title || !editingEventId.value) return
 
+  // 解析日期字符串为本地时间（避免UTC偏移）
+  function parseLocalDate(dateStr: string, timeStr?: string): number {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    if (timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number)
+      return new Date(year, month - 1, day, hours, minutes).getTime()
+    }
+    return new Date(year, month - 1, day).getTime()
+  }
+
   const startDateTime = formData.value.allDay
-    ? new Date(formData.value.startDate).getTime()
-    : new Date(`${formData.value.startDate}T${formData.value.startTime}`).getTime()
+    ? parseLocalDate(formData.value.startDate)
+    : parseLocalDate(formData.value.startDate, formData.value.startTime)
 
   const endDateTime = formData.value.allDay
-    ? new Date(formData.value.endDate).getTime() + 86400000
-    : new Date(`${formData.value.endDate}T${formData.value.endTime}`).getTime()
+    ? parseLocalDate(formData.value.endDate) + 86400000 - 1  // 当天 23:59:59
+    : parseLocalDate(formData.value.endDate, formData.value.endTime)
 
   calendarStore.updateEvent(editingEventId.value, {
     title,

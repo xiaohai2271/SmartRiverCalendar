@@ -283,10 +283,10 @@ watch(() => eventFormData.value.allDay, (isAllDay) => {
   // 取消全天时保留当前时间值，因为回显时已正确设置
 }, { immediate: true })
 
-// 获取今天的日期字符串
+// 获取今天的日期字符串（使用本地时间）
 function getTodayString(): string {
   const today = new Date()
-  return today.toISOString().split('T')[0]
+  return getDateString(today)
 }
 
 // 获取指定日期的字符串
@@ -501,13 +501,23 @@ function handleEventSubmit() {
   const title = eventFormData.value.title.trim()
   if (!title) return
 
+  // 解析日期字符串为本地时间（避免UTC偏移）
+  function parseLocalDate(dateStr: string, timeStr?: string): number {
+    const [year, month, day] = dateStr.split('-').map(Number)
+    if (timeStr) {
+      const [hours, minutes] = timeStr.split(':').map(Number)
+      return new Date(year, month - 1, day, hours, minutes).getTime()
+    }
+    return new Date(year, month - 1, day).getTime()
+  }
+
   const startDateTime = eventFormData.value.allDay
-    ? new Date(eventFormData.value.startDate + 'T00:00:00').getTime()
-    : new Date(`${eventFormData.value.startDate}T${eventFormData.value.startTime}`).getTime()
+    ? parseLocalDate(eventFormData.value.startDate)
+    : parseLocalDate(eventFormData.value.startDate, eventFormData.value.startTime)
 
   const endDateTime = eventFormData.value.allDay
-    ? new Date(eventFormData.value.endDate + 'T23:59:59').getTime()
-    : new Date(`${eventFormData.value.endDate}T${eventFormData.value.endTime}`).getTime()
+    ? parseLocalDate(eventFormData.value.endDate) + 24 * 60 * 60 * 1000 - 1  // 当天 23:59:59
+    : parseLocalDate(eventFormData.value.endDate, eventFormData.value.endTime)
 
   if (isEditingEvent.value && editingEventId.value) {
     // 编辑模式

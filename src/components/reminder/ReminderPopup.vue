@@ -1,74 +1,76 @@
 <template>
-  <Teleport to="body">
-    <TransitionGroup name="popup" tag="div" class="reminder-popup-container">
-      <div
-        v-for="reminder in activeReminders"
-        :key="reminder.id"
-        class="reminder-popup"
-        :class="{ 'is-todo': reminder.type === 'todo' }"
-      >
-        <!-- 弹窗头部 -->
-        <div class="popup-header">
-          <div class="popup-icon">
-            <span v-if="reminder.type === 'event'">📅</span>
-            <span v-else>✅</span>
-          </div>
-          <div class="popup-title-section">
-            <div class="popup-title">{{ reminder.title }}</div>
-            <div class="popup-time">{{ formatTime(reminder.triggerTime) }}</div>
-          </div>
-          <button class="popup-close" @click="dismissReminder(reminder.id)" title="关闭">
-            ✕
-          </button>
+  <Transition name="popup">
+    <div
+      v-if="reminder"
+      class="reminder-popup"
+      :class="{ 'is-todo': reminder.type === 'todo' }"
+    >
+      <!-- 弹窗头部 -->
+      <div class="popup-header">
+        <div class="popup-icon">
+          <span v-if="reminder.type === 'event'">📅</span>
+          <span v-else>✅</span>
         </div>
-
-        <!-- 弹窗内容 -->
-        <div class="popup-body">
-          <div class="popup-description" v-if="reminder.body">
-            {{ reminder.body }}
-          </div>
+        <div class="popup-title-section">
+          <div class="popup-title">{{ reminder.title }}</div>
+          <div class="popup-time">{{ formatTime(reminder.triggerTime) }}</div>
         </div>
+        <button
+          v-if="actualShowCloseButton"
+          class="popup-close"
+          @click="dismissReminder"
+          title="关闭"
+        >
+          ✕
+        </button>
+      </div>
 
-        <!-- 操作按钮 -->
-        <div class="popup-actions">
-          <button class="popup-btn btn-snooze" @click="snoozeReminder(reminder)">
-            <span class="btn-icon">⏰</span>
-            <span>稍后提醒</span>
-          </button>
-          <button
-            v-if="reminder.type === 'todo'"
-            class="popup-btn btn-complete"
-            @click="completeTodo(reminder)"
-          >
-            <span class="btn-icon">✓</span>
-            <span>标记完成</span>
-          </button>
-          <button class="popup-btn btn-view" @click="viewDetails(reminder)">
-            <span class="btn-icon">👁</span>
-            <span>查看详情</span>
-          </button>
-        </div>
-
-        <!-- 自动消失进度条 -->
-        <div class="popup-progress">
-          <div
-            class="progress-bar"
-            :style="{ width: `${getProgressWidth(reminder)}%` }"
-          ></div>
+      <!-- 弹窗内容 -->
+      <div class="popup-body">
+        <div class="popup-description" v-if="reminder.body">
+          {{ reminder.body }}
         </div>
       </div>
-    </TransitionGroup>
-    <!-- 提示消息 -->
-    <Transition name="toast">
-      <div v-if="toastVisible" class="reminder-toast">
-        {{ toastMessage }}
+
+      <!-- 操作按钮 -->
+      <div class="popup-actions">
+        <button class="popup-btn btn-snooze" @click="snoozeReminder">
+          <span class="btn-icon">⏰</span>
+          <span>稍后提醒</span>
+        </button>
+        <button
+          v-if="reminder.type === 'todo'"
+          class="popup-btn btn-complete"
+          @click="completeTodo"
+        >
+          <span class="btn-icon">✓</span>
+          <span>标记完成</span>
+        </button>
+        <button class="popup-btn btn-view" @click="viewDetails">
+          <span class="btn-icon">👁</span>
+          <span>查看详情</span>
+        </button>
       </div>
-    </Transition>
-  </Teleport>
+
+      <!-- 自动消失进度条 -->
+      <div class="popup-progress">
+        <div
+          class="progress-bar"
+          :style="{ width: `${progressWidth}%` }"
+        ></div>
+      </div>
+    </div>
+  </Transition>
+  <!-- 提示消息 -->
+  <Transition name="toast">
+    <div v-if="toastVisible" class="reminder-toast">
+      {{ toastMessage }}
+    </div>
+  </Transition>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, inject } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useTodoStore } from '../../stores/todo'
 import { markReminderAsViewed } from '../../services/reminder'
@@ -86,32 +88,76 @@ export interface ReminderPopupData {
   createdAt: number
 }
 
-// 自动消失时间（毫秒）
-const AUTO_DISMISS_TIMEOUT = 10000
+// 提醒强度类型
+type ReminderMode = 'standard' | 'strong' | 'silent'
 
-// 稍后提醒时间（毫秒）
-// 开发模式：30秒，生产模式：5分钟
-const SNOOZE_DURATION = import.meta.env.DEV ? 30 * 1000 : 5 * 60 * 1000
+// 默认显示时长配置（毫秒）
+const DEFAULT_DURATIONS: Record<ReminderMode, number> = {
+  standard: 10000, // 10秒
+  strong: 30000,   // 30秒
+  silent: 5000     // 5秒
+}
 
-// 活跃的提醒列表
-const activeReminders = ref<ReminderPopupData[]>([])
+// 默认关闭按钮显示配置
+const DEFAULT_SHOW_CLOSE_BUTTON: Record<ReminderMode, boolean> = {
+  standard: true,
+  strong: true,
+  silent: false
+}
+
+// Props 定义
+interface Props {
+  reminder: ReminderPopupData | null
+  duration?: number
+  showCloseButton?: boolean
+  reminderMode?: ReminderMode
+}
+
+const props = withDefaults(defineProps<Props>(), {
+  duration: undefined,
+  showCloseButton: undefined,
+  reminderMode: 'standard'
+})
+
+// Emits 定义
+const emit = defineEmits<{
+  dismiss: []
+  snooze: [snoozeTime: number]
+  complete: []
+  view: []
+}>()
 
 // 提示消息状态
 const toastMessage = ref('')
 const toastVisible = ref(false)
 
-// 进度条定时器
-const progressIntervals = new Map<string, ReturnType<typeof setInterval>>()
+// 进度条相关
+const progressWidth = ref(100)
+let progressInterval: ReturnType<typeof setInterval> | null = null
+let autoDismissTimeout: ReturnType<typeof setTimeout> | null = null
 
 // 路由和 store
 const router = useRouter()
 const todoStore = useTodoStore()
 
-// 注入提醒事件总线
-const reminderBus = inject<{
-  on: (callback: (data: ReminderPopupData) => void) => void
-  off: (callback: (data: ReminderPopupData) => void) => void
-}>('reminderBus')
+// 稍后提醒时间（毫秒）- 统一使用5分钟
+const SNOOZE_DURATION = 5 * 60 * 1000
+
+// 计算实际显示时长
+const actualDuration = computed(() => {
+  if (props.duration !== undefined) {
+    return props.duration
+  }
+  return DEFAULT_DURATIONS[props.reminderMode]
+})
+
+// 计算是否显示关闭按钮
+const actualShowCloseButton = computed(() => {
+  if (props.showCloseButton !== undefined) {
+    return props.showCloseButton
+  }
+  return DEFAULT_SHOW_CLOSE_BUTTON[props.reminderMode]
+})
 
 // 格式化时间
 function formatTime(timestamp: number): string {
@@ -122,64 +168,43 @@ function formatTime(timestamp: number): string {
   })
 }
 
-// 获取进度条宽度
-function getProgressWidth(reminder: ReminderPopupData): number {
-  const elapsed = Date.now() - reminder.createdAt
-  const remaining = Math.max(0, AUTO_DISMISS_TIMEOUT - elapsed)
-  return (remaining / AUTO_DISMISS_TIMEOUT) * 100
-}
+// 启动自动消失定时器
+function startAutoDismiss() {
+  // 清除之前的定时器
+  clearTimers()
 
-// 添加提醒
-function addReminder(data: ReminderPopupData) {
-  // 检查是否已存在相同提醒
-  const existingIndex = activeReminders.value.findIndex(r => r.id === data.id)
-  if (existingIndex !== -1) {
-    return
-  }
-
-  // 添加到列表
-  activeReminders.value.push(data)
-
-  // 设置自动消失定时器
-  const timeoutId = setTimeout(() => {
-    dismissReminder(data.id)
-  }, AUTO_DISMISS_TIMEOUT)
+  const duration = actualDuration.value
+  const startTime = Date.now()
 
   // 设置进度条更新定时器
-  const progressInterval = setInterval(() => {
-    // 触发响应式更新
-    const index = activeReminders.value.findIndex(r => r.id === data.id)
-    if (index !== -1) {
-      activeReminders.value[index] = { ...activeReminders.value[index] }
-    }
+  progressInterval = setInterval(() => {
+    const elapsed = Date.now() - startTime
+    const remaining = Math.max(0, duration - elapsed)
+    progressWidth.value = (remaining / duration) * 100
   }, 100)
 
-  progressIntervals.set(data.id, progressInterval)
+  // 设置自动消失定时器
+  autoDismissTimeout = setTimeout(() => {
+    dismissReminder()
+  }, duration)
+}
 
-  // 存储 timeoutId 用于清理
-  ;(data as any)._timeoutId = timeoutId
+// 清除定时器
+function clearTimers() {
+  if (progressInterval) {
+    clearInterval(progressInterval)
+    progressInterval = null
+  }
+  if (autoDismissTimeout) {
+    clearTimeout(autoDismissTimeout)
+    autoDismissTimeout = null
+  }
 }
 
 // 关闭提醒
-function dismissReminder(id: string) {
-  const index = activeReminders.value.findIndex(r => r.id === id)
-  if (index !== -1) {
-    // 清理定时器
-    const reminder = activeReminders.value[index]
-    if ((reminder as any)._timeoutId) {
-      clearTimeout((reminder as any)._timeoutId)
-    }
-
-    // 清理进度条定时器
-    const progressInterval = progressIntervals.get(id)
-    if (progressInterval) {
-      clearInterval(progressInterval)
-      progressIntervals.delete(id)
-    }
-
-    // 从列表中移除
-    activeReminders.value.splice(index, 1)
-  }
+function dismissReminder() {
+  clearTimers()
+  emit('dismiss')
 }
 
 // 显示提示消息
@@ -194,123 +219,77 @@ function showToast(message: string, duration: number = 2000) {
 }
 
 // 稍后提醒
-function snoozeReminder(reminder: ReminderPopupData) {
-  // 发出自定义事件，通知 reminder.ts 稍后提醒
-  const snoozeEvent = new CustomEvent('reminder-snooze', {
-    detail: {
-      itemId: reminder.itemId,
-      type: reminder.type,
-      snoozeTime: Date.now() + SNOOZE_DURATION
-    }
-  })
-  window.dispatchEvent(snoozeEvent)
+function snoozeReminder() {
+  // 先清除自动消失定时器，防止定时器触发 dismiss
+  clearTimers()
 
-  // 动态生成提示消息
-  // 开发模式显示秒数，生产模式显示分钟数
-  const snoozeMinutes = Math.floor(SNOOZE_DURATION / 60000)
-  const snoozeSeconds = Math.floor(SNOOZE_DURATION / 1000)
-  const toastMsg = import.meta.env.DEV
-    ? `${snoozeSeconds}秒后再提醒`
-    : `${snoozeMinutes}分钟后再提醒`
+  const snoozeTime = Date.now() + SNOOZE_DURATION
 
   // 显示提示消息
-  showToast(toastMsg)
+  showToast('5分钟后再提醒')
 
-  // 立即关闭弹窗，避免与新弹窗重叠
-  dismissReminder(reminder.id)
+  // 只发出 snooze 事件，不调用 dismissReminder()
+  // 由 ReminderPopupView 的 handleSnooze 控制窗口隐藏
+  emit('snooze', snoozeTime)
 }
 
 // 标记待办完成
-async function completeTodo(reminder: ReminderPopupData) {
-  if (reminder.type === 'todo') {
+async function completeTodo() {
+  if (props.reminder?.type === 'todo') {
     try {
-      await todoStore.toggleTodo(reminder.itemId)
+      await todoStore.toggleTodo(props.reminder.itemId)
     } catch (error) {
       console.error('标记待办完成失败:', error)
     }
   }
 
+  emit('complete')
   // 关闭弹窗
-  dismissReminder(reminder.id)
+  dismissReminder()
 }
 
 // 查看详情
-function viewDetails(reminder: ReminderPopupData) {
-  // 标记为已查看，防止在有效期内重复提醒
-  markReminderAsViewed(reminder.itemId)
+function viewDetails() {
+  if (!props.reminder) return
 
-  if (reminder.type === 'event') {
+  // 标记为已查看，防止在有效期内重复提醒
+  markReminderAsViewed(props.reminder.itemId)
+
+  emit('view')
+
+  if (props.reminder.type === 'event') {
     // 导航到日历视图，显示事件详情
     router.push({
       path: '/calendar',
-      query: { eventId: reminder.itemId }
+      query: { eventId: props.reminder.itemId }
     })
   } else {
     // 导航到待办视图
     router.push({
       path: '/todos',
-      query: { todoId: reminder.itemId }
+      query: { todoId: props.reminder.itemId }
     })
   }
 
   // 关闭弹窗
-  dismissReminder(reminder.id)
+  dismissReminder()
 }
 
-// 处理提醒事件
-function handleReminderEvent(data: ReminderPopupData) {
-  addReminder(data)
-}
-
-// 组件挂载时注册事件监听
+// 组件挂载时启动定时器
 onMounted(() => {
-  if (reminderBus) {
-    reminderBus.on(handleReminderEvent)
+  if (props.reminder) {
+    startAutoDismiss()
   }
 })
 
 // 组件卸载时清理
 onUnmounted(() => {
-  if (reminderBus) {
-    reminderBus.off(handleReminderEvent)
-  }
-
-  // 清理所有定时器
-  activeReminders.value.forEach(reminder => {
-    if ((reminder as any)._timeoutId) {
-      clearTimeout((reminder as any)._timeoutId)
-    }
-  })
-
-  progressIntervals.forEach(interval => {
-    clearInterval(interval)
-  })
-  progressIntervals.clear()
-})
-
-// 暴露方法供外部调用
-defineExpose({
-  addReminder,
-  dismissReminder
+  clearTimers()
 })
 </script>
 
 <style scoped>
-/* 提醒弹窗容器 */
-.reminder-popup-container {
-  position: fixed;
-  bottom: 20px;
-  right: 20px;
-  z-index: 10000;
-  display: flex;
-  flex-direction: column-reverse;
-  gap: 12px;
-  max-width: 380px;
-  width: 100%;
-  pointer-events: none;
-}
-
-/* 单个提醒弹窗 */
+/* 弹窗样式 - 适配独立窗口（320x160） */
 .reminder-popup {
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
@@ -321,6 +300,10 @@ defineExpose({
   position: relative;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 /* 待办类型弹窗的特殊样式 */
@@ -331,13 +314,14 @@ defineExpose({
 /* 弹窗头部 */
 .popup-header {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  padding: 16px 16px 12px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px 6px;
+  flex-shrink: 0;
 }
 
 .popup-icon {
-  font-size: 24px;
+  font-size: 20px;
   flex-shrink: 0;
   line-height: 1;
 }
@@ -348,16 +332,18 @@ defineExpose({
 }
 
 .popup-title {
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--text-primary);
   line-height: 1.3;
-  margin-bottom: 4px;
   word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .popup-time {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
 }
 
@@ -381,23 +367,31 @@ defineExpose({
 
 /* 弹窗内容 */
 .popup-body {
-  padding: 0 16px 12px;
+  padding: 0 12px 6px;
+  flex: 1;
+  overflow: hidden;
 }
 
 .popup-description {
-  font-size: 13px;
+  font-size: 12px;
   color: var(--text-secondary);
-  line-height: 1.5;
+  line-height: 1.4;
   word-break: break-word;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
-/* 操作按钮 */
+/* 操作按钮 - 始终水平排列 */
 .popup-actions {
   display: flex;
-  gap: 8px;
-  padding: 12px 16px;
+  gap: 6px;
+  padding: 8px 12px;
   background: var(--bg-tertiary);
   border-top: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
 .popup-btn {
@@ -405,13 +399,13 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 4px;
+  padding: 6px 8px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-secondary);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -428,7 +422,7 @@ defineExpose({
 }
 
 .btn-icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 /* 稍后提醒按钮 */
@@ -458,6 +452,7 @@ defineExpose({
   background: var(--bg-tertiary);
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .progress-bar {
@@ -469,7 +464,7 @@ defineExpose({
   left: 0;
 }
 
-/* 弹窗动画 */
+/* 弹窗动画 - 滑入/滑出 */
 .popup-enter-active {
   animation: popup-enter 0.3s ease-out;
 }
@@ -478,29 +473,25 @@ defineExpose({
   animation: popup-leave 0.2s ease-in;
 }
 
-.popup-move {
-  transition: transform 0.3s ease;
-}
-
 @keyframes popup-enter {
   from {
     opacity: 0;
-    transform: translateX(100%) scale(0.9);
+    transform: translateY(-20px) scale(0.95);
   }
   to {
     opacity: 1;
-    transform: translateX(0) scale(1);
+    transform: translateY(0) scale(1);
   }
 }
 
 @keyframes popup-leave {
   from {
     opacity: 1;
-    transform: translateX(0) scale(1);
+    transform: translateY(0) scale(1);
   }
   to {
     opacity: 0;
-    transform: translateX(100%) scale(0.9);
+    transform: translateY(-20px) scale(0.95);
   }
 }
 
@@ -508,7 +499,8 @@ defineExpose({
 .reminder-toast {
   position: fixed;
   bottom: 100px;
-  right: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
@@ -534,45 +526,22 @@ defineExpose({
 @keyframes toast-enter {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateX(-50%) translateY(10px);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(-50%) translateY(0);
   }
 }
 
 @keyframes toast-leave {
   from {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateX(-50%) translateY(0);
   }
   to {
     opacity: 0;
-    transform: translateY(10px);
-  }
-}
-
-/* 响应式适配 */
-@media (max-width: 480px) {
-  .reminder-popup-container {
-    bottom: 10px;
-    right: 10px;
-    left: 10px;
-    max-width: none;
-  }
-
-  .popup-actions {
-    flex-wrap: wrap;
-  }
-
-  .popup-btn {
-    flex: 1 1 calc(50% - 4px);
-    min-width: 0;
-  }
-
-  .popup-btn:last-child {
-    flex: 1 1 100%;
+    transform: translateX(-50%) translateY(10px);
   }
 }
 </style>

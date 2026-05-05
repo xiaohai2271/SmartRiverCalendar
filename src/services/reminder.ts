@@ -1,8 +1,261 @@
 import { sendNotification } from '@tauri-apps/plugin-notification'
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { emit as tauriEmit, listen } from '@tauri-apps/api/event'
 import { useCalendarStore } from '../stores/calendar'
 import { useTodoStore } from '../stores/todo'
 import { useSettingsStore } from '../stores/settings'
 import type { CalendarEvent, Todo, AppSettings } from '../types'
+
+// ────────────────────────────────────────────
+// 窗口配置常量
+// ────────────────────────────────────────────
+
+/** 提醒弹出窗口标签名 */
+const REMINDER_POPUP_LABEL = 'reminder-popup'
+
+// ────────────────────────────────────────────
+// 提醒队列类型定义
+// ────────────────────────────────────────────
+
+/**
+ * 提醒队列项
+ * 包含提醒的完整信息及入队时间
+ */
+export interface ReminderQueueItem {
+  /** 提醒唯一标识 */
+  id: string
+  /** 类型：事件或待办 */
+  type: 'event' | 'todo'
+  /** 提醒标题 */
+  title: string
+  /** 提醒正文 */
+  body: string
+  /** 原始触发时间 */
+  triggerTime: number
+  /** 关联的事件/待办 ID */
+  itemId: string
+  /** 关联的事件/待办数据 */
+  itemData: CalendarEvent | Todo
+  /** 入队时间戳 */
+  enqueuedAt: number
+}
+
+/**
+ * 提醒队列结构
+ */
+export interface ReminderQueue {
+  /** 队列项列表 */
+  items: ReminderQueueItem[]
+  /** 最大队列长度 */
+  maxSize: number
+  /** 超时时间（毫秒） */
+  timeoutMs: number
+}
+
+/**
+ * 队列存储键
+ */
+const QUEUE_STORAGE_KEY = 'reminder_queue'
+
+/**
+ * 默认队列配置
+ */
+const DEFAULT_QUEUE_CONFIG: ReminderQueue = {
+  items: [],
+  maxSize: 100,
+  timeoutMs: 3600000 // 1小时
+}
+
+/**
+ * 当前显示的提醒 ID（用于控制同时只显示一个）
+ */
+let currentDisplayedReminderId: string | null = null
+
+// ────────────────────────────────────────────
+// 队列持久化函数
+// ────────────────────────────────────────────
+
+/**
+ * 从 localStorage 加载队列
+ * @returns 队列数据
+ */
+function loadQueue(): ReminderQueue {
+  try {
+    const data = localStorage.getItem(QUEUE_STORAGE_KEY)
+    if (data) {
+      const queue = JSON.parse(data) as ReminderQueue
+      // 确保队列结构完整
+      return {
+        items: queue.items || [],
+        maxSize: queue.maxSize || DEFAULT_QUEUE_CONFIG.maxSize,
+        timeoutMs: queue.timeoutMs || DEFAULT_QUEUE_CONFIG.timeoutMs
+      }
+    }
+  } catch (error) {
+    console.error('加载提醒队列失败:', error)
+  }
+  return { ...DEFAULT_QUEUE_CONFIG }
+}
+
+/**
+ * 保存队列到 localStorage
+ * @param queue 队列数据
+ */
+function saveQueue(queue: ReminderQueue): void {
+  try {
+    localStorage.setItem(QUEUE_STORAGE_KEY, JSON.stringify(queue))
+  } catch (error) {
+    console.error('保存提醒队列失败:', error)
+  }
+}
+
+// ────────────────────────────────────────────
+// 队列操作函数
+// ────────────────────────────────────────────
+
+/**
+ * 优先级排序比较函数
+ * 事件优先于待办，触发时间早优先于晚
+ */
+function comparePriority(a: ReminderQueueItem, b: ReminderQueueItem): number {
+  // 事件优先于待办
+  if (a.type === 'event' && b.type === 'todo') return -1
+  if (a.type === 'todo' && b.type === 'event') return 1
+
+  // 同类型按触发时间排序（早优先）
+  return a.triggerTime - b.triggerTime
+}
+
+/**
+ * 添加提醒到队列
+ * @param item 提醒项
+ * @returns 是否成功入队
+ */
+export function enqueueReminder(item: Omit<ReminderQueueItem, 'enqueuedAt'>): boolean {
+  const queue = loadQueue()
+
+  // 清理超时项
+  queue.items = queue.items.filter(
+    i => Date.now() - i.enqueuedAt < queue.timeoutMs
+  )
+
+  // 检查是否已存在相同 ID
+  if (queue.items.some(i => i.id === item.id)) {
+    return false
+  }
+
+  // 检查队列长度限制
+  if (queue.items.length >= queue.maxSize) {
+    // 移除优先级最低的项
+    queue.items.sort(comparePriority)
+    queue.items.pop()
+  }
+
+  // 添加新项
+  const newItem: ReminderQueueItem = {
+    ...item,
+    enqueuedAt: Date.now()
+  }
+  queue.items.push(newItem)
+
+  // 按优先级排序
+  queue.items.sort(comparePriority)
+
+  // 保存队列
+  saveQueue(queue)
+
+  return true
+}
+
+/**
+ * 获取下一个待显示的提醒
+ * 如果当前有提醒显示，返回 null
+ * @returns 下一个提醒项或 null
+ */
+export function dequeueReminder(): ReminderQueueItem | null {
+  // 如果当前有提醒正在显示，不返回新的
+  if (currentDisplayedReminderId !== null) {
+    return null
+  }
+
+  const queue = loadQueue()
+
+  // 清理超时项
+  queue.items = queue.items.filter(
+    i => Date.now() - i.enqueuedAt < queue.timeoutMs
+  )
+
+  if (queue.items.length === 0) {
+    saveQueue(queue)
+    return null
+  }
+
+  // 获取优先级最高的项
+  queue.items.sort(comparePriority)
+  const nextItem = queue.items.shift()
+
+  if (nextItem) {
+    // 标记当前显示的提醒
+    currentDisplayedReminderId = nextItem.id
+    saveQueue(queue)
+    return nextItem
+  }
+
+  return null
+}
+
+/**
+ * 标记当前提醒已处理（关闭/查看）
+ * 允许显示下一个提醒
+ */
+export function markReminderProcessed(): void {
+  currentDisplayedReminderId = null
+
+  // 触发下一个提醒显示
+  processNextReminder()
+}
+
+/**
+ * 获取队列当前状态
+ * @returns 队列项数量和首个提醒
+ */
+export function getQueueStatus(): { count: number; firstItem: ReminderQueueItem | null } {
+  const queue = loadQueue()
+
+  // 清理超时项
+  queue.items = queue.items.filter(
+    i => Date.now() - i.enqueuedAt < queue.timeoutMs
+  )
+  saveQueue(queue)
+
+  return {
+    count: queue.items.length,
+    firstItem: queue.items.length > 0 ? queue.items[0] : null
+  }
+}
+
+/**
+ * 清空队列
+ */
+export function clearQueue(): void {
+  saveQueue({ ...DEFAULT_QUEUE_CONFIG, items: [] })
+  currentDisplayedReminderId = null
+}
+
+/**
+ * 处理队列中的下一个提醒
+ */
+async function processNextReminder(): Promise<void> {
+  const nextItem = dequeueReminder()
+  if (nextItem) {
+    // 在独立窗口中显示提醒
+    await showReminderInWindow(nextItem)
+  }
+}
+
+// ────────────────────────────────────────────
+// 原有提醒服务代码
+// ────────────────────────────────────────────
 
 // 定时器句柄
 let reminderInterval: ReturnType<typeof setInterval> | null = null
@@ -27,6 +280,12 @@ const LAST_CLEANUP_KEY = 'reminder_last_cleanup_time'
 
 // 清理间隔（24小时）
 const CLEANUP_INTERVAL = 24 * 60 * 60 * 1000
+
+/// 快速连续触发防护：同一 itemId 的最小触发间隔（5秒）
+const RAPID_TRIGGER_COOLDOWN = 5000
+
+/// 快速连续触发防护：最近触发记录（itemId → 上次触发时间戳）
+const lastTriggerTimes: Map<string, number> = new Map()
 
 // 提醒弹窗事件总线类型
 type ReminderPopupCallback = (data: {
@@ -62,21 +321,91 @@ export function offReminderPopup(callback: ReminderPopupCallback): void {
 }
 
 /**
- * 触发提醒弹窗
+ * 在独立窗口中显示提醒
+ * @param data 提醒数据
+ */
+async function showReminderInWindow(data: ReminderQueueItem): Promise<void> {
+  try {
+    // 获取设置存储
+    const settingsStore = useSettingsStore()
+    const settings = settingsStore.settings
+
+    // 检查是否为夜间模式
+    if (settings.theme === 'dark') {
+      console.log('[reminder] 夜间模式不显示提醒窗口')
+      // 夜间模式不显示窗口，但确保已发送系统通知（由 sendReminderNotification 处理）
+      return
+    }
+
+    // 获取提醒窗口实例
+    const reminderWindow = await WebviewWindow.getByLabel(REMINDER_POPUP_LABEL)
+
+    if (reminderWindow) {
+      // 检查窗口是否可见
+      const isVisible = await reminderWindow.isVisible()
+
+      // 无论窗口是否可见，都需要定位
+      const { positionReminderWindow } = await import('@/composables/useReminderPopup')
+
+      if (!isVisible) {
+        // 先定位窗口，再显示（避免白屏闪烁）
+        await positionReminderWindow(reminderWindow)
+
+        // 显示窗口（此时已在正确位置）
+        await reminderWindow.show()
+        await reminderWindow.setFocus()
+        console.log('[reminder] 提醒窗口已显示')
+
+        // 等待一小段时间让窗口渲染就绪（Vue 组件已挂载，事件监听器已注册）
+        await new Promise(resolve => setTimeout(resolve, 200))
+      } else {
+        // 窗口已可见，重新定位并直接发送事件
+        console.log('[reminder] 提醒窗口已可见，重新定位并发送事件')
+        await positionReminderWindow(reminderWindow)
+        await reminderWindow.setFocus()
+      }
+
+      // 发送提醒事件到窗口
+      await tauriEmit('show-reminder', {
+        id: data.id,
+        type: data.type,
+        title: data.title,
+        body: data.body,
+        triggerTime: data.triggerTime,
+        itemId: data.itemId,
+        itemData: data.itemData,
+        createdAt: data.enqueuedAt
+      })
+
+      console.log('[reminder] 提醒事件已发送:', data.title)
+    } else {
+      console.warn('[reminder] 提醒窗口不存在，请检查窗口配置')
+      // 降级处理：触发本地回调
+      triggerLocalPopup(data)
+    }
+  } catch (error) {
+    console.error('[reminder] 显示提醒窗口失败:', error)
+    // 降级处理：触发本地回调
+    triggerLocalPopup(data)
+  }
+}
+
+/**
+ * 触发本地弹窗回调（降级处理）
  * @param data 弹窗数据
  */
-function triggerReminderPopup(data: {
-  id: string
-  type: 'event' | 'todo'
-  title: string
-  body: string
-  triggerTime: number
-  itemId: string
-  itemData: CalendarEvent | Todo
-}): void {
+function triggerLocalPopup(data: ReminderQueueItem): void {
   reminderPopupCallbacks.forEach(callback => {
     try {
-      callback(data)
+      callback({
+        id: data.id,
+        type: data.type,
+        title: data.title,
+        body: data.body,
+        triggerTime: data.triggerTime,
+        itemId: data.itemId,
+        itemData: data.itemData
+      })
     } catch (error) {
       console.error('提醒弹窗回调执行失败:', error)
     }
@@ -130,6 +459,7 @@ function getSnoozeTime(id: string): number | null {
   if (value) {
     const timestamp = parseInt(value, 10)
     if (!isNaN(timestamp)) {
+      console.log(`[reminder] 获取稍后提醒: ${id}, 时间: ${new Date(timestamp).toLocaleString()}, key: ${key}`)
       return timestamp
     }
   }
@@ -144,6 +474,7 @@ function getSnoozeTime(id: string): number | null {
 function setSnoozeTime(id: string, timestamp: number): void {
   const key = generateSnoozeKey(id)
   localStorage.setItem(key, timestamp.toString())
+  console.log(`[reminder] 设置稍后提醒: ${id}, 时间: ${new Date(timestamp).toLocaleString()}, key: ${key}`)
 }
 
 /**
@@ -314,28 +645,46 @@ async function sendReminderNotification(
   triggerTime: number
 ): Promise<void> {
   try {
-    // 根据提醒强度决定是否发送系统通知
-    // standard 和 strong 模式发送系统通知，silent 模式不发送
-    if (mode !== 'silent') {
+    // 快速连续触发防护：同一 itemId 在冷却时间内不重复触发
+    const now = Date.now()
+    const lastTriggerTime = lastTriggerTimes.get(itemId)
+    if (lastTriggerTime !== undefined && now - lastTriggerTime < RAPID_TRIGGER_COOLDOWN) {
+      console.log(`[reminder] 快速连续触发防护: ${itemId} 在 ${RAPID_TRIGGER_COOLDOWN}ms 内已触发过，跳过`)
+      return
+    }
+    lastTriggerTimes.set(itemId, now)
+
+    // 清理过期的触发记录
+    for (const [key, time] of lastTriggerTimes) {
+      if (now - time >= RAPID_TRIGGER_COOLDOWN) {
+        lastTriggerTimes.delete(key)
+      }
+    }
+
+    // 根据提醒强度决定提醒方式
+    if (mode === 'strong') {
+      // 强提醒：使用提醒窗口，不发送系统通知
+      const popupId = `popup_${itemId}_${triggerTime}`
+      enqueueReminder({
+        id: popupId,
+        type,
+        title,
+        body,
+        triggerTime,
+        itemId,
+        itemData
+      })
+
+      // 尝试显示下一个提醒（如果当前没有显示的）
+      processNextReminder()
+
+      // 闪烁任务栏标题
+      startBlinkTitle(title)
+    } else if (mode === 'standard') {
+      // 标准提醒：只发送系统通知，不显示提醒窗口
       await sendNotification({ title, body })
     }
-
-    // 触发应用内弹窗（所有模式都弹窗）
-    const popupId = `popup_${itemId}_${triggerTime}`
-    triggerReminderPopup({
-      id: popupId,
-      type,
-      title,
-      body,
-      triggerTime,
-      itemId,
-      itemData
-    })
-
-    // strong 模式额外闪烁任务栏标题
-    if (mode === 'strong') {
-      startBlinkTitle(title)
-    }
+    // silent 模式：都不展示
   } catch (error) {
     console.error('发送提醒通知失败:', error)
   }
@@ -395,9 +744,11 @@ function shouldRemindEvent(event: CalendarEvent, now: number, settings: AppSetti
   if (snoozeTime !== null) {
     if (now >= snoozeTime) {
       // 稍后提醒时间已到，返回 true（稍后提醒将在 checkAndSendReminders 中清除）
+      console.log(`[reminder] 事件 ${event.id} 稍后提醒时间已到: ${new Date(snoozeTime).toLocaleString()}`)
       return true
     }
     // 稍后提醒时间未到，不触发提醒
+    console.log(`[reminder] 事件 ${event.id} 稍后提醒时间未到: ${new Date(snoozeTime).toLocaleString()}, 当前: ${new Date(now).toLocaleString()}`)
     return false
   }
 
@@ -591,6 +942,13 @@ export async function triggerReminderCheck(): Promise<void> {
 }
 
 /**
+ * 重置快速连续触发防护状态（用于测试）
+ */
+export function resetRapidTriggerState(): void {
+  lastTriggerTimes.clear()
+}
+
+/**
  * 处理稍后提醒
  * @param itemId 事件或待办的 ID
  * @param snoozeTime 稍后提醒的时间戳
@@ -599,5 +957,70 @@ export function handleSnoozeReminder(
   itemId: string,
   snoozeTime: number
 ): void {
+  console.log(`[reminder] handleSnoozeReminder 被调用: itemId=${itemId}, snoozeTime=${new Date(snoozeTime).toLocaleString()}`)
   setSnoozeTime(itemId, snoozeTime)
+}
+
+/**
+ * 处理事件/待办被删除的情况
+ * 当原项目被删除时，更新提醒内容为"项目已删除"
+ * @param itemId 事件或待办的 ID
+ * @param type 类型：'event' | 'todo'
+ */
+export async function handleReminderDeleted(
+  itemId: string,
+  type: 'event' | 'todo'
+): Promise<void> {
+  try {
+    // 检查队列中是否有该项目的提醒
+    const queue = loadQueue()
+    const matchingItem = queue.items.find(item => item.itemId === itemId)
+
+    if (matchingItem) {
+      // 更新提醒内容
+      matchingItem.title = '项目已删除'
+      matchingItem.body = type === 'event'
+        ? '该日历事件已被删除'
+        : '该待办事项已被删除'
+      matchingItem.itemData = {
+        id: itemId,
+        title: matchingItem.title,
+        ...(type === 'event' ? {
+          startTime: Date.now(),
+          endTime: Date.now() + 3600000,
+          allDay: false,
+          calendarId: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        } : {
+          completed: false,
+          priority: 'medium',
+          calendarId: '',
+          createdAt: Date.now(),
+          updatedAt: Date.now()
+        })
+      }
+
+      // 保存更新后的队列
+      saveQueue(queue)
+
+      // 如果当前正在显示这个提醒，发送更新事件
+      if (currentDisplayedReminderId === matchingItem.id) {
+        await tauriEmit('show-reminder', {
+          id: matchingItem.id,
+          type: matchingItem.type,
+          title: matchingItem.title,
+          body: matchingItem.body,
+          triggerTime: matchingItem.triggerTime,
+          itemId: matchingItem.itemId,
+          itemData: matchingItem.itemData,
+          createdAt: matchingItem.enqueuedAt
+        })
+      }
+
+      console.log(`[reminder] 项目已删除提醒已更新: ${itemId}`)
+    }
+  } catch (error) {
+    console.error('[reminder] 处理删除提醒失败:', error)
+  }
 }

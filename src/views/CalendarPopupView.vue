@@ -122,12 +122,12 @@ watch(
 // 应用主题到弹窗根元素
 // 优先使用传入的 theme 参数，否则从数据库读取最新主题设置
 async function applyPopupTheme(theme?: 'light' | 'dark' | 'auto') {
-  let targetTheme = theme
+  let targetTheme: 'light' | 'dark' | 'auto' | undefined = theme
   if (!targetTheme) {
     // 从数据库读取最新的主题设置（不依赖 settingsStore 内存状态）
     try {
       const dbValue = await settingsService.getSetting('app.theme')
-      targetTheme = dbValue ? JSON.parse(dbValue) : 'light'
+      targetTheme = dbValue ? (JSON.parse(dbValue) as 'light' | 'dark' | 'auto') : 'light'
     } catch {
       // 数据库读取失败，使用 settingsStore 作为降级
       targetTheme = settingsStore.settings.theme

@@ -64,7 +64,7 @@
   </div>
 
   <!-- 提醒弹窗组件 -->
-  <ReminderPopup />
+  <ReminderPopup :reminder="null" />
 
   <!-- 软件更新弹窗组件 -->
   <UpdateDialog
@@ -81,23 +81,24 @@
 
 <script setup lang="ts">
 import { onMounted, onUnmounted, watch, provide, ref } from 'vue'
-import { getCurrentWindow } from '@tauri-apps/api/window'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
+import { WebviewWindow, getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from './stores/settings'
 import { useCalendarStore } from './stores/calendar'
+import { useTodoStore } from './stores/todo'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
 import ReminderPopup from './components/reminder/ReminderPopup.vue'
 import UpdateDialog from './components/update/UpdateDialog.vue'
 import { checkForUpdateDetails, startUpdate, setSkippedVersion } from './services/updater'
-import { startReminderService, stopReminderService, onReminderPopup, offReminderPopup, handleSnoozeReminder } from './services/reminder'
+import { startReminderService, stopReminderService, onReminderPopup, offReminderPopup, handleSnoozeReminder, markReminderProcessed, markReminderAsViewed } from './services/reminder'
 import { isTauri, enableClockHook, setClockHookBlockPopup } from './utils/tauri'
 import { initWindowToggleListener } from './composables/useWindowToggle'
 import type { CalendarEvent, Todo, PopupNavigationPayload } from './types'
 
 const settingsStore = useSettingsStore()
 const calendarStore = useCalendarStore()
+const todoStore = useTodoStore()
 const router = useRouter()
 
 // 更新弹窗状态
@@ -105,11 +106,24 @@ const showUpdateDialog = ref(false)
 const updateInfo = ref<import('@/types').UpdateInfo | null>(null)
 const isUpdating = ref(false)
 
-// 检测当前是否为弹出窗口
-const isPopupWindow = getCurrentWindow().label === 'calendar-popup'
+// 检测当前是否为弹出窗口（安全防护：API 不可用时默认为主窗口）
+let currentWindowLabel = 'main'
+try {
+  currentWindowLabel = getCurrentWebviewWindow().label
+} catch (e) {
+  console.warn('[App.vue] 获取窗口 label 失败，使用默认值 "main":', e)
+}
+console.log('[App.vue] 当前窗口 label:', currentWindowLabel, '| isPopupWindow 判断值:', currentWindowLabel === 'calendar-popup' || currentWindowLabel === 'reminder-popup')
+const isPopupWindow = currentWindowLabel === 'calendar-popup' || currentWindowLabel === 'reminder-popup'
 
 // popup-navigate 事件监听器取消函数
 const unlistenPopupNavigate = ref<UnlistenFn | null>(null)
+
+// reminder-action 事件监听器取消函数
+const unlistenReminderAction = ref<UnlistenFn | null>(null)
+
+// reminder-window-ready 事件监听器取消函数
+const unlistenReminderReady = ref<UnlistenFn | null>(null)
 
 // ==================== 调试页面触发逻辑 ====================
 const debugInputBuffer = ref('')
@@ -245,12 +259,87 @@ async function handlePopupNavigate(payload: PopupNavigationPayload) {
   }
 }
 
+// 提醒操作数据类型
+interface ReminderActionPayload {
+  action: 'dismiss' | 'snooze' | 'complete' | 'view'
+  reminderId?: string
+  itemId?: string
+  type?: 'event' | 'todo'
+  snoozeTime?: number
+}
+
+// 处理提醒窗口操作事件
+async function handleReminderAction(payload: ReminderActionPayload) {
+  try {
+    console.log('[App] 收到提醒操作:', payload.action, JSON.stringify(payload))
+
+    // 显示并聚焦主窗口
+    const mainWindow = await WebviewWindow.getByLabel('main')
+    if (mainWindow) {
+      await mainWindow.show()
+      await mainWindow.setFocus()
+    }
+
+    // 根据操作类型处理
+    switch (payload.action) {
+      case 'dismiss':
+        // 关闭提醒，标记已处理，触发下一个提醒
+        if (payload.reminderId) {
+          markReminderProcessed()
+          console.log('[App] 提醒已关闭:', payload.reminderId)
+        }
+        break
+
+      case 'snooze':
+        // 稍后提醒
+        console.log('[App] 稍后提醒参数:', { itemId: payload.itemId, snoozeTime: payload.snoozeTime })
+        if (payload.itemId && payload.snoozeTime) {
+          handleSnoozeReminder(payload.itemId, payload.snoozeTime)
+          markReminderProcessed()
+          console.log('[App] 稍后提醒已设置:', payload.itemId, new Date(payload.snoozeTime).toLocaleString())
+        } else {
+          console.warn('[App] 稍后提醒参数不完整:', payload)
+        }
+        break
+
+      case 'complete':
+        // 标记待办完成
+        if (payload.itemId && payload.type === 'todo') {
+          // 调用 todoStore 更新待办状态
+          await todoStore.toggleTodo(payload.itemId)
+          markReminderProcessed()
+          console.log('[App] 待办已完成:', payload.itemId)
+        }
+        break
+
+      case 'view':
+        // 查看详情
+        if (payload.itemId && payload.type) {
+          // 标记已查看，防止重复提醒
+          markReminderAsViewed(payload.itemId)
+          markReminderProcessed()
+
+          // 根据类型导航到相应页面
+          if (payload.type === 'event') {
+            await router.push('/calendar')
+            // TODO: 打开事件详情弹窗
+          } else if (payload.type === 'todo') {
+            await router.push('/todos')
+            // TODO: 打开待办详情弹窗
+          }
+
+          console.log('[App] 查看详情:', payload.type, payload.itemId)
+        }
+        break
+    }
+  } catch (error) {
+    console.error('[App] 处理提醒操作失败:', error)
+  }
+}
+
 onMounted(async () => {
-  // 获取窗口标签
-  const windowLabel = getCurrentWindow().label
-  
   // 弹出窗口只做最小化初始化
-  if (windowLabel === 'calendar-popup') {
+  if (isPopupWindow) {
     calendarStore.initialize()
     applyTheme()
     return
@@ -291,28 +380,43 @@ onMounted(async () => {
   // 监听稍后提醒事件
   window.addEventListener('reminder-snooze', handleSnoozeEvent as EventListener)
 
-  // 监听弹出窗口导航事件（不阻塞）
-  if (isTauri()) {
-    listen<PopupNavigationPayload>('popup-navigate', (event) => {
-      handlePopupNavigate(event.payload)
-    }).then((unlisten) => {
-      unlistenPopupNavigate.value = unlisten
-    })
+// 监听弹出窗口导航事件（不阻塞）
+    if (isTauri()) {
+      listen<PopupNavigationPayload>('popup-navigate', (event) => {
+        handlePopupNavigate(event.payload)
+      }).then((unlisten) => {
+        unlistenPopupNavigate.value = unlisten
+      })
 
-    // 监听托盘"检查更新"事件
-    listen('check-update', async () => {
-      const info = await checkForUpdateDetails()
-      if (info) {
-        updateInfo.value = info
-        showUpdateDialog.value = true
-      }
-    })
 
-    // 监听托盘"系统设置"事件
-    listen('navigate-to-settings', async () => {
-      await router.push('/settings')
-    })
-  }
+      // 监听提醒窗口操作事件
+      listen<ReminderActionPayload>('reminder-action', (event) => {
+        handleReminderAction(event.payload)
+      }).then((unlisten) => {
+        unlistenReminderAction.value = unlisten
+      })
+
+      // 监听提醒窗口就绪事件
+      listen('reminder-window-ready', () => {
+        console.log('[App] 提醒窗口已准备好接收事件')
+      }).then((unlisten) => {
+        unlistenReminderReady.value = unlisten
+      })
+
+      // 监听托盘"检查更新"事件
+      listen('check-update', async () => {
+        const info = await checkForUpdateDetails()
+        if (info) {
+          updateInfo.value = info
+          showUpdateDialog.value = true
+        }
+      })
+
+      // 监听托盘"系统设置"事件
+      listen('navigate-to-settings', async () => {
+        await router.push('/settings')
+      })
+    }
 
   // 添加调试页面触发监听器（全局）
   document.addEventListener('selectionchange', handleSelectionChange)
@@ -329,6 +433,14 @@ onUnmounted(() => {
   // 取消 popup-navigate 事件监听
   if (unlistenPopupNavigate.value) {
     unlistenPopupNavigate.value()
+  }
+  // 取消 reminder-action 事件监听
+  if (unlistenReminderAction.value) {
+    unlistenReminderAction.value()
+  }
+  // 取消 reminder-window-ready 事件监听
+  if (unlistenReminderReady.value) {
+    unlistenReminderReady.value()
   }
   // 移除调试页面触发监听器
   document.removeEventListener('selectionchange', handleSelectionChange)

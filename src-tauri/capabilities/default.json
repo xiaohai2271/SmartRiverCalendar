@@ -1,8 +1,8 @@
 {
   "$schema": "./schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window and calendar popup",
-  "windows": ["main", "calendar-popup"],
+  "description": "Capability for the main window, calendar popup, and reminder popup",
+  "windows": ["main", "calendar-popup", "reminder-popup"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",
@@ -13,6 +13,8 @@
     "core:window:allow-start-dragging",
     "core:window:allow-set-position",
     "core:window:allow-set-size",
+    "core:window:allow-inner-position",
+    "core:window:allow-outer-position",
     "shell:default",
     "notification:default",
     "updater:default",

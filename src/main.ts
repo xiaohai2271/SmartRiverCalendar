@@ -6,49 +6,72 @@ import './style.css'
 import { initHolidayCache } from './utils/lunar'
 import { migrateLocalStorageToDb } from './services/settings'
 
+// 最早期全局错误捕获（在任何代码执行前注册）
+window.addEventListener('error', (event) => {
+  console.error('[全局] Error:', event.error || event.message, '| 文件:', event.filename, '| 行:', event.lineno)
+})
+window.addEventListener('unhandledrejection', (event) => {
+  console.error('[全局] Unhandled Rejection:', event.reason)
+  if (event.reason instanceof Error) {
+    console.error('[全局] Rejection Stack:', event.reason.stack)
+  }
+})
+
+console.log('[main.ts] 开始初始化应用...')
+
 async function initializeApp() {
-  // 1. 先迁移 localStorage 数据到数据库（在 Store 初始化前执行）
-  await migrateLocalStorageToDb()
+  console.log('[main.ts] 1. 开始迁移 localStorage 数据...')
+  try {
+    // 1. 先迁移 localStorage 数据到数据库（在 Store 初始化前执行）
+    await migrateLocalStorageToDb()
+    console.log('[main.ts] 1. localStorage 迁移完成')
+  } catch (e) {
+    console.error('[main.ts] 1. localStorage 迁移失败（非致命）:', e)
+  }
 
   // 2. 创建应用并使用插件
+  console.log('[main.ts] 2. 创建 Vue 应用...')
   const app = createApp(App)
   app.use(createPinia())
   app.use(router)
 
   // Global error handler - 捕获所有 Vue 错误
   app.config.errorHandler = (err, instance, info) => {
-    console.error('Vue Error:', err)
-    console.error('Error Type:', typeof err)
-    console.error('Error String:', String(err))
+    console.error('[Vue] Error:', err)
+    console.error('[Vue] Error String:', String(err))
     if (err instanceof Error) {
-      console.error('Error Message:', err.message)
-      console.error('Error Stack:', err.stack)
+      console.error('[Vue] Error Message:', err.message)
+      console.error('[Vue] Error Stack:', err.stack)
     }
-    console.error('Component:', instance)
-    console.error('Info:', info)
+    console.error('[Vue] Info:', info)
   }
 
-  // 捕获未处理的 Promise rejection
-  window.addEventListener('unhandledrejection', (event) => {
-    console.error('Unhandled Promise Rejection:', event.reason)
-    if (event.reason instanceof Error) {
-      console.error('Rejection Stack:', event.reason.stack)
-    }
-  })
-
-  // 捕获全局错误
-  window.addEventListener('error', (event) => {
-    console.error('Global Error:', event.error || event.message)
-  })
-
   // 3. 初始化节假日缓存后再挂载应用
-  await initHolidayCache()
+  console.log('[main.ts] 3. 初始化节假日缓存...')
+  try {
+    await initHolidayCache()
+    console.log('[main.ts] 3. 节假日缓存初始化完成')
+  } catch (e) {
+    console.error('[main.ts] 3. 节假日缓存初始化失败（非致命）:', e)
+  }
+
+  console.log('[main.ts] 4. 挂载应用...')
   app.mount('#app')
-  console.log('小河日历 started')
+  console.log('[main.ts] 应用已挂载 - 小河日历 started')
 }
 
 initializeApp().catch((err) => {
-  console.error('Failed to initialize application:', err)
+  console.error('[main.ts] 应用初始化失败:', err)
+  // 即使初始化失败，也尝试挂载一个最小化的错误提示
+  try {
+    const app = createApp(App)
+    app.use(createPinia())
+    app.use(router)
+    app.mount('#app')
+  } catch (mountErr) {
+    console.error('[main.ts] 挂载回退失败:', mountErr)
+    document.getElementById('app')!.innerHTML = '<div style="color:red;padding:20px;">应用初始化失败</div>'
+  }
 })
 
 // Try to get Tauri app info (will fail gracefully in browser)
