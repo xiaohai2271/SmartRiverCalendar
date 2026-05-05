@@ -12,6 +12,7 @@
  * 路由路径: /reminder-popup
  */
 import { ref, onMounted, onUnmounted } from 'vue'
+import { onSettingsChange } from '@/utils/broadcast'
 import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import { useSettingsStore } from '@/stores/settings'
@@ -33,6 +34,9 @@ const hasReceivedReminder = ref(false)
 
 // 事件监听器清理函数
 let unlistenReminder: (() => void) | null = null
+
+// 主题监听器清理函数
+let unlistenSettings: (() => void) | null = null
 
 // ==================== 主题同步 ====================
 
@@ -177,6 +181,15 @@ onMounted(async () => {
   // 应用初始主题
   await applyPopupTheme()
 
+  // 监听主题变更广播（实时响应主窗口的设置修改）
+  unlistenSettings = onSettingsChange((key, value) => {
+    console.log('[ReminderPopupView] 收到设置变更广播:', key, '=', value)
+    // 处理主题变更
+    if (key === 'theme' && typeof value === 'string') {
+      applyPopupTheme(value as 'light' | 'dark' | 'auto')
+    }
+  })
+
   // 监听来自主窗口的提醒事件（先注册监听器，避免遗漏事件）
   unlistenReminder = await listen<ReminderPopupData>('show-reminder', (event) => {
     handleReminderReceived(event.payload)
@@ -202,6 +215,12 @@ onUnmounted(() => {
   if (unlistenReminder) {
     unlistenReminder()
     unlistenReminder = null
+  }
+
+  // 清理主题监听器
+  if (unlistenSettings) {
+    unlistenSettings()
+    unlistenSettings = null
   }
 })
 </script>
