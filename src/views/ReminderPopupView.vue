@@ -239,7 +239,7 @@ onUnmounted(() => {
   justify-content: center;
   width: 100%;
   height: 100%;
-  background: transparent;
+  background: var(--bg-secondary);
   overflow: hidden;
   position: relative;
 }
@@ -247,6 +247,12 @@ onUnmounted(() => {
 .waiting-state {
   width: 100%;
   height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font-size: 13px;
 }
 
 .empty-state {
