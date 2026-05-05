@@ -4,6 +4,7 @@
 
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { availableMonitors, type Monitor, PhysicalPosition, LogicalSize } from '@tauri-apps/api/window'
+import { emit } from '@tauri-apps/api/event'
 import type { PopupWindowSize } from '@/types'
 import { POPUP_WINDOW_SIZES } from '@/types'
 
@@ -263,6 +264,9 @@ export async function showCalendarPopup(
     await popupWindow.show()
     await popupWindow.setFocus()
 
+    // 通知提醒窗口精简面板已显示
+    await emit('calendar-popup-visibility-changed', { visible: true })
+
     // 调用 Rust 命令更新区域跟踪
     // TODO (Task 7): 调用 start_tracking_popup_region 命令
     console.log('[useCalendarPopup] 弹出窗口已显示')
@@ -305,6 +309,9 @@ export async function hideCalendarPopup(): Promise<void> {
     }
 
     await popupWindow.hide()
+
+    // 通知提醒窗口精简面板已隐藏
+    await emit('calendar-popup-visibility-changed', { visible: false })
 
     // 调用 Rust 命令停止区域跟踪
     // TODO (Task 7): 调用 stop_tracking_popup_region 命令

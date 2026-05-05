@@ -5,6 +5,7 @@
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { availableMonitors, PhysicalPosition, LogicalSize, type Monitor } from '@tauri-apps/api/window'
 import { onSettingsChange } from '@/utils/broadcast'
+import { listen } from '@tauri-apps/api/event'
 
 /// 提醒弹出窗口标签名
 const REMINDER_POPUP_LABEL = 'reminder-popup'
@@ -35,6 +36,9 @@ const lastTriggerTimes: Map<string, number> = new Map()
 /// 精简面板设置变更监听器清理函数
 let calendarPopupSettingsCleanup: (() => void) | null = null
 
+/// 精简面板可见性变更监听器清理函数
+let calendarPopupVisibilityCleanup: (() => void) | null = null
+
 /**
  * 设置精简面板设置变更监听器
  * 当精简面板窗口大小设置变更时，同步更新提醒窗口位置和大小
@@ -44,7 +48,7 @@ async function setupCalendarPopupSettingsListener(): Promise<void> {
     // 清理之前的监听器
     cleanupCalendarPopupSettingsListener()
 
-    console.log('[useReminderPopup] 开始设置精简面板设置变更监听器...')
+    console.log('[useReminderPopup] 开始设置精简面板变更监听器...')
 
     // 监听设置变更广播（实时响应主窗口的设置修改）
     calendarPopupSettingsCleanup = onSettingsChange((key, value) => {
@@ -57,10 +61,34 @@ async function setupCalendarPopupSettingsListener(): Promise<void> {
       }
     })
 
-    console.log('[useReminderPopup] 已设置精简面板设置变更监听器')
+    // 监听精简面板显示/隐藏事件
+    calendarPopupVisibilityCleanup = await listen<{ visible: boolean }>(
+      'calendar-popup-visibility-changed',
+      (event) => {
+        console.log(`[useReminderPopup] 精简面板可见性变更: visible=${event.payload.visible}`)
+        repositionIfVisible()
+      }
+    )
+
+    console.log('[useReminderPopup] 已设置精简面板变更监听器')
   } catch (error) {
-    console.error('[useReminderPopup] 设置精简面板设置变更监听器失败:', error)
+    console.error('[useReminderPopup] 设置精简面板变更监听器失败:', error)
   }
+}
+
+/**
+ * 清理精简面板变更监听器
+ */
+function cleanupCalendarPopupSettingsListener(): void {
+  if (calendarPopupSettingsCleanup) {
+    calendarPopupSettingsCleanup()
+    calendarPopupSettingsCleanup = null
+  }
+  if (calendarPopupVisibilityCleanup) {
+    calendarPopupVisibilityCleanup()
+    calendarPopupVisibilityCleanup = null
+  }
+  console.log('[useReminderPopup] 已清理精简面板变更监听器')
 }
 
 /**
@@ -75,17 +103,6 @@ async function repositionIfVisible(): Promise<void> {
     }
   } else {
     console.log('[useReminderPopup] 提醒窗口未显示，跳过重新定位')
-  }
-}
-
-/**
- * 清理精简面板设置变更监听器
- */
-function cleanupCalendarPopupSettingsListener(): void {
-  if (calendarPopupSettingsCleanup) {
-    calendarPopupSettingsCleanup()
-    calendarPopupSettingsCleanup = null
-    console.log('[useReminderPopup] 已清理精简面板设置变更监听器')
   }
 }
 

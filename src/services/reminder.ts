@@ -356,20 +356,8 @@ async function showReminderInWindow(data: ReminderQueueItem): Promise<void> {
         await reminderWindow.setFocus()
         console.log('[reminder] 提醒窗口已显示')
 
-        // 等待提醒窗口就绪（仅在窗口刚显示时等待，避免事件在监听器设置前发送）
-        console.log('[reminder] 等待提醒窗口就绪...')
-        await new Promise<void>((resolve) => {
-          const timeout = setTimeout(() => {
-            console.log('[reminder] 等待窗口就绪超时，强制继续')
-            resolve()
-          }, 5000)
-
-          listen('reminder-window-ready', () => {
-            console.log('[reminder] 提醒窗口已就绪')
-            clearTimeout(timeout)
-            resolve()
-          })
-        })
+        // 等待一小段时间让窗口渲染就绪（Vue 组件已挂载，事件监听器已注册）
+        await new Promise(resolve => setTimeout(resolve, 200))
       } else {
         // 窗口已可见，重新定位并直接发送事件
         console.log('[reminder] 提醒窗口已可见，重新定位并发送事件')
