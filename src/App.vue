@@ -389,7 +389,6 @@ onMounted(async () => {
       })
 
 
-<<<<<<< HEAD
       // 监听提醒窗口操作事件
       listen<ReminderActionPayload>('reminder-action', (event) => {
         handleReminderAction(event.payload)
@@ -412,23 +411,12 @@ onMounted(async () => {
           showUpdateDialog.value = true
         }
       })
-    }
-=======
-    // 监听托盘"检查更新"事件
-    listen('check-update', async () => {
-      const info = await checkForUpdateDetails()
-      if (info) {
-        updateInfo.value = info
-        showUpdateDialog.value = true
-      }
-    })
 
-    // 监听托盘"系统设置"事件
-    listen('navigate-to-settings', async () => {
-      await router.push('/settings')
-    })
-  }
->>>>>>> origin/main
+      // 监听托盘"系统设置"事件
+      listen('navigate-to-settings', async () => {
+        await router.push('/settings')
+      })
+    }
 
   // 添加调试页面触发监听器（全局）
   document.addEventListener('selectionchange', handleSelectionChange)
