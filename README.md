@@ -49,8 +49,7 @@
   - 网络代理支持（系统代理/自定义代理）
 - **主题支持**: 浅色/深色模式切换，Fluent Design 设计规范
 - **自动更新**: 内置应用更新机制，支持自动检测和安装
-- **MCP Bridge 支持**: 支持 MCP Bridge 插件，自动化测试和调试
-- **数据层分离**: 严格的数据视图分离架构，提升代码可维护性
+  - **数据层分离**: 严格的数据视图分离架构，提升代码可维护性
 
 ## 截图预览
 
@@ -84,6 +83,10 @@
 ### 精简日历面板
 
 ![精简日历面板](screenshots/calendar-popup-light.png)
+
+### 提醒弹窗
+
+![提醒弹窗](screenshots/reminder-popup-current.png)
 
 ## 快速开始
 
@@ -132,14 +135,7 @@ pnpm tauri:build
 - **快速操作**: 日期格和事件块右键菜单，支持快捷操作
 - **精简面板**: 从托盘菜单或设置中启用，快速查看日程
 
-### 快捷键
-| 快捷键 | 功能 |
-|--------|------|
-| `Ctrl+N` | 新建事件 |
-| `Ctrl+F` | 搜索 |
-| `←` / `→` | 上一个/下一个时间段 |
-| `Home` | 回到今天 |
-| `Esc` | 关闭当前弹窗 |
+
 
 ### 设置选项
 - **外观设置**:
@@ -241,16 +237,6 @@ pnpm vitest run src/__tests__/date.test.ts
 
 详细更新记录请查看 [CHANGELOG.md](CHANGELOG.md)
 
-### v0.1.2 (2026-04-30)
-- 🚀 日程界面优化：统一样式、时间交集匹配、固定分组展示
-- 🎨 优化提醒弹窗定位和精简面板协调
-
-### v0.1.1 (2026-04-25)
-- 🚀 应用核心框架初始化
-- 🚀 多视图模式、多日历管理、外部日历集成
-- 🚀 智能提醒系统、系统托盘集成、自动更新
-- 🚀 时钟点击唤醒、精简日历弹窗
-- 🎨 Fluent Design 主题、OpenSpec 框架、MCP Bridge 支持
 
 ## 技术栈
 
@@ -287,7 +273,7 @@ pnpm vitest run src/__tests__/date.test.ts
 - [Fluent UI](https://developer.microsoft.com/fluentui#/controls/web) - UI 组件库
 - [tyme4ts](https://github.com/pfinal-nc/tyme4ts) - 农历/节假日处理库
 - [Claude](https://claude.ai/) - AI 编程助手，提供代码生成和架构建议
-- [OpCode](https://opencode.ai/) - AI 智能代理，协助开发和代码审查
+- [OpenCode](https://opencode.ai/) - AI 智能代理，协助开发和代码审查
 
 ## 联系方式
 
