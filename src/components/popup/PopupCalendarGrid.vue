@@ -1,5 +1,5 @@
 <template>
-  <div class="popup-calendar-grid">
+  <div class="popup-calendar-grid" :class="{ 'popup-calendar-grid--compact': size === 'small' }">
     <!-- 星期头部 -->
     <div class="weekday-header">
       <div v-for="day in weekDays" :key="day" class="weekday">{{ day }}</div>
@@ -70,12 +70,13 @@ import { usePopupSettingsStore } from '@/stores/popupSettings'
 import { useCalendarStore } from '@/stores/calendar'
 import { getLunarInfo as fetchLunarInfo, type LunarInfo } from '@/utils/lunar'
 import { getMonthDays, isToday as isTodayFn, isSameDay } from '@/utils/date'
-import type { CalendarEvent } from '@/types'
+import type { CalendarEvent, PopupWindowSize } from '@/types'
 
 // Props 定义
 const props = defineProps<{
   currentDate: Date
   selectedDate?: Date
+  size?: PopupWindowSize
 }>()
 
 // Emits 定义
@@ -310,6 +311,12 @@ function handleViewEvent(event: CalendarEvent) {
   box-shadow: var(--popup-shadow-sm);
 }
 
+/* 紧凑模式：今天背景框缩小 */
+.popup-calendar-grid--compact .day-cell.today .day-number {
+  width: 18px;
+  height: 18px;
+}
+
 /* 选中样式 */
 .day-cell.selected:not(.today) {
   box-shadow: inset 0 0 0 2px var(--popup-accent-color);
@@ -357,6 +364,11 @@ function handleViewEvent(event: CalendarEvent) {
   max-width: 100%;
 }
 
+/* 紧凑模式：圆点上边距缩小 */
+.popup-calendar-grid--compact .event-dots {
+  margin-top: 2px;
+}
+
 .event-dot {
   width: 5px;
   height: 5px;
@@ -390,13 +402,13 @@ function handleViewEvent(event: CalendarEvent) {
   visibility: hidden;
 }
 
-/* 休/补徽标 - 右上角绝对定位，不影响布局 */
+/* 休/补徽标 - 右上角绝对定位 */
 .day-badges {
   position: absolute;
   top: 2px;
-  right: 2px;
+  right: 0px;
   display: flex;
-  gap: 1px;
+  gap: 0px;
 }
 
 .badge {
@@ -419,14 +431,33 @@ function handleViewEvent(event: CalendarEvent) {
   font-weight: 600;
 }
 
-/* 深色模式适配 */
-:global(.dark) .badge.rest {
-  background: rgba(22, 163, 74, 0.15);
+/* 紧凑模式：徽标去背景，靠右上 */
+.popup-calendar-grid--compact .day-badges {
+  top: 1px;
+  right: 3px;
+}
+
+.popup-calendar-grid--compact .badge {
+  padding: 0;
+  line-height: 1;
+}
+
+.popup-calendar-grid--compact .badge.rest {
+  background: none;
+}
+
+.popup-calendar-grid--compact .badge.makeup {
+  background: none;
+}
+
+/* 深色模式适配 - 所有尺寸均无背景 */
+:global(.dark .badge.rest) {
+  background: transparent;
   color: #86efac;
 }
 
-:global(.dark) .badge.makeup {
-  background: rgba(239, 68, 68, 0.15);
+:global(.dark .badge.makeup) {
+  background: transparent;
   color: #fca5a5;
 }
 </style>
