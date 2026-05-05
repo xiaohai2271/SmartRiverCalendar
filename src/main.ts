@@ -36,7 +36,7 @@ async function initializeApp() {
   app.use(router)
 
   // Global error handler - 捕获所有 Vue 错误
-  app.config.errorHandler = (err, instance, info) => {
+  app.config.errorHandler = (err, _instance, info) => {
     console.error('[Vue] Error:', err)
     console.error('[Vue] Error String:', String(err))
     if (err instanceof Error) {

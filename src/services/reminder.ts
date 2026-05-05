@@ -1,6 +1,6 @@
 import { sendNotification } from '@tauri-apps/plugin-notification'
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { emit as tauriEmit, listen } from '@tauri-apps/api/event'
+import { emit as tauriEmit } from '@tauri-apps/api/event'
 import { useCalendarStore } from '../stores/calendar'
 import { useTodoStore } from '../stores/todo'
 import { useSettingsStore } from '../stores/settings'
