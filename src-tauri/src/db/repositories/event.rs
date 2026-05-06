@@ -3,6 +3,7 @@
 
 use crate::db::connection::DatabaseConnection;
 use crate::db::errors::{DatabaseError, DatabaseResult};
+use rusqlite::{params, Row};
 use serde::{Deserialize, Serialize};
 
 /// 事件实体结构
@@ -34,6 +35,12 @@ pub struct Event {
     pub location: Option<String>,
     /// 外部 ID (用于同步)
     pub external_id: Option<String>,
+    /// 所属用户 ID
+    pub user_id: Option<i64>,
+    /// 软删除时间戳（毫秒），NULL 表示未删除
+    pub deleted_at: Option<i64>,
+    /// 时区
+    pub timezone: String,
     /// 创建时间 (Unix 时间戳，毫秒)
     pub created_at: i64,
     /// 更新时间 (Unix 时间戳，毫秒)
@@ -56,6 +63,8 @@ pub struct CreateEvent {
     pub repeat_rule: Option<String>,
     pub location: Option<String>,
     pub external_id: Option<String>,
+    pub user_id: Option<i64>,
+    pub timezone: Option<String>,
 }
 
 /// 更新事件的参数
@@ -77,11 +86,43 @@ pub struct UpdateEvent {
     pub external_id: Option<String>,
 }
 
+/// 事件查询的列列表
+const EVENT_COLUMNS: &str = r#"
+    id, title, description, start_time, end_time, all_day,
+    calendar_id, color, reminder, repeat_rule, location,
+    external_id, user_id, deleted_at, timezone, created_at, updated_at
+"#;
+
 /// 事件 Repository
 ///
 /// 封装事件相关的数据库操作
 pub struct EventRepository<'a> {
     db: &'a DatabaseConnection,
+}
+
+impl Event {
+    /// 从数据库行解析事件（使用列名访问，更安全）
+    fn from_row(row: &Row) -> rusqlite::Result<Self> {
+        Ok(Event {
+            id: row.get("id")?,
+            title: row.get("title")?,
+            description: row.get("description")?,
+            start_time: row.get("start_time")?,
+            end_time: row.get("end_time")?,
+            all_day: row.get::<_, i32>("all_day")? != 0,
+            calendar_id: row.get("calendar_id")?,
+            color: row.get("color")?,
+            reminder: row.get("reminder")?,
+            repeat_rule: row.get("repeat_rule")?,
+            location: row.get("location")?,
+            external_id: row.get("external_id")?,
+            user_id: row.get("user_id")?,
+            deleted_at: row.get("deleted_at")?,
+            timezone: row.get("timezone")?,
+            created_at: row.get("created_at")?,
+            updated_at: row.get("updated_at")?,
+        })
+    }
 }
 
 impl<'a> EventRepository<'a> {
@@ -96,6 +137,10 @@ impl<'a> EventRepository<'a> {
     /// 成功返回新创建的事件 (包含生成的 id)
     pub fn create(&self, event: &CreateEvent) -> DatabaseResult<Event> {
         let now = chrono::Utc::now().timestamp_millis();
+        let timezone = event
+            .timezone
+            .clone()
+            .unwrap_or_else(|| "Asia/Shanghai".to_string());
 
         self.db.execute_in_transaction(|tx| {
             tx.execute(
@@ -103,10 +148,10 @@ impl<'a> EventRepository<'a> {
                 INSERT INTO events (
                     title, description, start_time, end_time, all_day,
                     calendar_id, color, reminder, repeat_rule, location,
-                    external_id, created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                    external_id, user_id, timezone, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
                 "#,
-                rusqlite::params![
+                params![
                     event.title,
                     event.description,
                     event.start_time,
@@ -118,6 +163,8 @@ impl<'a> EventRepository<'a> {
                     event.repeat_rule,
                     event.location,
                     event.external_id,
+                    event.user_id,
+                    timezone,
                     now,
                     now,
                 ],
@@ -138,46 +185,26 @@ impl<'a> EventRepository<'a> {
                 repeat_rule: event.repeat_rule.clone(),
                 location: event.location.clone(),
                 external_id: event.external_id.clone(),
+                user_id: event.user_id,
+                deleted_at: None,
+                timezone,
                 created_at: now,
                 updated_at: now,
             })
         })
     }
 
-    /// 获取所有事件
+    /// 获取所有事件（未软删除的）
     ///
     /// 按开始时间升序排列
     pub fn get_all(&self) -> DatabaseResult<Vec<Event>> {
         self.db.execute(|conn| {
-            let mut stmt = conn.prepare(
-                r#"
-                SELECT id, title, description, start_time, end_time, all_day,
-                       calendar_id, color, reminder, repeat_rule, location,
-                       external_id, created_at, updated_at
-                FROM events
-                ORDER BY start_time ASC
-                "#,
-            )?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {EVENT_COLUMNS} FROM events WHERE deleted_at IS NULL ORDER BY start_time ASC"
+            ))?;
 
             let events = stmt
-                .query_map([], |row| {
-                    Ok(Event {
-                        id: row.get(0)?,
-                        title: row.get(1)?,
-                        description: row.get(2)?,
-                        start_time: row.get(3)?,
-                        end_time: row.get(4)?,
-                        all_day: row.get::<_, i32>(5)? != 0,
-                        calendar_id: row.get(6)?,
-                        color: row.get(7)?,
-                        reminder: row.get(8)?,
-                        repeat_rule: row.get(9)?,
-                        location: row.get(10)?,
-                        external_id: row.get(11)?,
-                        created_at: row.get(12)?,
-                        updated_at: row.get(13)?,
-                    })
-                })?
+                .query_map([], Event::from_row)?
                 .collect::<Result<Vec<_>, _>>()?;
 
             Ok(events)
@@ -191,32 +218,9 @@ impl<'a> EventRepository<'a> {
     pub fn get_by_id(&self, id: i64) -> DatabaseResult<Event> {
         let result = self.db.execute(|conn| {
             conn.query_row(
-                r#"
-                SELECT id, title, description, start_time, end_time, all_day,
-                       calendar_id, color, reminder, repeat_rule, location,
-                       external_id, created_at, updated_at
-                FROM events
-                WHERE id = ?1
-                "#,
-                rusqlite::params![id],
-                |row| {
-                    Ok(Event {
-                        id: row.get(0)?,
-                        title: row.get(1)?,
-                        description: row.get(2)?,
-                        start_time: row.get(3)?,
-                        end_time: row.get(4)?,
-                        all_day: row.get::<_, i32>(5)? != 0,
-                        calendar_id: row.get(6)?,
-                        color: row.get(7)?,
-                        reminder: row.get(8)?,
-                        repeat_rule: row.get(9)?,
-                        location: row.get(10)?,
-                        external_id: row.get(11)?,
-                        created_at: row.get(12)?,
-                        updated_at: row.get(13)?,
-                    })
-                },
+                &format!("SELECT {EVENT_COLUMNS} FROM events WHERE id = ?1 AND deleted_at IS NULL"),
+                params![id],
+                Event::from_row,
             )
         });
 
@@ -226,48 +230,24 @@ impl<'a> EventRepository<'a> {
         })
     }
 
-    /// 根据日历 ID 获取所有事件
+    /// 根据日历 ID 获取所有事件（未软删除的）
     ///
     /// 按开始时间升序排列
     pub fn get_by_calendar_id(&self, calendar_id: i64) -> DatabaseResult<Vec<Event>> {
         self.db.execute(|conn| {
-            let mut stmt = conn.prepare(
-                r#"
-                SELECT id, title, description, start_time, end_time, all_day,
-                       calendar_id, color, reminder, repeat_rule, location,
-                       external_id, created_at, updated_at
-                FROM events
-                WHERE calendar_id = ?1
-                ORDER BY start_time ASC
-                "#,
-            )?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {EVENT_COLUMNS} FROM events WHERE calendar_id = ?1 AND deleted_at IS NULL ORDER BY start_time ASC"
+            ))?;
 
             let events = stmt
-                .query_map(rusqlite::params![calendar_id], |row| {
-                    Ok(Event {
-                        id: row.get(0)?,
-                        title: row.get(1)?,
-                        description: row.get(2)?,
-                        start_time: row.get(3)?,
-                        end_time: row.get(4)?,
-                        all_day: row.get::<_, i32>(5)? != 0,
-                        calendar_id: row.get(6)?,
-                        color: row.get(7)?,
-                        reminder: row.get(8)?,
-                        repeat_rule: row.get(9)?,
-                        location: row.get(10)?,
-                        external_id: row.get(11)?,
-                        created_at: row.get(12)?,
-                        updated_at: row.get(13)?,
-                    })
-                })?
+                .query_map(params![calendar_id], Event::from_row)?
                 .collect::<Result<Vec<_>, _>>()?;
 
             Ok(events)
         })
     }
 
-    /// 根据时间范围获取事件
+    /// 根据时间范围获取事件（未软删除的）
     ///
     /// # 参数
     /// - `start_time`: 范围开始时间 (Unix 时间戳，毫秒)
@@ -278,36 +258,12 @@ impl<'a> EventRepository<'a> {
     /// 条件: event.start_time < end_time AND event.end_time > start_time
     pub fn get_by_time_range(&self, start_time: i64, end_time: i64) -> DatabaseResult<Vec<Event>> {
         self.db.execute(|conn| {
-            let mut stmt = conn.prepare(
-                r#"
-                SELECT id, title, description, start_time, end_time, all_day,
-                       calendar_id, color, reminder, repeat_rule, location,
-                       external_id, created_at, updated_at
-                FROM events
-                WHERE start_time < ?1 AND end_time > ?2
-                ORDER BY start_time ASC
-                "#,
-            )?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {EVENT_COLUMNS} FROM events WHERE start_time < ?1 AND end_time > ?2 AND deleted_at IS NULL ORDER BY start_time ASC"
+            ))?;
 
             let events = stmt
-                .query_map(rusqlite::params![end_time, start_time], |row| {
-                    Ok(Event {
-                        id: row.get(0)?,
-                        title: row.get(1)?,
-                        description: row.get(2)?,
-                        start_time: row.get(3)?,
-                        end_time: row.get(4)?,
-                        all_day: row.get::<_, i32>(5)? != 0,
-                        calendar_id: row.get(6)?,
-                        color: row.get(7)?,
-                        reminder: row.get(8)?,
-                        repeat_rule: row.get(9)?,
-                        location: row.get(10)?,
-                        external_id: row.get(11)?,
-                        created_at: row.get(12)?,
-                        updated_at: row.get(13)?,
-                    })
-                })?
+                .query_map(params![end_time, start_time], Event::from_row)?
                 .collect::<Result<Vec<_>, _>>()?;
 
             Ok(events)
@@ -338,7 +294,7 @@ impl<'a> EventRepository<'a> {
                     repeat_rule = ?9, location = ?10, external_id = ?11, updated_at = ?12
                 WHERE id = ?13
                 "#,
-                rusqlite::params![
+                params![
                     event.title,
                     event.description,
                     event.start_time,
@@ -372,20 +328,29 @@ impl<'a> EventRepository<'a> {
                 repeat_rule: event.repeat_rule.clone(),
                 location: event.location.clone(),
                 external_id: event.external_id.clone(),
+                user_id: original.user_id,
+                deleted_at: original.deleted_at,
+                timezone: original.timezone,
                 created_at: original.created_at,
                 updated_at: now,
             })
         })
     }
 
-    /// 删除事件
+    /// 软删除事件
+    ///
+    /// 设置 deleted_at 时间戳而非物理删除
     ///
     /// # 返回
     /// 成功返回 true，如果事件不存在返回 false
     pub fn delete(&self, id: i64) -> DatabaseResult<bool> {
+        let now = chrono::Utc::now().timestamp_millis();
+
         self.db.execute_in_transaction(|tx| {
-            let rows_affected =
-                tx.execute("DELETE FROM events WHERE id = ?1", rusqlite::params![id])?;
+            let rows_affected = tx.execute(
+                "UPDATE events SET deleted_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+                params![now, id],
+            )?;
             Ok(rows_affected > 0)
         })
     }
@@ -442,6 +407,8 @@ mod tests {
             repeat_rule: None,
             location: Some("会议室".to_string()),
             external_id: None,
+            user_id: None,
+            timezone: None,
         };
 
         let event = repo.create(&create_event).expect("创建事件失败");
@@ -456,6 +423,8 @@ mod tests {
         assert_eq!(event.reminder, Some(15));
         assert_eq!(event.location, Some("会议室".to_string()));
         assert!(event.id > 0);
+        assert_eq!(event.timezone, "Asia/Shanghai");
+        assert!(event.deleted_at.is_none());
     }
 
     #[test]
@@ -477,6 +446,8 @@ mod tests {
             repeat_rule: None,
             location: None,
             external_id: None,
+            user_id: None,
+            timezone: None,
         })
         .expect("创建事件1失败");
 
@@ -492,6 +463,8 @@ mod tests {
             repeat_rule: None,
             location: None,
             external_id: None,
+            user_id: None,
+            timezone: None,
         })
         .expect("创建事件2失败");
 
@@ -522,6 +495,8 @@ mod tests {
                 repeat_rule: None,
                 location: None,
                 external_id: None,
+                user_id: None,
+                timezone: None,
             })
             .expect("创建事件失败");
 
@@ -581,6 +556,8 @@ mod tests {
             repeat_rule: None,
             location: None,
             external_id: None,
+            user_id: None,
+            timezone: None,
         })
         .expect("创建事件失败");
 
@@ -597,6 +574,8 @@ mod tests {
             repeat_rule: None,
             location: None,
             external_id: None,
+            user_id: None,
+            timezone: None,
         })
         .expect("创建事件失败");
 
@@ -634,6 +613,8 @@ mod tests {
             repeat_rule: None,
             location: None,
             external_id: None,
+            user_id: None,
+            timezone: None,
         })
         .expect("创建事件1失败");
 
@@ -650,6 +631,8 @@ mod tests {
             repeat_rule: None,
             location: None,
             external_id: None,
+            user_id: None,
+            timezone: None,
         })
         .expect("创建事件2失败");
 
@@ -666,6 +649,8 @@ mod tests {
             repeat_rule: None,
             location: None,
             external_id: None,
+            user_id: None,
+            timezone: None,
         })
         .expect("创建事件3失败");
 
@@ -701,6 +686,8 @@ mod tests {
                 repeat_rule: None,
                 location: None,
                 external_id: None,
+                user_id: None,
+                timezone: None,
             })
             .expect("创建事件失败");
 
@@ -776,7 +763,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_event() {
+    fn test_soft_delete_event() {
         let db = setup_test_db();
         let calendar_id = create_test_calendar(&db);
         let repo = EventRepository::new(&db);
@@ -794,15 +781,21 @@ mod tests {
                 repeat_rule: None,
                 location: None,
                 external_id: None,
+                user_id: None,
+                timezone: None,
             })
             .expect("创建事件失败");
 
         let deleted = repo.delete(created.id).expect("删除事件失败");
         assert!(deleted);
 
-        // 验证事件已删除
+        // 验证事件已软删除（get_by_id 找不到）
         let result = repo.get_by_id(created.id);
         assert!(result.is_err());
+
+        // 验证 get_all 也不包含软删除的事件
+        let events = repo.get_all().expect("获取所有事件失败");
+        assert!(events.is_empty());
     }
 
     #[test]
@@ -834,6 +827,8 @@ mod tests {
                 repeat_rule: None,
                 location: None,
                 external_id: None,
+                user_id: None,
+                timezone: None,
             })
             .expect("创建全天事件失败");
 
@@ -842,5 +837,33 @@ mod tests {
         // 重新查询验证
         let found = repo.get_by_id(event_all_day.id).expect("获取事件失败");
         assert!(found.all_day);
+    }
+
+    #[test]
+    fn test_create_event_with_user_id_and_timezone() {
+        let db = setup_test_db();
+        let calendar_id = create_test_calendar(&db);
+        let repo = EventRepository::new(&db);
+
+        let event = repo
+            .create(&CreateEvent {
+                title: "用户事件".to_string(),
+                description: None,
+                start_time: 1000,
+                end_time: 2000,
+                all_day: false,
+                calendar_id,
+                color: None,
+                reminder: None,
+                repeat_rule: None,
+                location: None,
+                external_id: None,
+                user_id: Some(42),
+                timezone: Some("America/New_York".to_string()),
+            })
+            .expect("创建事件失败");
+
+        assert_eq!(event.user_id, Some(42));
+        assert_eq!(event.timezone, "America/New_York");
     }
 }

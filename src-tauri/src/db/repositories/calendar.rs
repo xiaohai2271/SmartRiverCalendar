@@ -26,6 +26,12 @@ pub struct Calendar {
     pub visible: bool,
     /// 是否启用同步
     pub sync_enabled: bool,
+    /// 所属用户 ID
+    pub user_id: Option<i64>,
+    /// 软删除时间戳（毫秒），NULL 表示未删除
+    pub deleted_at: Option<i64>,
+    /// 时区
+    pub timezone: String,
     /// 创建时间戳（毫秒）
     pub created_at: i64,
     /// 更新时间戳（毫秒）
@@ -44,6 +50,10 @@ pub struct CreateCalendarRequest {
     pub visible: bool,
     #[serde(default)]
     pub sync_enabled: bool,
+    #[serde(default)]
+    pub user_id: Option<i64>,
+    #[serde(default)]
+    pub timezone: Option<String>,
 }
 
 /// 更新日历请求
@@ -65,18 +75,21 @@ fn default_visible() -> bool {
 }
 
 impl Calendar {
-    /// 从数据库行创建 Calendar 实例
+    /// 从数据库行创建 Calendar 实例（使用列名访问，更安全）
     fn from_row(row: &Row) -> rusqlite::Result<Self> {
         Ok(Calendar {
-            id: row.get(0)?,
-            name: row.get(1)?,
-            color: row.get(2)?,
-            type_: row.get(3)?,
-            account_id: row.get(4)?,
-            visible: row.get::<_, i64>(5)? != 0,
-            sync_enabled: row.get::<_, i64>(6)? != 0,
-            created_at: row.get(7)?,
-            updated_at: row.get(8)?,
+            id: row.get("id")?,
+            name: row.get("name")?,
+            color: row.get("color")?,
+            type_: row.get("type")?,
+            account_id: row.get("account_id")?,
+            visible: row.get::<_, i64>("visible")? != 0,
+            sync_enabled: row.get::<_, i64>("sync_enabled")? != 0,
+            user_id: row.get("user_id")?,
+            deleted_at: row.get("deleted_at")?,
+            timezone: row.get("timezone")?,
+            created_at: row.get("created_at")?,
+            updated_at: row.get("updated_at")?,
         })
     }
 }
@@ -87,6 +100,12 @@ impl Calendar {
 pub struct CalendarRepository<'a> {
     db: &'a DatabaseConnection,
 }
+
+/// 日历查询的列列表
+const CALENDAR_COLUMNS: &str = r#"
+    id, name, color, type, account_id, visible, sync_enabled,
+    user_id, deleted_at, timezone, created_at, updated_at
+"#;
 
 impl<'a> CalendarRepository<'a> {
     /// 创建 CalendarRepository 实例
@@ -103,12 +122,16 @@ impl<'a> CalendarRepository<'a> {
     /// 成功返回新创建的日历（包含生成的 ID）
     pub fn create(&self, req: &CreateCalendarRequest) -> DatabaseResult<Calendar> {
         let now = chrono::Utc::now().timestamp_millis();
+        let timezone = req
+            .timezone
+            .clone()
+            .unwrap_or_else(|| "Asia/Shanghai".to_string());
 
         self.db.execute_in_transaction(|tx| {
             tx.execute(
                 r#"
-                INSERT INTO calendars (name, color, type, account_id, visible, sync_enabled, created_at, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                INSERT INTO calendars (name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
                 "#,
                 params![
                     req.name,
@@ -117,6 +140,8 @@ impl<'a> CalendarRepository<'a> {
                     req.account_id,
                     req.visible as i64,
                     req.sync_enabled as i64,
+                    req.user_id,
+                    timezone,
                     now,
                     now,
                 ],
@@ -132,24 +157,23 @@ impl<'a> CalendarRepository<'a> {
                 account_id: req.account_id,
                 visible: req.visible,
                 sync_enabled: req.sync_enabled,
+                user_id: req.user_id,
+                deleted_at: None,
+                timezone,
                 created_at: now,
                 updated_at: now,
             })
         })
     }
 
-    /// 获取所有日历
+    /// 获取所有日历（未软删除的）
     ///
     /// 按创建时间降序排列
     pub fn get_all(&self) -> DatabaseResult<Vec<Calendar>> {
         self.db.execute(|conn| {
-            let mut stmt = conn.prepare(
-                r#"
-                SELECT id, name, color, type, account_id, visible, sync_enabled, created_at, updated_at
-                FROM calendars
-                ORDER BY created_at DESC
-                "#,
-            )?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {CALENDAR_COLUMNS} FROM calendars WHERE deleted_at IS NULL ORDER BY created_at DESC"
+            ))?;
 
             let calendars = stmt
                 .query_map([], |row| Calendar::from_row(row))?
@@ -169,11 +193,7 @@ impl<'a> CalendarRepository<'a> {
     pub fn get_by_id(&self, id: i64) -> DatabaseResult<Calendar> {
         let result = self.db.execute(|conn| {
             conn.query_row(
-                r#"
-                SELECT id, name, color, type, account_id, visible, sync_enabled, created_at, updated_at
-                FROM calendars
-                WHERE id = ?1
-                "#,
+                &format!("SELECT {CALENDAR_COLUMNS} FROM calendars WHERE id = ?1 AND deleted_at IS NULL"),
                 params![id],
                 |row| Calendar::from_row(row),
             )
@@ -237,6 +257,9 @@ impl<'a> CalendarRepository<'a> {
                 account_id: existing.account_id,
                 visible,
                 sync_enabled,
+                user_id: existing.user_id,
+                deleted_at: existing.deleted_at,
+                timezone: existing.timezone,
                 created_at: existing.created_at,
                 updated_at: now,
             })
@@ -248,9 +271,9 @@ impl<'a> CalendarRepository<'a> {
         })
     }
 
-    /// 删除日历
+    /// 软删除日历
     ///
-    /// 删除日历会级联删除相关事件（由外键约束自动处理）
+    /// 设置 deleted_at 时间戳而非物理删除
     ///
     /// # 参数
     /// - `id`: 日历 ID
@@ -258,8 +281,13 @@ impl<'a> CalendarRepository<'a> {
     /// # 返回
     /// 成功返回 ()，不存在返回 NotFound 错误
     pub fn delete(&self, id: i64) -> DatabaseResult<()> {
+        let now = chrono::Utc::now().timestamp_millis();
+
         let result = self.db.execute_in_transaction(|tx| {
-            tx.execute("DELETE FROM calendars WHERE id = ?1", params![id])?;
+            tx.execute(
+                "UPDATE calendars SET deleted_at = ?1 WHERE id = ?2 AND deleted_at IS NULL",
+                params![now, id],
+            )?;
 
             let changes = tx.changes();
 
@@ -276,7 +304,7 @@ impl<'a> CalendarRepository<'a> {
         })
     }
 
-    /// 根据账户 ID 获取日历列表
+    /// 根据账户 ID 获取日历列表（未软删除的）
     ///
     /// # 参数
     /// - `account_id`: 外部账户 ID
@@ -285,14 +313,9 @@ impl<'a> CalendarRepository<'a> {
     /// 返回该账户下的所有日历
     pub fn get_by_account_id(&self, account_id: i64) -> DatabaseResult<Vec<Calendar>> {
         self.db.execute(|conn| {
-            let mut stmt = conn.prepare(
-                r#"
-                SELECT id, name, color, type, account_id, visible, sync_enabled, created_at, updated_at
-                FROM calendars
-                WHERE account_id = ?1
-                ORDER BY created_at DESC
-                "#,
-            )?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {CALENDAR_COLUMNS} FROM calendars WHERE account_id = ?1 AND deleted_at IS NULL ORDER BY created_at DESC"
+            ))?;
 
             let calendars = stmt
                 .query_map(params![account_id], |row| Calendar::from_row(row))?
@@ -302,20 +325,15 @@ impl<'a> CalendarRepository<'a> {
         })
     }
 
-    /// 获取可见日历列表
+    /// 获取可见日历列表（未软删除的）
     ///
     /// # 返回
     /// 返回所有可见的日历
     pub fn get_visible(&self) -> DatabaseResult<Vec<Calendar>> {
         self.db.execute(|conn| {
-            let mut stmt = conn.prepare(
-                r#"
-                SELECT id, name, color, type, account_id, visible, sync_enabled, created_at, updated_at
-                FROM calendars
-                WHERE visible = 1
-                ORDER BY created_at DESC
-                "#,
-            )?;
+            let mut stmt = conn.prepare(&format!(
+                "SELECT {CALENDAR_COLUMNS} FROM calendars WHERE visible = 1 AND deleted_at IS NULL ORDER BY created_at DESC"
+            ))?;
 
             let calendars = stmt
                 .query_map([], |row| Calendar::from_row(row))?
@@ -362,6 +380,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let calendar = repo.create(&req).expect("创建日历失败");
@@ -372,6 +392,8 @@ mod tests {
         assert_eq!(calendar.type_, "local");
         assert!(calendar.visible);
         assert!(!calendar.sync_enabled);
+        assert_eq!(calendar.timezone, "Asia/Shanghai");
+        assert!(calendar.deleted_at.is_none());
     }
 
     #[test]
@@ -387,6 +409,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let req2 = CreateCalendarRequest {
@@ -396,6 +420,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         repo.create(&req1).expect("创建日历1失败");
@@ -423,6 +449,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: true,
+            user_id: None,
+            timezone: None,
         };
 
         let created = repo.create(&req).expect("创建日历失败");
@@ -464,6 +492,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let created = repo.create(&create_req).expect("创建日历失败");
@@ -512,7 +542,7 @@ mod tests {
     }
 
     #[test]
-    fn test_delete_calendar() {
+    fn test_soft_delete_calendar() {
         let db = setup_test_db();
         let repo = CalendarRepository::new(&db);
 
@@ -524,16 +554,22 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let created = repo.create(&req).expect("创建日历失败");
 
-        // 删除日历
+        // 软删除日历
         repo.delete(created.id).expect("删除日历失败");
 
-        // 验证已删除
+        // 验证 get_by_id 找不到（因为 deleted_at IS NULL 过滤）
         let result = repo.get_by_id(created.id);
         assert!(result.is_err());
+
+        // 验证 get_all 也不包含软删除的日历
+        let calendars = repo.get_all().expect("获取日历列表失败");
+        assert!(calendars.is_empty());
     }
 
     #[test]
@@ -566,6 +602,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let created = repo.create(&req).expect("创建日历失败");
@@ -595,10 +633,10 @@ mod tests {
 
         assert_eq!(event_count, 1);
 
-        // 删除日历
+        // 软删除日历（不再级联删除事件，事件仍存在于数据库中）
         repo.delete(created.id).expect("删除日历失败");
 
-        // 验证事件已被级联删除
+        // 事件仍然存在（软删除不触发外键级联）
         let event_count_after: i64 = db
             .execute(|conn| {
                 conn.query_row(
@@ -609,7 +647,7 @@ mod tests {
             })
             .expect("查询事件数量失败");
 
-        assert_eq!(event_count_after, 0);
+        assert_eq!(event_count_after, 1);
     }
 
     #[test]
@@ -637,6 +675,8 @@ mod tests {
             account_id: Some(1),
             visible: true,
             sync_enabled: true,
+            user_id: None,
+            timezone: None,
         };
 
         let req2 = CreateCalendarRequest {
@@ -646,6 +686,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         repo.create(&req1).expect("创建账户日历失败");
@@ -672,6 +714,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let req2 = CreateCalendarRequest {
@@ -681,6 +725,8 @@ mod tests {
             account_id: None,
             visible: false,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         repo.create(&req1).expect("创建可见日历失败");
@@ -706,6 +752,8 @@ mod tests {
             account_id: None,
             visible: default_visible(),
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let calendar = repo.create(&req).expect("创建日历失败");
@@ -713,6 +761,7 @@ mod tests {
         assert_eq!(calendar.type_, "local");
         assert!(calendar.visible);
         assert!(!calendar.sync_enabled);
+        assert_eq!(calendar.timezone, "Asia/Shanghai");
     }
 
     #[test]
@@ -728,6 +777,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            user_id: None,
+            timezone: None,
         };
 
         let created = repo.create(&req).expect("创建日历失败");
@@ -759,6 +810,8 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: true,
+            user_id: None,
+            timezone: None,
         };
 
         let created = repo.create(&create_req).expect("创建日历失败");
@@ -778,5 +831,26 @@ mod tests {
         assert_eq!(updated.color, "#BBBBBB"); // 保持原值
         assert!(updated.visible); // 保持原值
         assert!(updated.sync_enabled); // 保持原值
+    }
+
+    #[test]
+    fn test_create_with_user_id_and_timezone() {
+        let db = setup_test_db();
+        let repo = CalendarRepository::new(&db);
+
+        let req = CreateCalendarRequest {
+            name: "用户日历".to_string(),
+            color: "#CC0000".to_string(),
+            type_: "local".to_string(),
+            account_id: None,
+            visible: true,
+            sync_enabled: false,
+            user_id: Some(42),
+            timezone: Some("America/New_York".to_string()),
+        };
+
+        let calendar = repo.create(&req).expect("创建日历失败");
+        assert_eq!(calendar.user_id, Some(42));
+        assert_eq!(calendar.timezone, "America/New_York");
     }
 }

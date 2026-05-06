@@ -30,6 +30,9 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
             account_id INTEGER,
             visible INTEGER NOT NULL DEFAULT 1,
             sync_enabled INTEGER NOT NULL DEFAULT 0,
+            user_id INTEGER,
+            deleted_at INTEGER,
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
@@ -49,6 +52,9 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
             repeat_rule TEXT,
             location TEXT,
             external_id TEXT,
+            user_id INTEGER,
+            deleted_at INTEGER,
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
@@ -63,6 +69,9 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
             completed INTEGER NOT NULL DEFAULT 0,
             priority TEXT NOT NULL DEFAULT 'medium',
             calendar_id INTEGER NOT NULL,
+            user_id INTEGER,
+            deleted_at INTEGER,
+            timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
             created_at INTEGER NOT NULL,
             updated_at INTEGER NOT NULL,
             FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
@@ -120,6 +129,43 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_user_holidays_date ON user_holidays(date);
+
+        -- 本地用户表（认证用户信息缓存）
+        CREATE TABLE IF NOT EXISTS local_users (
+            user_id INTEGER PRIMARY KEY,
+            email TEXT NOT NULL,
+            display_name TEXT NOT NULL,
+            is_current INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_local_users_is_current ON local_users(is_current);
+
+        -- 同步日志表
+        CREATE TABLE IF NOT EXISTS sync_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            entity_type TEXT NOT NULL CHECK(entity_type IN ('event', 'todo', 'calendar')),
+            entity_id INTEGER NOT NULL,
+            action TEXT NOT NULL CHECK(action IN ('create', 'update', 'delete')),
+            payload TEXT NOT NULL,
+            synced INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY (user_id) REFERENCES local_users(user_id) ON DELETE SET NULL
+        );
+
+        -- 同步日志索引
+        CREATE INDEX IF NOT EXISTS idx_sync_log_user_id ON sync_log(user_id);
+        CREATE INDEX IF NOT EXISTS idx_sync_log_entity ON sync_log(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_sync_log_synced ON sync_log(synced);
+
+        -- 日历、事件、待办的 user_id 和 deleted_at 索引
+        CREATE INDEX IF NOT EXISTS idx_calendars_user_id ON calendars(user_id);
+        CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
+        CREATE INDEX IF NOT EXISTS idx_events_deleted_at ON events(deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id);
+        CREATE INDEX IF NOT EXISTS idx_todos_deleted_at ON todos(deleted_at);
         "#,
     )?;
 
@@ -138,6 +184,22 @@ pub fn init_database(conn: &Connection) -> Result<(), DatabaseError> {
         "ALTER TABLE app_settings ADD COLUMN description TEXT NOT NULL DEFAULT ''",
         [],
     );
+
+    // 迁移：为已有表添加 user_id, deleted_at, timezone 字段
+    let migrations = [
+        "ALTER TABLE calendars ADD COLUMN user_id INTEGER",
+        "ALTER TABLE calendars ADD COLUMN deleted_at INTEGER",
+        "ALTER TABLE calendars ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai'",
+        "ALTER TABLE events ADD COLUMN user_id INTEGER",
+        "ALTER TABLE events ADD COLUMN deleted_at INTEGER",
+        "ALTER TABLE events ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai'",
+        "ALTER TABLE todos ADD COLUMN user_id INTEGER",
+        "ALTER TABLE todos ADD COLUMN deleted_at INTEGER",
+        "ALTER TABLE todos ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai'",
+    ];
+    for sql in &migrations {
+        let _ = conn.execute(sql, []);
+    }
 
     Ok(())
 }
@@ -184,6 +246,8 @@ mod tests {
         assert!(tables.contains(&"sync_state".to_string()));
         assert!(tables.contains(&"app_settings".to_string()));
         assert!(tables.contains(&"user_holidays".to_string()));
+        assert!(tables.contains(&"local_users".to_string()));
+        assert!(tables.contains(&"sync_log".to_string()));
     }
 
     #[test]
@@ -206,5 +270,14 @@ mod tests {
         assert!(indexes.contains(&"idx_todos_calendar_id".to_string()));
         assert!(indexes.contains(&"idx_sync_state_account_id".to_string()));
         assert!(indexes.contains(&"idx_user_holidays_date".to_string()));
+        assert!(indexes.contains(&"idx_local_users_is_current".to_string()));
+        assert!(indexes.contains(&"idx_sync_log_user_id".to_string()));
+        assert!(indexes.contains(&"idx_sync_log_entity".to_string()));
+        assert!(indexes.contains(&"idx_sync_log_synced".to_string()));
+        assert!(indexes.contains(&"idx_calendars_user_id".to_string()));
+        assert!(indexes.contains(&"idx_events_user_id".to_string()));
+        assert!(indexes.contains(&"idx_events_deleted_at".to_string()));
+        assert!(indexes.contains(&"idx_todos_user_id".to_string()));
+        assert!(indexes.contains(&"idx_todos_deleted_at".to_string()));
     }
 }
