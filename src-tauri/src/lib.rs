@@ -10,6 +10,7 @@ pub mod caldav;
 pub mod db;
 pub mod auth;
 pub mod api;
+pub mod sync_engine;
 mod sync;
 mod updater;
 mod log_buffer;
