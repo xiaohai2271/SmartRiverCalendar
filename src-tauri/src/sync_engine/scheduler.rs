@@ -229,6 +229,25 @@ impl SyncScheduler {
         self.sync_lock.load(Ordering::SeqCst)
     }
 
+    /// 检查网络是否可用
+    ///
+    /// 尝试连接一个轻量级 URL 来检测网络连通性。
+    /// 超时时间为 5 秒。
+    ///
+    /// # 返回
+    /// 网络可用返回 true，否则返回 false
+    pub async fn check_network() -> bool {
+        match reqwest::Client::new()
+            .head("https://httpbin.org/status/200")
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await
+        {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
+        }
+    }
+
     /// 通知网络状态变更
     ///
     /// 当检测到网络恢复时调用，自动触发同步。

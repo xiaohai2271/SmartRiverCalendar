@@ -10,6 +10,9 @@ let autoSyncInterval: ReturnType<typeof setInterval> | null = null
 // Tauri 事件监听器
 let tauriEventUnlisteners: (() => void)[] = []
 
+// 网络状态监听器清理函数
+let networkListenerCleanup: (() => void) | null = null
+
 // 同步状态
 export type CloudSyncStatus = 'idle' | 'syncing' | 'success' | 'error' | 'offline'
 
@@ -51,7 +54,8 @@ export const cloudSyncService = {
       return false
     } catch (error) {
       console.error('[cloudSync] 同步失败:', error)
-      authStore.syncStatus = 'error'
+      // 同步失败时标记为离线状态
+      authStore.syncStatus = 'offline'
       return false
     }
   },
@@ -145,5 +149,52 @@ export const cloudSyncService = {
   cleanupEventListeners(): void {
     tauriEventUnlisteners.forEach(unlisten => unlisten())
     tauriEventUnlisteners = []
+  },
+
+  /**
+   * 监听网络状态变化
+   * 网络恢复时自动触发同步，网络断开时标记离线状态
+   */
+  initNetworkListener(): void {
+    if (typeof window === 'undefined') return
+
+    // 先清理已有的监听器
+    this.cleanupNetworkListener()
+
+    const onlineHandler = () => {
+      const authStore = useAuthStore()
+      if (authStore.isAuthenticated && authStore.syncStatus === 'offline') {
+        console.log('[cloudSync] 网络恢复，触发自动同步')
+        this.triggerSync()
+      }
+    }
+
+    const offlineHandler = () => {
+      const authStore = useAuthStore()
+      console.log('[cloudSync] 网络断开，标记为离线状态')
+      authStore.syncStatus = 'offline'
+    }
+
+    window.addEventListener('online', onlineHandler)
+    window.addEventListener('offline', offlineHandler)
+
+    // 保存清理函数
+    networkListenerCleanup = () => {
+      window.removeEventListener('online', onlineHandler)
+      window.removeEventListener('offline', offlineHandler)
+      networkListenerCleanup = null
+    }
+
+    console.log('[cloudSync] 网络状态监听已初始化')
+  },
+
+  /**
+   * 清理网络状态监听
+   */
+  cleanupNetworkListener(): void {
+    if (networkListenerCleanup) {
+      networkListenerCleanup()
+      console.log('[cloudSync] 网络状态监听已清理')
+    }
   }
 }
