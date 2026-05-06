@@ -2319,6 +2319,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "keyring"
+version = "3.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eebcc3aff044e5944a8fbaf69eb277d11986064cba30c468730e8b9909fb551c"
+dependencies = [
+ "log",
+ "zeroize",
+]
+
+[[package]]
 name = "kuchikiki"
 version = "0.8.8-speedreader"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6944,6 +6954,7 @@ name = "xiaohe-calendar"
 version = "0.1.2"
 dependencies = [
  "aes-gcm",
+ "async-trait",
  "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
@@ -6951,6 +6962,7 @@ dependencies = [
  "ews",
  "hostname",
  "ical",
+ "keyring",
  "log",
  "once_cell",
  "quick-xml 0.37.5",

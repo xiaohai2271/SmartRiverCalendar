@@ -8,6 +8,8 @@ mod crypto;
 pub mod ews;
 pub mod caldav;
 pub mod db;
+pub mod auth;
+pub mod api;
 mod sync;
 mod updater;
 mod log_buffer;
