@@ -41,6 +41,10 @@
           <span class="nav-icon">📋</span>
           <span>日程</span>
         </router-link>
+        <router-link to="/profile" class="nav-item" :class="{ active: $route.path === '/profile' }">
+          <span class="nav-icon">👤</span>
+          <span>我的</span>
+        </router-link>
         <router-link to="/settings" class="nav-item" :class="{ active: $route.path === '/settings' }">
           <span class="nav-icon">⚙️</span>
           <span>设置</span>
@@ -380,6 +384,20 @@ onMounted(async () => {
         console.error('时钟点击检测功能启动失败:', e)
         settingsStore.updateSettings({ clockHookEnabled: false })
       })
+    }
+    
+    // 检查登录状态并启动自动同步（后台进行）
+    try {
+      const { useAuthStore } = await import('../stores/auth')
+      const authStore = useAuthStore()
+      await authStore.initialize()
+      if (authStore.isAuthenticated) {
+        // 已登录，启动自动同步
+        const { cloudSyncService } = await import('../services/cloudSync')
+        cloudSyncService.startAutoSync(5) // 5分钟间隔
+      }
+    } catch (e) {
+      console.warn('[App] 认证状态检查失败:', e)
     }
   }, 100) // 延迟 100ms，让界面先渲染
 
