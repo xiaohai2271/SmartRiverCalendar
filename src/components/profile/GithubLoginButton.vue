@@ -103,8 +103,8 @@ async function mockGithubLogin(): Promise<boolean> {
   }
 
   // 直接设置 store 状态
-  authStore.user.value = mockUser
-  authStore.isAuthenticated.value = true
+  authStore.user = mockUser as any
+  authStore.isAuthenticated = true
 
   return true
 }

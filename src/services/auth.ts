@@ -1,18 +1,12 @@
 import { safeInvoke } from '../utils/tauri'
 import type {
   User,
-  LoginRequest,
-  RegisterRequest,
   AuthResponse,
-  GithubOAuthRequest,
-  RefreshTokenRequest,
   RefreshTokenResponse,
   ApiResponse
 } from '../types/auth'
 
-// 本地存储键名
-const ACCESS_TOKEN_KEY = 'auth_access_token'
-const REFRESH_TOKEN_KEY = 'auth_refresh_token'
+// 注意: Token 仅在 Rust 层通过 keyring 安全存储，前端不存储 Token
 
 // 认证状态变化回调类型
 type AuthChangeCallback = (isAuthenticated: boolean, user: User | null) => void
@@ -40,8 +34,6 @@ export class AuthService {
 
     if (response?.data) {
       const authResponse = response.data
-      // 保存令牌到 localStorage
-      this.saveTokens(authResponse.accessToken, authResponse.refreshToken)
       // 触发认证状态变化回调
       this.triggerAuthChange(true, authResponse.user)
       return authResponse
@@ -66,8 +58,6 @@ export class AuthService {
 
     if (response?.data) {
       const authResponse = response.data
-      // 保存令牌到 localStorage
-      this.saveTokens(authResponse.accessToken, authResponse.refreshToken)
       // 触发认证状态变化回调
       this.triggerAuthChange(true, authResponse.user)
       return authResponse
@@ -82,9 +72,6 @@ export class AuthService {
   async logout(): Promise<void> {
     // 调用后端登出接口
     await safeInvoke('auth_logout')
-
-    // 清除本地令牌
-    this.clearTokens()
 
     // 触发认证状态变化回调
     this.triggerAuthChange(false, null)
@@ -104,8 +91,6 @@ export class AuthService {
 
     if (response?.data) {
       const authResponse = response.data
-      // 保存令牌到 localStorage
-      this.saveTokens(authResponse.accessToken, authResponse.refreshToken)
       // 触发认证状态变化回调
       this.triggerAuthChange(true, authResponse.user)
       return authResponse
@@ -119,24 +104,13 @@ export class AuthService {
    * @returns 是否刷新成功
    */
   async refreshToken(): Promise<boolean> {
-    const refreshTokenValue = this.getRefreshToken()
-    if (!refreshTokenValue) {
-      return false
-    }
-
-    const response = await safeInvoke<ApiResponse<RefreshTokenResponse>>('auth_refresh_token', {
-      refreshToken: refreshTokenValue
-    })
+    const response = await safeInvoke<ApiResponse<RefreshTokenResponse>>('auth_refresh_token')
 
     if (response?.data) {
-      const tokenResponse = response.data
-      // 保存新令牌
-      this.saveTokens(tokenResponse.accessToken, tokenResponse.refreshToken)
       return true
     }
 
-    // 刷新失败，清除令牌
-    this.clearTokens()
+    // 刷新失败，触发登出
     this.triggerAuthChange(false, null)
     return false
   }
@@ -162,52 +136,15 @@ export class AuthService {
   /**
    * 获取访问令牌
    * @returns 访问令牌或 null
+   * @deprecated Token 仅在 Rust 层存储，前端不应访问
    */
   getAccessToken(): string | null {
-    try {
-      return localStorage.getItem(ACCESS_TOKEN_KEY)
-    } catch {
-      return null
-    }
+    console.warn('[AuthService] getAccessToken 已废弃：Token 仅在 Rust 层通过 keyring 安全存储')
+    return null
   }
 
-  /**
-   * 获取刷新令牌
-   * @returns 刷新令牌或 null
-   */
-  private getRefreshToken(): string | null {
-    try {
-      return localStorage.getItem(REFRESH_TOKEN_KEY)
-    } catch {
-      return null
-    }
-  }
-
-  /**
-   * 保存令牌到 localStorage
-   * @param accessToken 访问令牌
-   * @param refreshToken 刷新令牌
-   */
-  private saveTokens(accessToken: string, refreshToken: string): void {
-    try {
-      localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
-      localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
-    } catch (error) {
-      console.error('保存令牌到 localStorage 失败:', error)
-    }
-  }
-
-  /**
-   * 清除 localStorage 中的令牌
-   */
-  private clearTokens(): void {
-    try {
-      localStorage.removeItem(ACCESS_TOKEN_KEY)
-      localStorage.removeItem(REFRESH_TOKEN_KEY)
-    } catch (error) {
-      console.error('清除 localStorage 令牌失败:', error)
-    }
-  }
+  // 移除以下方法：getRefreshToken、saveTokens、clearTokens
+  // Token 现在由 Rust 层通过 keyring 安全存储，前端不再需要管理
 
   /**
    * 注册认证状态变化回调

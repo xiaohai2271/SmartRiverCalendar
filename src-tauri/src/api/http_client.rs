@@ -246,7 +246,7 @@ impl HttpClient {
         let refresh_response: RefreshTokenResponse = self.handle_response(response).await?;
 
         // 更新 Token 存储
-        let current = current_token.unwrap();
+        let current = current_token.ok_or(ApiError::AuthError("无当前 Token".to_string()))?;
         let new_token = TokenInfo {
             access_token: refresh_response.access_token,
             refresh_token: current.refresh_token, // refresh_token 不变

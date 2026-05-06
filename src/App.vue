@@ -387,18 +387,18 @@ onMounted(async () => {
     }
     
     // 检查登录状态并启动自动同步（后台进行）
-    try {
-      const { useAuthStore } = await import('../stores/auth')
+    import('./stores/auth').then(({ useAuthStore }) => {
       const authStore = useAuthStore()
-      await authStore.initialize()
-      if (authStore.isAuthenticated) {
-        // 已登录，启动自动同步
-        const { cloudSyncService } = await import('../services/cloudSync')
-        cloudSyncService.startAutoSync(5) // 5分钟间隔
-      }
-    } catch (e) {
+      authStore.initialize().then(() => {
+        if (authStore.isAuthenticated) {
+          import('./services/cloudSync').then(({ cloudSyncService }) => {
+            cloudSyncService.startAutoSync(5)
+          })
+        }
+      })
+    }).catch((e: unknown) => {
       console.warn('[App] 认证状态检查失败:', e)
-    }
+    })
   }, 100) // 延迟 100ms，让界面先渲染
 
   // 监听稍后提醒事件
