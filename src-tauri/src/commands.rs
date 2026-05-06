@@ -734,6 +734,8 @@ pub fn create_calendar(
         account_id,
         visible: visible.unwrap_or(true),
         sync_enabled: sync_enabled.unwrap_or(false),
+        user_id: None,
+        timezone: None,
     };
     repo.create(&req)
 }
@@ -856,6 +858,8 @@ pub fn create_event(
         repeat_rule,
         location,
         external_id,
+        user_id: None,
+        timezone: None,
     };
     repo.create(&event)
 }
@@ -967,6 +971,8 @@ pub fn create_todo(
         completed,
         priority,
         calendar_id,
+        user_id: None,
+        timezone: None,
     };
     repo.create(&input)
 }
