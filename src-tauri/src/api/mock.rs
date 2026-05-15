@@ -74,6 +74,11 @@ impl Default for MockApiClient {
 
 #[async_trait]
 impl CalendarApi for MockApiClient {
+    /// 获取类型信息，用于 downcast
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     // ================================================================
     // 认证相关
     // ================================================================

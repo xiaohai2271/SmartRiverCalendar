@@ -46,6 +46,8 @@ pub fn create_api_client(config: &ApiConfig) -> Arc<dyn CalendarApi> {
 /// 本 trait 提供更完整的远程数据服务能力
 #[async_trait::async_trait]
 pub trait CalendarApi: Send + Sync {
+    /// 获取类型信息，用于 downcast
+    fn as_any(&self) -> &dyn std::any::Any;
     // ================================================================
     // 认证相关
     // ================================================================

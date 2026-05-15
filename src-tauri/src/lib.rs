@@ -70,6 +70,11 @@ pub fn run() {
 
     let app_state = Mutex::new(commands::AppState::default());
 
+    // 创建 API 客户端
+    let api_config = api::ApiConfig::from_env();
+    let api_client: std::sync::Arc<dyn api::CalendarApi> = api::create_api_client(&api_config);
+    log::info!("API 客户端初始化完成，模式: {:?}", api_config.mode);
+
     // 时钟点击检测管理器（仅 Windows）
     #[cfg(target_os = "windows")]
     let clock_hook_manager = Mutex::new(clock_hook::ClockHookManager::new());
@@ -88,7 +93,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(app_state)
-        .manage(db);
+        .manage(db)
+        .manage(api_client);
 
     // 注册时钟点击检测管理器（仅 Windows）
     #[cfg(target_os = "windows")]

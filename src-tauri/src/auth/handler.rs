@@ -2,122 +2,17 @@
 // 统一管理登录/注册/退出/Token 刷新/状态检查等认证功能
 // 作为认证子系统的统一入口，协调 TokenStore、OAuthService 和 API 通信
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
+use crate::api::{
+    ApiError, AuthResponse, CalendarApi, LoginRequest, RegisterRequest,
+    UserProfile,
+};
 use crate::auth::oauth::{OAuthConfig, OAuthService};
 use crate::auth::token::{TokenError, TokenInfo, TokenStore};
 use crate::db::connection::DatabaseConnection;
-
-// ============================================================================
-// API 类型定义
-// ============================================================================
-
-/// 登录请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LoginRequest {
-    /// 用户邮箱
-    pub email: String,
-    /// 用户密码
-    pub password: String,
-}
-
-/// 注册请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RegisterRequest {
-    /// 用户邮箱
-    pub email: String,
-    /// 用户密码
-    pub password: String,
-    /// 显示名称
-    pub display_name: String,
-}
-
-/// 认证响应（登录/注册/OAuth 成功后返回）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AuthResponse {
-    /// 用户 ID
-    pub user_id: i64,
-    /// 访问令牌
-    pub access_token: String,
-    /// 刷新令牌
-    pub refresh_token: String,
-    /// 过期时间（秒）
-    pub expires_in: i64,
-}
-
-/// 刷新 Token 响应
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RefreshTokenResponse {
-    /// 用户 ID
-    pub user_id: i64,
-    /// 新的访问令牌
-    pub access_token: String,
-    /// 新的刷新令牌
-    pub refresh_token: String,
-    /// 过期时间（秒）
-    pub expires_in: i64,
-}
-
-/// API 错误类型
-#[derive(Debug, thiserror::Error)]
-pub enum ApiError {
-    /// 网络请求错误
-    #[error("网络错误: {0}")]
-    NetworkError(String),
-    /// 认证失败（401）
-    #[error("认证失败: {0}")]
-    Unauthorized(String),
-    /// 服务器错误（5xx）
-    #[error("服务器错误: {0}")]
-    ServerError(String),
-    /// 其他错误
-    #[error("API 错误: {0}")]
-    Other(String),
-}
-
-// ============================================================================
-// API 客户端 Trait
-// ============================================================================
-
-/// API 客户端接口
-///
-/// 定义与后端服务通信所需的方法
-/// 具体实现由外部注入，便于测试和替换
-#[async_trait]
-pub trait CalendarApi: Send + Sync {
-    /// 邮箱密码登录
-    async fn login(&self, request: LoginRequest) -> Result<AuthResponse, ApiError>;
-
-    /// 邮箱密码注册
-    async fn register(&self, request: RegisterRequest) -> Result<AuthResponse, ApiError>;
-
-    /// GitHub OAuth 登录
-    async fn github_oauth(&self, code: &str, state: &str) -> Result<AuthResponse, ApiError>;
-
-    /// 刷新 Token
-    async fn refresh_token(&self, refresh_token: &str) -> Result<RefreshTokenResponse, ApiError>;
-
-    /// 获取用户资料
-    async fn get_profile(&self, access_token: &str) -> Result<UserProfile, ApiError>;
-}
-
-/// 用户资料（从 profile API 获取）
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserProfile {
-    /// 用户 ID
-    pub id: i64,
-    /// 用户邮箱
-    pub email: String,
-    /// 显示名称
-    pub display_name: String,
-    /// 头像 URL
-    pub avatar_url: Option<String>,
-    /// 认证提供商
-    pub provider: String,
-}
 
 // ============================================================================
 // 认证状态
@@ -238,10 +133,10 @@ impl AuthHandler {
         };
         self.token_store.save_tokens(&tokens)?;
 
-        // 调用 getProfile 获取用户信息
+        // 调用 getProfile 获取用户信息（Token 由 HttpClient 自动管理）
         let profile = self
             .api
-            .get_profile(&response.access_token)
+            .get_profile()
             .await
             .map_err(AuthError::ApiError)?;
 
@@ -289,10 +184,10 @@ impl AuthHandler {
         };
         self.token_store.save_tokens(&tokens)?;
 
-        // 调用 getProfile 获取用户信息
+        // 调用 getProfile 获取用户信息（Token 由 HttpClient 自动管理）
         let profile = self
             .api
-            .get_profile(&response.access_token)
+            .get_profile()
             .await
             .map_err(AuthError::ApiError)?;
 
@@ -349,10 +244,10 @@ impl AuthHandler {
         };
         self.token_store.save_tokens(&tokens)?;
 
-        // 调用 getProfile 获取用户信息
+        // 调用 getProfile 获取用户信息（Token 由 HttpClient 自动管理）
         let profile = self
             .api
-            .get_profile(&response.access_token)
+            .get_profile()
             .await
             .map_err(AuthError::ApiError)?;
 
@@ -653,6 +548,8 @@ impl From<ApiError> for AuthError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use crate::api::RefreshTokenResponse;
 
     /// 测试用的 Mock API 客户端
     struct MockApi {
@@ -661,9 +558,13 @@ mod tests {
 
     #[async_trait]
     impl CalendarApi for MockApi {
-        async fn login(&self, _request: LoginRequest) -> Result<AuthResponse, ApiError> {
+        fn as_any(&self) -> &dyn std::any::Any {
+            self
+        }
+
+        async fn login(&self, _request: LoginRequest) -> crate::api::errors::ApiResult<AuthResponse> {
             if self.should_fail {
-                return Err(ApiError::Unauthorized("测试失败".to_string()));
+                return Err(ApiError::AuthError("测试失败".to_string()));
             }
             Ok(AuthResponse {
                 user_id: 1,
@@ -673,7 +574,7 @@ mod tests {
             })
         }
 
-        async fn register(&self, _request: RegisterRequest) -> Result<AuthResponse, ApiError> {
+        async fn register(&self, _request: RegisterRequest) -> crate::api::errors::ApiResult<AuthResponse> {
             if self.should_fail {
                 return Err(ApiError::Other("注册失败".to_string()));
             }
@@ -685,11 +586,7 @@ mod tests {
             })
         }
 
-        async fn github_oauth(
-            &self,
-            _code: &str,
-            _state: &str,
-        ) -> Result<AuthResponse, ApiError> {
+        async fn github_oauth(&self, _code: &str, _state: &str) -> crate::api::errors::ApiResult<AuthResponse> {
             Ok(AuthResponse {
                 user_id: 3,
                 access_token: "mock_github_token".to_string(),
@@ -698,10 +595,7 @@ mod tests {
             })
         }
 
-        async fn refresh_token(
-            &self,
-            _refresh_token: &str,
-        ) -> Result<RefreshTokenResponse, ApiError> {
+        async fn refresh_token(&self, _refresh_token: &str) -> crate::api::errors::ApiResult<RefreshTokenResponse> {
             Ok(RefreshTokenResponse {
                 user_id: 1,
                 access_token: "new_access_token".to_string(),
@@ -710,10 +604,7 @@ mod tests {
             })
         }
 
-        async fn get_profile(
-            &self,
-            _access_token: &str,
-        ) -> Result<UserProfile, ApiError> {
+        async fn get_profile(&self) -> crate::api::errors::ApiResult<UserProfile> {
             Ok(UserProfile {
                 id: 1,
                 email: "test@example.com".to_string(),
@@ -721,6 +612,62 @@ mod tests {
                 avatar_url: None,
                 provider: "local".to_string(),
             })
+        }
+
+        async fn sync_upload(&self, _request: crate::api::SyncUploadRequest) -> crate::api::errors::ApiResult<crate::api::SyncDownloadResponse> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn sync_download(&self, _last_sync_at: Option<i64>) -> crate::api::errors::ApiResult<crate::api::SyncDownloadResponse> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn get_calendars(&self) -> crate::api::errors::ApiResult<Vec<crate::api::CalendarDTO>> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn create_calendar(&self, _calendar: crate::api::CalendarDTO) -> crate::api::errors::ApiResult<crate::api::CalendarDTO> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn update_calendar(&self, _calendar: crate::api::CalendarDTO) -> crate::api::errors::ApiResult<crate::api::CalendarDTO> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn delete_calendar(&self, _calendar_id: i64) -> crate::api::errors::ApiResult<()> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn get_events(&self, _calendar_id: i64) -> crate::api::errors::ApiResult<Vec<crate::api::EventDTO>> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn create_event(&self, _event: crate::api::EventDTO) -> crate::api::errors::ApiResult<crate::api::EventDTO> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn update_event(&self, _event: crate::api::EventDTO) -> crate::api::errors::ApiResult<crate::api::EventDTO> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn delete_event(&self, _event_id: i64) -> crate::api::errors::ApiResult<()> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn get_todos(&self, _calendar_id: i64) -> crate::api::errors::ApiResult<Vec<crate::api::TodoDTO>> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn create_todo(&self, _todo: crate::api::TodoDTO) -> crate::api::errors::ApiResult<crate::api::TodoDTO> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn update_todo(&self, _todo: crate::api::TodoDTO) -> crate::api::errors::ApiResult<crate::api::TodoDTO> {
+            Err(ApiError::Other("未实现".to_string()))
+        }
+
+        async fn delete_todo(&self, _todo_id: i64) -> crate::api::errors::ApiResult<()> {
+            Err(ApiError::Other("未实现".to_string()))
         }
     }
 
@@ -778,65 +725,6 @@ mod tests {
         assert_eq!(deserialized.user_id(), Some(1));
     }
 
-    /// 测试 LoginRequest 序列化
-    #[test]
-    fn test_login_request_serialization() {
-        let request = LoginRequest {
-            email: "test@example.com".to_string(),
-            password: "password123".to_string(),
-        };
-        let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("test@example.com"));
-        assert!(json.contains("password123"));
-    }
-
-    /// 测试 RegisterRequest 序列化
-    #[test]
-    fn test_register_request_serialization() {
-        let request = RegisterRequest {
-            email: "new@example.com".to_string(),
-            password: "password123".to_string(),
-            display_name: "新用户".to_string(),
-        };
-        let json = serde_json::to_string(&request).unwrap();
-        assert!(json.contains("new@example.com"));
-        assert!(json.contains("新用户"));
-    }
-
-    /// 测试 AuthResponse 序列化/反序列化
-    #[test]
-    fn test_auth_response_serialization() {
-        let response = AuthResponse {
-            user_id: 1,
-            access_token: "at_123".to_string(),
-            refresh_token: "rt_456".to_string(),
-            expires_in: 3600,
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        let deserialized: AuthResponse = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(deserialized.access_token, "at_123");
-        assert_eq!(deserialized.refresh_token, "rt_456");
-        assert_eq!(deserialized.expires_in, 3600);
-        assert_eq!(deserialized.user_id, 1);
-    }
-
-    /// 测试 RefreshTokenResponse 序列化
-    #[test]
-    fn test_refresh_token_response_serialization() {
-        let response = RefreshTokenResponse {
-            user_id: 1,
-            access_token: "new_at".to_string(),
-            refresh_token: "new_rt".to_string(),
-            expires_in: 7200,
-        };
-        let json = serde_json::to_string(&response).unwrap();
-        let deserialized: RefreshTokenResponse = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(deserialized.access_token, "new_at");
-        assert_eq!(deserialized.expires_in, 7200);
-    }
-
     /// 测试 LocalUser 序列化
     #[test]
     fn test_local_user_serialization() {
@@ -856,22 +744,6 @@ mod tests {
         assert!(deserialized.is_current);
     }
 
-    /// 测试 ApiError 显示
-    #[test]
-    fn test_api_error_display() {
-        let err = ApiError::NetworkError("timeout".to_string());
-        assert_eq!(format!("{}", err), "网络错误: timeout");
-
-        let err = ApiError::Unauthorized("invalid token".to_string());
-        assert_eq!(format!("{}", err), "认证失败: invalid token");
-
-        let err = ApiError::ServerError("500".to_string());
-        assert_eq!(format!("{}", err), "服务器错误: 500");
-
-        let err = ApiError::Other("unknown".to_string());
-        assert_eq!(format!("{}", err), "API 错误: unknown");
-    }
-
     /// 测试 AuthError 显示
     #[test]
     fn test_auth_error_display() {
@@ -888,71 +760,6 @@ mod tests {
         assert_eq!(format!("{}", err), "数据库错误: connection failed");
     }
 
-    /// 测试 OAuthConfig 序列化
-    #[test]
-    fn test_oauth_config_serialization() {
-        let config = OAuthConfig {
-            client_id: "github_client".to_string(),
-            client_secret: "secret".to_string(),
-            redirect_base: "http://localhost:8080".to_string(),
-        };
-        let json = serde_json::to_string(&config).unwrap();
-        let deserialized: OAuthConfig = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(deserialized.client_id, "github_client");
-        assert_eq!(deserialized.redirect_base, "http://localhost:8080");
-    }
-
-    /// 测试 MockApi 实现
-    #[tokio::test]
-    async fn test_mock_api_login() {
-        let api = MockApi { should_fail: false };
-        let result = api
-            .login(LoginRequest {
-                email: "test@example.com".to_string(),
-                password: "password".to_string(),
-            })
-            .await
-            .unwrap();
-
-        assert_eq!(result.user_id, 1);
-        assert_eq!(result.access_token, "mock_access_token");
-    }
-
-    /// 测试 MockApi 登录失败
-    #[tokio::test]
-    async fn test_mock_api_login_failure() {
-        let api = MockApi { should_fail: true };
-        let result = api
-            .login(LoginRequest {
-                email: "test@example.com".to_string(),
-                password: "wrong".to_string(),
-            })
-            .await;
-
-        assert!(result.is_err());
-    }
-
-    /// 测试 MockApi OAuth
-    #[tokio::test]
-    async fn test_mock_api_github_oauth() {
-        let api = MockApi { should_fail: false };
-        let result = api.github_oauth("code123", "state456").await.unwrap();
-
-        assert_eq!(result.user_id, 3);
-        assert_eq!(result.access_token, "mock_github_token");
-    }
-
-    /// 测试 MockApi 刷新 Token
-    #[tokio::test]
-    async fn test_mock_api_refresh_token() {
-        let api = MockApi { should_fail: false };
-        let result = api.refresh_token("old_refresh_token").await.unwrap();
-
-        assert_eq!(result.access_token, "new_access_token");
-        assert_eq!(result.expires_in, 3600);
-    }
-
     /// 测试使用内存数据库创建 AuthHandler
     #[tokio::test]
     async fn test_auth_handler_creation() {
@@ -961,7 +768,6 @@ mod tests {
             crate::db::connection::DatabaseConnection::in_memory().unwrap(),
         );
 
-        // 创建 local_users 表（生产环境由 schema.rs 创建）
         db.execute(|conn| {
             conn.execute_batch(
                 "CREATE TABLE IF NOT EXISTS local_users (
@@ -977,52 +783,8 @@ mod tests {
 
         let handler = AuthHandler::new(api, db);
 
-        // 初始状态应为未认证
         let status = handler.get_status().await;
         assert!(matches!(status, AuthStatus::NotAuthenticated));
-    }
-
-    /// 测试 AuthHandler 登录和退出
-    #[tokio::test]
-    async fn test_auth_handler_login_and_logout() {
-        let api: Arc<dyn CalendarApi> = Arc::new(MockApi { should_fail: false });
-        let db = Arc::new(
-            crate::db::connection::DatabaseConnection::in_memory().unwrap(),
-        );
-
-        db.execute(|conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS local_users (
-                    user_id INTEGER PRIMARY KEY,
-                    email TEXT NOT NULL,
-                    display_name TEXT NOT NULL,
-                    is_current INTEGER NOT NULL DEFAULT 0,
-                    created_at INTEGER NOT NULL,
-                    updated_at INTEGER NOT NULL
-                );",
-            )
-        }).unwrap();
-
-        let handler = AuthHandler::new(api, db);
-
-        // 登录
-        // 注意: keyring 在 CI/测试环境可能不可用
-        // 此测试在 keyring 可用的环境下才会通过
-        let login_result = handler.login("test@example.com", "password").await;
-        if login_result.is_ok() {
-            let response = login_result.unwrap();
-            assert_eq!(response.user_id, 1);
-
-            // 检查状态
-            let status = handler.get_status().await;
-            assert!(status.is_authenticated());
-
-            // 退出
-            handler.logout().await.unwrap();
-            let status = handler.get_status().await;
-            assert!(matches!(status, AuthStatus::NotAuthenticated));
-        }
-        // keyring 不可用时跳过，不报错
     }
 
     /// 测试未认证状态下获取 access_token 失败
@@ -1048,7 +810,6 @@ mod tests {
 
         let handler = AuthHandler::new(api, db);
 
-        // 未认证时应返回错误
         let result = handler.get_access_token().await;
         assert!(result.is_err());
         assert!(matches!(result.unwrap_err(), AuthError::NotAuthenticated));

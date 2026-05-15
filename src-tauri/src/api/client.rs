@@ -46,10 +46,19 @@ impl RealApiClient {
     pub async fn clear_auth_token(&self) {
         self.http_client.clear_token().await;
     }
+
+    /// 获取 API 基础 URL
+    pub fn base_url(&self) -> &str {
+        self.http_client.base_url()
+    }
 }
 
 #[async_trait]
 impl CalendarApi for RealApiClient {
+    /// 获取类型信息，用于 downcast
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
     // ================================================================
     // 认证相关
     // ================================================================

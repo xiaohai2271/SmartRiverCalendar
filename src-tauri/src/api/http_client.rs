@@ -73,6 +73,11 @@ impl HttpClient {
         *store = None;
     }
 
+    /// 获取 API 基础 URL
+    pub fn base_url(&self) -> &str {
+        &self.base_url
+    }
+
     /// 检查 Token 是否过期 (提前5分钟视为过期)
     pub fn is_token_expired(&self, token: &TokenInfo) -> bool {
         let now = chrono::Utc::now().timestamp_millis();
