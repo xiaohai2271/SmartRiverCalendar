@@ -14,7 +14,8 @@ pub use config::{ApiConfig, ApiMode};
 pub use errors::{ApiError, ApiResult};
 pub use types::{
     LoginRequest, RegisterRequest, AuthResponse, RefreshTokenResponse,
-    UserProfile, SyncUploadRequest, SyncDownloadResponse, SyncChange,
+    UserProfile, SyncUploadRequest, SyncDownloadResponse, BatchChanges,
+    EntityChanges, CalendarSyncItem, EventSyncItem, TodoSyncItem,
     CalendarDTO, EventDTO, TodoDTO, ApiResponse, PaginatedResponse,
 };
 pub use http_client::HttpClient;
@@ -72,7 +73,7 @@ pub trait CalendarApi: Send + Sync {
     async fn sync_upload(&self, request: SyncUploadRequest) -> ApiResult<SyncDownloadResponse>;
 
     /// 下载远程变更
-    async fn sync_download(&self, since_version: i64) -> ApiResult<SyncDownloadResponse>;
+    async fn sync_download(&self, last_sync_at: Option<i64>) -> ApiResult<SyncDownloadResponse>;
 
     // ================================================================
     // 日历 CRUD

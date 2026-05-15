@@ -8,8 +8,10 @@ use tokio::sync::Mutex;
 
 use crate::api::errors::{ApiError, ApiResult};
 use crate::api::types::{
-    AuthResponse, CalendarDTO, EventDTO, LoginRequest, RefreshTokenResponse,
-    RegisterRequest, SyncChange, SyncDownloadResponse, SyncUploadRequest, TodoDTO, UserProfile,
+    AuthResponse, BatchChanges, CalendarDTO, CalendarSyncItem, EntityChanges,
+    EventDTO, EventSyncItem, LoginRequest, RefreshTokenResponse,
+    RegisterRequest, SyncDownloadResponse, SyncUploadRequest, TodoDTO,
+    TodoSyncItem, UserProfile,
 };
 use crate::api::CalendarApi;
 
@@ -24,8 +26,8 @@ pub struct MockApiClient {
     events: Arc<Mutex<HashMap<i64, EventDTO>>>,
     /// 待办存储 (key: todo_id)
     todos: Arc<Mutex<HashMap<i64, TodoDTO>>>,
-    /// 同步版本号
-    sync_version: Arc<Mutex<i64>>,
+    /// 上次同步时间戳
+    last_sync_at: Arc<Mutex<i64>>,
     /// 当前 Token (模拟登录状态)
     current_token: Arc<Mutex<Option<MockToken>>>,
 }
@@ -44,7 +46,7 @@ impl MockApiClient {
             calendars: Arc::new(Mutex::new(HashMap::new())),
             events: Arc::new(Mutex::new(HashMap::new())),
             todos: Arc::new(Mutex::new(HashMap::new())),
-            sync_version: Arc::new(Mutex::new(0)),
+            last_sync_at: Arc::new(Mutex::new(0)),
             current_token: Arc::new(Mutex::new(None)),
         }
     }
@@ -159,94 +161,247 @@ impl CalendarApi for MockApiClient {
 
     /// 上传本地变更
     async fn sync_upload(&self, request: SyncUploadRequest) -> ApiResult<SyncDownloadResponse> {
-        // 处理上传的变更
-        for change in request.changes {
-            match change.entity_type.as_str() {
-                "calendar" => {
-                    let calendar: CalendarDTO =
-                        serde_json::from_value(change.data).map_err(ApiError::from)?;
-                    let mut calendars = self.calendars.lock().await;
-                    calendars.insert(calendar.id, calendar);
-                }
-                "event" => {
-                    let event: EventDTO =
-                        serde_json::from_value(change.data).map_err(ApiError::from)?;
-                    let mut events = self.events.lock().await;
-                    events.insert(event.id, event);
-                }
-                "todo" => {
-                    let todo: TodoDTO =
-                        serde_json::from_value(change.data).map_err(ApiError::from)?;
-                    let mut todos = self.todos.lock().await;
-                    todos.insert(todo.id, todo);
-                }
-                _ => {}
+        // 处理上传的日历变更
+        for calendar in &request.changes.calendars.created {
+            let mut calendars = self.calendars.lock().await;
+            calendars.insert(calendar.id, CalendarDTO {
+                id: calendar.id,
+                name: calendar.name.clone(),
+                color: calendar.color.clone(),
+                description: None,
+                user_id: 0,
+                is_default: false,
+                created_at: calendar.updated_at,
+                updated_at: calendar.updated_at,
+            });
+        }
+        for calendar in &request.changes.calendars.updated {
+            let mut calendars = self.calendars.lock().await;
+            if let Some(existing) = calendars.get_mut(&calendar.id) {
+                existing.name = calendar.name.clone();
+                existing.color = calendar.color.clone();
+                existing.updated_at = calendar.updated_at;
+            }
+        }
+        {
+            let mut calendars = self.calendars.lock().await;
+            for id in &request.changes.calendars.deleted {
+                calendars.remove(id);
             }
         }
 
-        // 更新版本号
-        let mut version = self.sync_version.lock().await;
-        *version += 1;
+        // 处理上传的事件变更
+        for event in &request.changes.events.created {
+            let mut events = self.events.lock().await;
+            events.insert(event.id, EventDTO {
+                id: event.id,
+                calendar_id: event.calendar_id,
+                title: event.title.clone(),
+                description: event.description.clone(),
+                start_time: event.start_time.to_string(),
+                end_time: event.end_time.to_string(),
+                is_all_day: event.all_day,
+                location: event.location.clone(),
+                reminder_minutes: event.reminder.map(|v| v as i64),
+                recurrence_rule: None,
+                user_id: 0,
+                created_at: event.updated_at,
+                updated_at: event.updated_at,
+            });
+        }
+        for event in &request.changes.events.updated {
+            let mut events = self.events.lock().await;
+            if let Some(existing) = events.get_mut(&event.id) {
+                existing.title = event.title.clone();
+                existing.description = event.description.clone();
+                existing.updated_at = event.updated_at;
+            }
+        }
+        {
+            let mut events = self.events.lock().await;
+            for id in &request.changes.events.deleted {
+                events.remove(id);
+            }
+        }
 
+        // 处理上传的待办变更
+        for todo in &request.changes.todos.created {
+            let mut todos = self.todos.lock().await;
+            todos.insert(todo.id, TodoDTO {
+                id: todo.id,
+                calendar_id: todo.calendar_id,
+                title: todo.title.clone(),
+                description: todo.description.clone(),
+                due_date: todo.due_date.map(|v| v.to_string()),
+                is_completed: todo.completed,
+                completed_at: None,
+                priority: match todo.priority.as_str() {
+                    "high" => 2,
+                    "medium" => 1,
+                    _ => 0,
+                },
+                user_id: 0,
+                created_at: todo.updated_at,
+                updated_at: todo.updated_at,
+            });
+        }
+        for todo in &request.changes.todos.updated {
+            let mut todos = self.todos.lock().await;
+            if let Some(existing) = todos.get_mut(&todo.id) {
+                existing.title = todo.title.clone();
+                existing.description = todo.description.clone();
+                existing.updated_at = todo.updated_at;
+            }
+        }
+        {
+            let mut todos = self.todos.lock().await;
+            for id in &request.changes.todos.deleted {
+                todos.remove(id);
+            }
+        }
+
+        // 更新同步时间戳
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut last_sync = self.last_sync_at.lock().await;
+        *last_sync = now;
+
+        // Mock 实现: 暂不返回服务端变更
         Ok(SyncDownloadResponse {
-            server_version: *version,
-            changes: vec![], // Mock 实现: 暂不返回变更
-            need_full_sync: false,
+            server_changes: BatchChanges {
+                calendars: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                events: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                todos: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+            },
+            sync_token: format!("sync_{}", now),
+            server_time: now,
         })
     }
 
     /// 下载远程变更
-    async fn sync_download(&self, since_version: i64) -> ApiResult<SyncDownloadResponse> {
-        let version = self.sync_version.lock().await;
+    async fn sync_download(&self, last_sync_at: Option<i64>) -> ApiResult<SyncDownloadResponse> {
+        let sync_time = self.last_sync_at.lock().await;
+        let now = chrono::Utc::now().timestamp_millis();
 
-        // Mock 实现: 如果版本号落后，返回所有数据
-        if since_version < *version {
-            let mut changes = vec![];
-
+        // Mock 实现: 如果有数据则返回所有数据作为 created
+        let since = last_sync_at.unwrap_or(0);
+        if since < *sync_time {
             // 收集所有日历变更
-            let calendars = self.calendars.lock().await;
-            for (_, calendar) in calendars.iter() {
-                changes.push(SyncChange {
-                    action: "create".to_string(),
-                    entity_type: "calendar".to_string(),
-                    data: serde_json::to_value(calendar).map_err(ApiError::from)?,
-                    timestamp: calendar.updated_at,
-                });
-            }
+            let calendar_items: Vec<CalendarSyncItem> = {
+                let calendars = self.calendars.lock().await;
+                calendars
+                    .values()
+                    .map(|c| CalendarSyncItem {
+                        id: c.id,
+                        name: c.name.clone(),
+                        color: c.color.clone(),
+                        r#type: "local".to_string(),
+                        account_id: None,
+                        visible: true,
+                        sync_enabled: false,
+                        updated_at: c.updated_at,
+                    })
+                    .collect()
+            };
 
             // 收集所有事件变更
-            let events = self.events.lock().await;
-            for (_, event) in events.iter() {
-                changes.push(SyncChange {
-                    action: "create".to_string(),
-                    entity_type: "event".to_string(),
-                    data: serde_json::to_value(event).map_err(ApiError::from)?,
-                    timestamp: event.updated_at,
-                });
-            }
+            let event_items: Vec<EventSyncItem> = {
+                let events = self.events.lock().await;
+                events
+                    .values()
+                    .map(|e| EventSyncItem {
+                        id: e.id,
+                        title: e.title.clone(),
+                        description: e.description.clone(),
+                        start_time: e.start_time.parse().unwrap_or(0),
+                        end_time: e.end_time.parse().unwrap_or(0),
+                        all_day: e.is_all_day,
+                        calendar_id: e.calendar_id,
+                        timezone: "Asia/Shanghai".to_string(),
+                        color: None,
+                        reminder: e.reminder_minutes.map(|v| v as i32),
+                        location: e.location.clone(),
+                        updated_at: e.updated_at,
+                    })
+                    .collect()
+            };
 
             // 收集所有待办变更
-            let todos = self.todos.lock().await;
-            for (_, todo) in todos.iter() {
-                changes.push(SyncChange {
-                    action: "create".to_string(),
-                    entity_type: "todo".to_string(),
-                    data: serde_json::to_value(todo).map_err(ApiError::from)?,
-                    timestamp: todo.updated_at,
-                });
-            }
+            let todo_items: Vec<TodoSyncItem> = {
+                let todos = self.todos.lock().await;
+                todos
+                    .values()
+                    .map(|t| TodoSyncItem {
+                        id: t.id,
+                        title: t.title.clone(),
+                        description: t.description.clone(),
+                        due_date: t.due_date.as_ref().and_then(|d| d.parse::<i64>().ok()),
+                        completed: t.is_completed,
+                        priority: match t.priority {
+                            2 => "high".to_string(),
+                            1 => "medium".to_string(),
+                            _ => "low".to_string(),
+                        },
+                        calendar_id: t.calendar_id,
+                        updated_at: t.updated_at,
+                    })
+                    .collect()
+            };
 
             Ok(SyncDownloadResponse {
-                server_version: *version,
-                changes,
-                need_full_sync: false,
+                server_changes: BatchChanges {
+                    calendars: EntityChanges {
+                        created: calendar_items,
+                        updated: vec![],
+                        deleted: vec![],
+                    },
+                    events: EntityChanges {
+                        created: event_items,
+                        updated: vec![],
+                        deleted: vec![],
+                    },
+                    todos: EntityChanges {
+                        created: todo_items,
+                        updated: vec![],
+                        deleted: vec![],
+                    },
+                },
+                sync_token: format!("sync_{}", now),
+                server_time: now,
             })
         } else {
-            // 版本号一致，无变更
+            // 无新变更
             Ok(SyncDownloadResponse {
-                server_version: *version,
-                changes: vec![],
-                need_full_sync: false,
+                server_changes: BatchChanges {
+                    calendars: EntityChanges {
+                        created: vec![],
+                        updated: vec![],
+                        deleted: vec![],
+                    },
+                    events: EntityChanges {
+                        created: vec![],
+                        updated: vec![],
+                        deleted: vec![],
+                    },
+                    todos: EntityChanges {
+                        created: vec![],
+                        updated: vec![],
+                        deleted: vec![],
+                    },
+                },
+                sync_token: format!("sync_{}", now),
+                server_time: now,
             })
         }
     }
@@ -664,33 +819,43 @@ mod tests {
         let client = MockApiClient::new();
 
         // 上传变更
-        let calendar = CalendarDTO {
-            id: 100,
-            name: "同步日历".to_string(),
-            color: "#FF5733".to_string(),
-            description: None,
-            user_id: 1,
-            is_default: true,
-            created_at: chrono::Utc::now().timestamp_millis(),
-            updated_at: chrono::Utc::now().timestamp_millis(),
-        };
-
         let upload_request = SyncUploadRequest {
-            local_version: 0,
-            changes: vec![SyncChange {
-                action: "create".to_string(),
-                entity_type: "calendar".to_string(),
-                data: serde_json::to_value(&calendar).unwrap(),
-                timestamp: calendar.updated_at,
-            }],
+            last_sync_at: None,
+            changes: BatchChanges {
+                calendars: EntityChanges {
+                    created: vec![CalendarSyncItem {
+                        id: 100,
+                        name: "同步日历".to_string(),
+                        color: "#FF5733".to_string(),
+                        r#type: "local".to_string(),
+                        account_id: None,
+                        visible: true,
+                        sync_enabled: false,
+                        updated_at: chrono::Utc::now().timestamp_millis(),
+                    }],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                events: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                todos: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+            },
         };
 
         let upload_response = client.sync_upload(upload_request).await.unwrap();
-        assert!(upload_response.server_version > 0);
+        assert!(!upload_response.sync_token.is_empty());
+        assert!(upload_response.server_time > 0);
 
         // 下载变更
-        let download_response = client.sync_download(0).await.unwrap();
-        assert_eq!(download_response.server_version, upload_response.server_version);
-        assert_eq!(download_response.changes.len(), 1);
+        let download_response = client.sync_download(None).await.unwrap();
+        assert!(!download_response.sync_token.is_empty());
+        assert_eq!(download_response.server_changes.calendars.created.len(), 1);
     }
 }

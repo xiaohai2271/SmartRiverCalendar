@@ -131,10 +131,12 @@ impl CalendarApi for RealApiClient {
 
     /// 下载远程变更
     ///
-    /// API 路径: GET /sync/download?since_version={since_version}
-    async fn sync_download(&self, since_version: i64) -> ApiResult<SyncDownloadResponse> {
-        let path = format!("/sync/download?since_version={}", since_version);
-        self.http_client.get(&path).await
+    /// API 路径: POST /sync/download
+    async fn sync_download(&self, last_sync_at: Option<i64>) -> ApiResult<SyncDownloadResponse> {
+        let request = serde_json::json!({
+            "last_sync_at": last_sync_at,
+        });
+        self.http_client.post("/sync/download", &request).await
     }
 
     // ================================================================

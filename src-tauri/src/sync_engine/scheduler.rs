@@ -117,11 +117,11 @@ impl SyncScheduler {
     ///
     /// # 参数
     /// - `user_id`: 用户 ID
-    /// - `local_version`: 本地版本号
+    /// - `last_sync_at`: 上次同步时间戳（毫秒），首次为 None
     ///
     /// # 返回
     /// 成功返回 true，已在运行返回 false
-    pub async fn start(&self, user_id: i64, _local_version: i64) -> bool {
+    pub async fn start(&self, user_id: i64, _last_sync_at: Option<i64>) -> bool {
         let mut state = self.state.write().await;
         if *state == SchedulerState::Running {
             log::warn!("调度器已在运行中，忽略启动请求");
@@ -183,7 +183,7 @@ impl SyncScheduler {
     /// # 参数
     /// - `executor`: 同步执行器
     /// - `user_id`: 用户 ID
-    /// - `local_version`: 本地版本号
+    /// - `last_sync_at`: 上次同步时间戳（毫秒），首次为 None
     ///
     /// # 返回
     /// 成功返回同步结果，同步锁冲突返回 None
@@ -191,7 +191,7 @@ impl SyncScheduler {
         &self,
         executor: &SyncExecutor<'_>,
         user_id: i64,
-        local_version: i64,
+        last_sync_at: Option<i64>,
     ) -> Option<SyncResult> {
         // 尝试获取同步锁
         if self.sync_lock.compare_exchange(
@@ -210,7 +210,7 @@ impl SyncScheduler {
             *state = SchedulerState::Syncing;
         }
 
-        let result = executor.batch_sync(user_id, local_version).await;
+        let result = executor.batch_sync(user_id, last_sync_at).await;
 
         // 释放同步锁
         self.sync_lock.store(false, Ordering::SeqCst);
@@ -256,13 +256,13 @@ impl SyncScheduler {
     /// - `is_online`: 当前是否在线
     /// - `executor`: 同步执行器
     /// - `user_id`: 用户 ID
-    /// - `local_version`: 本地版本号
+    /// - `last_sync_at`: 上次同步时间戳（毫秒），首次为 None
     pub async fn notify_network_change(
         &self,
         is_online: bool,
         executor: &SyncExecutor<'_>,
         user_id: i64,
-        local_version: i64,
+        last_sync_at: Option<i64>,
     ) {
         let config = self.config.read().await;
 
@@ -277,7 +277,7 @@ impl SyncScheduler {
                 }
             }
 
-            self.trigger_sync(executor, user_id, local_version).await;
+            self.trigger_sync(executor, user_id, last_sync_at).await;
         } else if !is_online {
             log::info!("网络断开，暂停同步");
             let mut state = self.state.write().await;
@@ -292,7 +292,7 @@ impl SyncScheduler {
     /// # 参数
     /// - `executor`: 同步执行器
     /// - `user_id`: 用户 ID
-    /// - `local_version`: 本地版本号
+    /// - `last_sync_at`: 上次同步时间戳（毫秒），首次为 None
     ///
     /// # 返回
     /// 最终同步结果
@@ -300,7 +300,7 @@ impl SyncScheduler {
         &self,
         executor: &SyncExecutor<'_>,
         user_id: i64,
-        local_version: i64,
+        last_sync_at: Option<i64>,
     ) -> SyncResult {
         let config = self.config.read().await;
         let max_retries = config.max_retries;
@@ -315,7 +315,7 @@ impl SyncScheduler {
                 tokio::time::sleep(retry_interval).await;
             }
 
-            let result = self.trigger_sync(executor, user_id, local_version).await;
+            let result = self.trigger_sync(executor, user_id, last_sync_at).await;
             match result {
                 Some(sync_result) => {
                     if sync_result.success {
@@ -434,12 +434,12 @@ mod tests {
         });
 
         // 启动
-        let started = scheduler.start(1, 0).await;
+        let started = scheduler.start(1, None).await;
         assert!(started);
         assert_eq!(scheduler.state().await, SchedulerState::Running);
 
         // 重复启动应失败
-        let started_again = scheduler.start(1, 0).await;
+        let started_again = scheduler.start(1, None).await;
         assert!(!started_again);
 
         // 停止
@@ -454,7 +454,7 @@ mod tests {
 
         // Stopped → Running
         assert_eq!(scheduler.state().await, SchedulerState::Stopped);
-        scheduler.start(1, 0).await;
+        scheduler.start(1, None).await;
         assert_eq!(scheduler.state().await, SchedulerState::Running);
 
         // Running → Stopped
@@ -473,9 +473,10 @@ mod tests {
     /// 测试 SyncResult
     #[test]
     fn test_sync_result() {
-        let ok_result = SyncResult::ok(42);
+        let ok_result = SyncResult::ok(42, "token_42".to_string());
         assert!(ok_result.success);
-        assert_eq!(ok_result.server_version, 42);
+        assert_eq!(ok_result.server_time, 42);
+        assert_eq!(ok_result.sync_token, "token_42");
 
         let err_result = SyncResult::err("测试错误".to_string());
         assert!(!err_result.success);

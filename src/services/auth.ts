@@ -1,4 +1,5 @@
 import { safeInvoke } from '../utils/tauri'
+import { encryptPassword, clearCachedPublicKey } from './rsa'
 import type {
   User,
   AuthResponse,
@@ -27,9 +28,16 @@ export class AuthService {
    * @returns 认证响应或 null
    */
   async login(username: string, password: string): Promise<AuthResponse | null> {
+    // 使用 RSA 加密密码
+    const encryptedPassword = await encryptPassword(password)
+    if (!encryptedPassword) {
+      console.error('[AuthService] 密码加密失败，无法登录')
+      return null
+    }
+
     const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_login', {
       email: username,
-      password
+      password: encryptedPassword
     })
 
     if (response?.data) {
@@ -52,9 +60,16 @@ export class AuthService {
    * @returns 认证响应或 null
    */
   async register(username: string, email: string, password: string): Promise<AuthResponse | null> {
+    // 使用 RSA 加密密码
+    const encryptedPassword = await encryptPassword(password)
+    if (!encryptedPassword) {
+      console.error('[AuthService] 密码加密失败，无法注册')
+      return null
+    }
+
     const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_register', {
       email,
-      password,
+      password: encryptedPassword,
       display_name: username
     })
 
@@ -76,6 +91,9 @@ export class AuthService {
   async logout(): Promise<void> {
     // 调用后端登出接口
     await safeInvoke('auth_logout')
+
+    // 清除缓存的 RSA 公钥
+    clearCachedPublicKey()
 
     // 触发认证状态变化回调
     this.triggerAuthChange(false, null)

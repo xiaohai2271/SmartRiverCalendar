@@ -7,6 +7,14 @@ vi.mock('@/utils/tauri', () => ({
   safeInvoke: mockSafeInvoke
 }))
 
+// Mock encryptPassword — 在测试中直接返回密码原文的 Base64，便于验证调用
+const mockEncryptPassword = vi.fn()
+
+vi.mock('@/services/rsa', () => ({
+  encryptPassword: mockEncryptPassword,
+  clearCachedPublicKey: vi.fn()
+}))
+
 beforeEach(() => {
   vi.clearAllMocks()
 })
@@ -21,6 +29,9 @@ describe('AuthService', () => {
 
   describe('login', () => {
     it('应该调用 auth_login 命令并返回认证响应', async () => {
+      // 模拟密码加密成功
+      mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
+
       // 登录响应 mock
       mockSafeInvoke.mockResolvedValueOnce({
         code: 0,
@@ -46,15 +57,26 @@ describe('AuthService', () => {
 
       const result = await authService.login('testuser', 'password')
 
+      expect(mockEncryptPassword).toHaveBeenCalledWith('password')
       expect(mockSafeInvoke).toHaveBeenCalledWith('auth_login', {
         email: 'testuser',
-        password: 'password'
+        password: 'encrypted-password'
       })
       expect(result).not.toBeNull()
       expect(result?.userId).toBe(1)
     })
 
+    it('密码加密失败时返回 null', async () => {
+      // 模拟密码加密失败
+      mockEncryptPassword.mockResolvedValueOnce(null)
+
+      const result = await authService.login('testuser', 'password')
+
+      expect(result).toBeNull()
+    })
+
     it('登录失败返回 null', async () => {
+      mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
       mockSafeInvoke.mockResolvedValueOnce(null)
 
       const result = await authService.login('testuser', 'password')
@@ -65,6 +87,9 @@ describe('AuthService', () => {
 
   describe('register', () => {
     it('应该调用 auth_register 命令并返回认证响应', async () => {
+      // 模拟密码加密成功
+      mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
+
       // 注册响应 mock
       mockSafeInvoke.mockResolvedValueOnce({
         code: 0,
@@ -90,13 +115,23 @@ describe('AuthService', () => {
 
       const result = await authService.register('newuser', 'newuser@example.com', 'password')
 
+      expect(mockEncryptPassword).toHaveBeenCalledWith('password')
       expect(mockSafeInvoke).toHaveBeenCalledWith('auth_register', {
         email: 'newuser@example.com',
-        password: 'password',
+        password: 'encrypted-password',
         display_name: 'newuser'
       })
       expect(result).not.toBeNull()
       expect(result?.userId).toBe(1)
+    })
+
+    it('密码加密失败时返回 null', async () => {
+      // 模拟密码加密失败
+      mockEncryptPassword.mockResolvedValueOnce(null)
+
+      const result = await authService.register('newuser', 'newuser@example.com', 'password')
+
+      expect(result).toBeNull()
     })
   })
 

@@ -69,40 +69,143 @@ pub struct UserProfile {
 }
 
 // ================================================================
-// 数据同步 DTO
+// 数据同步 DTO — batch-sync API 规范
 // ================================================================
 
 /// 同步上传请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncUploadRequest {
-    /// 本地最新版本号
-    pub local_version: i64,
-    /// 本地变更列表
-    pub changes: Vec<SyncChange>,
+    /// 上次同步时间戳（毫秒），首次为 None
+    pub last_sync_at: Option<i64>,
+    /// 批量变更
+    pub changes: BatchChanges,
 }
 
 /// 同步下载响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncDownloadResponse {
-    /// 服务端最新版本号
-    pub server_version: i64,
-    /// 需要应用的变更列表
-    pub changes: Vec<SyncChange>,
-    /// 是否需要全量同步
-    pub need_full_sync: bool,
+    /// 服务端变更
+    pub server_changes: BatchChanges,
+    /// 同步令牌（用于增量同步）
+    pub sync_token: String,
+    /// 服务端当前时间戳（毫秒）
+    pub server_time: i64,
 }
 
-/// 同步变更
+/// 批量变更集合
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncChange {
-    /// 变更类型: create, update, delete
-    pub action: String,
-    /// 实体类型: calendar, event, todo
-    pub entity_type: String,
-    /// 实体数据 (JSON)
-    pub data: serde_json::Value,
-    /// 变更时间戳
-    pub timestamp: i64,
+pub struct BatchChanges {
+    /// 日历变更
+    #[serde(default)]
+    pub calendars: EntityChanges<CalendarSyncItem>,
+    /// 事件变更
+    #[serde(default)]
+    pub events: EntityChanges<EventSyncItem>,
+    /// 待办变更
+    #[serde(default)]
+    pub todos: EntityChanges<TodoSyncItem>,
+}
+
+impl Default for BatchChanges {
+    fn default() -> Self {
+        Self {
+            calendars: EntityChanges::default(),
+            events: EntityChanges::default(),
+            todos: EntityChanges::default(),
+        }
+    }
+}
+
+/// 实体变更（按操作类型分组）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EntityChanges<T> {
+    /// 新建的实体列表
+    pub created: Vec<T>,
+    /// 更新的实体列表
+    pub updated: Vec<T>,
+    /// 删除的实体 ID 列表
+    pub deleted: Vec<i64>,
+}
+
+impl<T> Default for EntityChanges<T> {
+    fn default() -> Self {
+        Self {
+            created: Vec::new(),
+            updated: Vec::new(),
+            deleted: Vec::new(),
+        }
+    }
+}
+
+/// 日历同步条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CalendarSyncItem {
+    /// 日历 ID
+    pub id: i64,
+    /// 日历名称
+    pub name: String,
+    /// 日历颜色
+    pub color: String,
+    /// 日历类型
+    pub r#type: String,
+    /// 关联账户 ID
+    pub account_id: Option<i64>,
+    /// 是否可见
+    pub visible: bool,
+    /// 是否启用同步
+    pub sync_enabled: bool,
+    /// 更新时间戳（毫秒）
+    pub updated_at: i64,
+}
+
+/// 事件同步条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EventSyncItem {
+    /// 事件 ID
+    pub id: i64,
+    /// 事件标题
+    pub title: String,
+    /// 事件描述
+    pub description: Option<String>,
+    /// 开始时间戳（毫秒）
+    pub start_time: i64,
+    /// 结束时间戳（毫秒）
+    pub end_time: i64,
+    /// 是否全天事件
+    pub all_day: bool,
+    /// 所属日历 ID
+    pub calendar_id: i64,
+    /// 时区
+    pub timezone: String,
+    /// 颜色
+    pub color: Option<String>,
+    /// 提醒时间（分钟）
+    pub reminder: Option<i32>,
+    /// 位置
+    pub location: Option<String>,
+    /// 更新时间戳（毫秒）
+    pub updated_at: i64,
+}
+
+/// 待办同步条目
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TodoSyncItem {
+    /// 待办 ID
+    pub id: i64,
+    /// 待办标题
+    pub title: String,
+    /// 待办描述
+    pub description: Option<String>,
+    /// 截止日期时间戳（毫秒）
+    pub due_date: Option<i64>,
+    /// 是否完成
+    pub completed: bool,
+    /// 优先级 (low/medium/high)
+    pub priority: String,
+    /// 所属日历 ID
+    pub calendar_id: i64,
+    /// 更新时间戳（毫秒）
+    pub updated_at: i64,
 }
 
 // ================================================================
@@ -306,18 +409,110 @@ mod tests {
         assert_eq!(deserialized.id, 42);
     }
 
-    /// 测试 SyncChange 序列化
+    /// 测试 BatchChanges 序列化
     #[test]
-    fn test_sync_change_serialization() {
-        let change = SyncChange {
-            action: "create".to_string(),
-            entity_type: "event".to_string(),
-            data: serde_json::json!({"title": "测试事件"}),
-            timestamp: 1700000000000,
+    fn test_batch_changes_serialization() {
+        let changes = BatchChanges {
+            calendars: EntityChanges {
+                created: vec![CalendarSyncItem {
+                    id: 1,
+                    name: "工作日历".to_string(),
+                    color: "#FF5733".to_string(),
+                    r#type: "local".to_string(),
+                    account_id: None,
+                    visible: true,
+                    sync_enabled: false,
+                    updated_at: 1700000000000,
+                }],
+                updated: vec![],
+                deleted: vec![],
+            },
+            events: EntityChanges {
+                created: vec![EventSyncItem {
+                    id: 1,
+                    title: "测试事件".to_string(),
+                    description: None,
+                    start_time: 1700000000000,
+                    end_time: 1700003600000,
+                    all_day: false,
+                    calendar_id: 1,
+                    timezone: "Asia/Shanghai".to_string(),
+                    color: None,
+                    reminder: None,
+                    location: None,
+                    updated_at: 1700000000000,
+                }],
+                updated: vec![],
+                deleted: vec![2],
+            },
+            todos: EntityChanges {
+                created: vec![],
+                updated: vec![],
+                deleted: vec![],
+            },
         };
-        let json = serde_json::to_string(&change).unwrap();
-        assert!(json.contains("create"));
-        assert!(json.contains("event"));
+        let json = serde_json::to_string(&changes).unwrap();
+        assert!(json.contains("calendars"));
+        assert!(json.contains("events"));
+        assert!(json.contains("todos"));
+    }
+
+    /// 测试 SyncUploadRequest 序列化
+    #[test]
+    fn test_sync_upload_request_serialization() {
+        let request = SyncUploadRequest {
+            last_sync_at: Some(1700000000000),
+            changes: BatchChanges {
+                calendars: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                events: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                todos: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+            },
+        };
+        let json = serde_json::to_string(&request).unwrap();
+        assert!(json.contains("last_sync_at"));
+        assert!(json.contains("changes"));
+    }
+
+    /// 测试 SyncDownloadResponse 序列化
+    #[test]
+    fn test_sync_download_response_serialization() {
+        let response = SyncDownloadResponse {
+            server_changes: BatchChanges {
+                calendars: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                events: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+                todos: EntityChanges {
+                    created: vec![],
+                    updated: vec![],
+                    deleted: vec![],
+                },
+            },
+            sync_token: "token_abc123".to_string(),
+            server_time: 1700000000000,
+        };
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("server_changes"));
+        assert!(json.contains("sync_token"));
+        assert!(json.contains("server_time"));
     }
 
     /// 测试 CalendarDTO 序列化

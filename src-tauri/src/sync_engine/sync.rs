@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use crate::api::{CalendarApi, SyncChange, SyncUploadRequest};
+use crate::api::{BatchChanges, CalendarApi, CalendarSyncItem, EntityChanges, EventSyncItem, SyncUploadRequest, TodoSyncItem};
 use crate::db::connection::DatabaseConnection;
 use crate::db::errors::DatabaseResult;
 use crate::sync_engine::tracker::ChangeTracker;
@@ -17,8 +17,10 @@ pub struct SyncResult {
     pub downloaded: usize,
     /// 冲突数量
     pub conflicts: usize,
-    /// 服务端最新版本号
-    pub server_version: i64,
+    /// 服务端时间戳（毫秒）
+    pub server_time: i64,
+    /// 同步令牌
+    pub sync_token: String,
     /// 是否成功
     pub success: bool,
     /// 错误信息
@@ -27,12 +29,13 @@ pub struct SyncResult {
 
 impl SyncResult {
     /// 创建成功的同步结果
-    pub fn ok(server_version: i64) -> Self {
+    pub fn ok(server_time: i64, sync_token: String) -> Self {
         Self {
             uploaded: 0,
             downloaded: 0,
             conflicts: 0,
-            server_version,
+            server_time,
+            sync_token,
             success: true,
             errors: Vec::new(),
         }
@@ -44,7 +47,8 @@ impl SyncResult {
             uploaded: 0,
             downloaded: 0,
             conflicts: 0,
-            server_version: 0,
+            server_time: 0,
+            sync_token: String::new(),
             success: false,
             errors: vec![message],
         }
@@ -106,15 +110,15 @@ impl<'a> SyncExecutor<'a> {
     ///
     /// # 参数
     /// - `user_id`: 当前用户 ID
-    /// - `local_version`: 本地当前版本号
+    /// - `last_sync_at`: 上次同步时间戳（毫秒），首次为 None
     ///
     /// # 返回
     /// 同步结果
-    pub async fn batch_sync(&self, user_id: i64, local_version: i64) -> SyncResult {
+    pub async fn batch_sync(&self, user_id: i64, last_sync_at: Option<i64>) -> SyncResult {
         log::info!(
-            "开始批量同步: user_id={}, local_version={}",
+            "开始批量同步: user_id={}, last_sync_at={:?}",
             user_id,
-            local_version
+            last_sync_at
         );
 
         // 1. 获取未同步的本地变更
@@ -128,21 +132,112 @@ impl<'a> SyncExecutor<'a> {
 
         log::info!("本地未同步变更数量: {}", local_changes.len());
 
-        // 2. 转换为 API 同步变更格式
-        let sync_changes: Vec<SyncChange> = local_changes
-            .iter()
-            .map(|entry| SyncChange {
-                action: entry.action.clone(),
-                entity_type: entry.entity_type.clone(),
-                data: serde_json::from_str(&entry.payload).unwrap_or(serde_json::Value::Null),
-                timestamp: entry.created_at,
-            })
-            .collect();
+        // 2. 将本地变更转换为 BatchChanges 格式
+        let mut calendar_created: Vec<CalendarSyncItem> = vec![];
+        let mut calendar_updated: Vec<CalendarSyncItem> = vec![];
+        let mut calendar_deleted: Vec<i64> = vec![];
+        let mut event_created: Vec<EventSyncItem> = vec![];
+        let mut event_updated: Vec<EventSyncItem> = vec![];
+        let mut event_deleted: Vec<i64> = vec![];
+        let mut todo_created: Vec<TodoSyncItem> = vec![];
+        let mut todo_updated: Vec<TodoSyncItem> = vec![];
+        let mut todo_deleted: Vec<i64> = vec![];
+
+        for entry in &local_changes {
+            let payload: serde_json::Value =
+                serde_json::from_str(&entry.payload).unwrap_or(serde_json::Value::Null);
+
+            match entry.entity_type.as_str() {
+                "calendar" => {
+                    let item = CalendarSyncItem {
+                        id: json_i64(&payload, "id").unwrap_or(0),
+                        name: json_str(&payload, "name").unwrap_or("").to_string(),
+                        color: json_str(&payload, "color").unwrap_or("#000000").to_string(),
+                        r#type: json_str(&payload, "type").unwrap_or("local").to_string(),
+                        account_id: json_i64(&payload, "account_id"),
+                        visible: json_bool(&payload, "visible").unwrap_or(true),
+                        sync_enabled: json_bool(&payload, "sync_enabled").unwrap_or(false),
+                        updated_at: entry.created_at,
+                    };
+                    match entry.action.as_str() {
+                        "create" => calendar_created.push(item),
+                        "update" => calendar_updated.push(item),
+                        "delete" => calendar_deleted.push(item.id),
+                        _ => {}
+                    }
+                }
+                "event" => {
+                    let item = EventSyncItem {
+                        id: json_i64(&payload, "id").unwrap_or(0),
+                        title: json_str(&payload, "title").unwrap_or("").to_string(),
+                        description: json_str(&payload, "description").map(|s| s.to_string()),
+                        start_time: json_i64(&payload, "start_time").unwrap_or(0),
+                        end_time: json_i64(&payload, "end_time").unwrap_or(0),
+                        all_day: json_bool(&payload, "all_day").unwrap_or(false),
+                        calendar_id: json_i64(&payload, "calendar_id").unwrap_or(0),
+                        timezone: json_str(&payload, "timezone")
+                            .unwrap_or("Asia/Shanghai")
+                            .to_string(),
+                        color: json_str(&payload, "color").map(|s| s.to_string()),
+                        reminder: json_i64(&payload, "reminder").map(|v| v as i32),
+                        location: json_str(&payload, "location").map(|s| s.to_string()),
+                        updated_at: entry.created_at,
+                    };
+                    match entry.action.as_str() {
+                        "create" => event_created.push(item),
+                        "update" => event_updated.push(item),
+                        "delete" => event_deleted.push(item.id),
+                        _ => {}
+                    }
+                }
+                "todo" => {
+                    let item = TodoSyncItem {
+                        id: json_i64(&payload, "id").unwrap_or(0),
+                        title: json_str(&payload, "title").unwrap_or("").to_string(),
+                        description: json_str(&payload, "description").map(|s| s.to_string()),
+                        due_date: json_i64(&payload, "due_date"),
+                        completed: json_bool(&payload, "completed").unwrap_or(false),
+                        priority: json_str(&payload, "priority")
+                            .unwrap_or("medium")
+                            .to_string(),
+                        calendar_id: json_i64(&payload, "calendar_id").unwrap_or(0),
+                        updated_at: entry.created_at,
+                    };
+                    match entry.action.as_str() {
+                        "create" => todo_created.push(item),
+                        "update" => todo_updated.push(item),
+                        "delete" => todo_deleted.push(item.id),
+                        _ => {}
+                    }
+                }
+                _ => {
+                    log::warn!("未知实体类型: {}", entry.entity_type);
+                }
+            }
+        }
+
+        let batch_changes = BatchChanges {
+            calendars: EntityChanges {
+                created: calendar_created,
+                updated: calendar_updated,
+                deleted: calendar_deleted,
+            },
+            events: EntityChanges {
+                created: event_created,
+                updated: event_updated,
+                deleted: event_deleted,
+            },
+            todos: EntityChanges {
+                created: todo_created,
+                updated: todo_updated,
+                deleted: todo_deleted,
+            },
+        };
 
         // 3. 上传本地变更并拉取远端变更
         let upload_request = SyncUploadRequest {
-            local_version,
-            changes: sync_changes,
+            last_sync_at,
+            changes: batch_changes,
         };
 
         let download_response = match self.api.sync_upload(upload_request).await {
@@ -153,14 +248,24 @@ impl<'a> SyncExecutor<'a> {
             }
         };
 
+        let downloaded_count = download_response.server_changes.calendars.created.len()
+            + download_response.server_changes.calendars.updated.len()
+            + download_response.server_changes.calendars.deleted.len()
+            + download_response.server_changes.events.created.len()
+            + download_response.server_changes.events.updated.len()
+            + download_response.server_changes.events.deleted.len()
+            + download_response.server_changes.todos.created.len()
+            + download_response.server_changes.todos.updated.len()
+            + download_response.server_changes.todos.deleted.len();
+
         log::info!(
-            "上传成功，远端返回 {} 条变更，服务端版本: {}",
-            download_response.changes.len(),
-            download_response.server_version
+            "上传成功，远端返回 {} 条变更，服务端时间: {}",
+            downloaded_count,
+            download_response.server_time
         );
 
         // 4. 应用远端变更到本地
-        let apply_result = self.apply_server_changes(&download_response.changes);
+        let apply_result = self.apply_server_changes(&download_response.server_changes);
 
         // 5. 标记本地变更为已同步
         let local_ids: Vec<i64> = local_changes.iter().map(|c| c.id).collect();
@@ -171,9 +276,9 @@ impl<'a> SyncExecutor<'a> {
         }
 
         // 6. 组装结果
-        let mut result = SyncResult::ok(download_response.server_version);
+        let mut result = SyncResult::ok(download_response.server_time, download_response.sync_token);
         result.uploaded = local_ids.len();
-        result.downloaded = download_response.changes.len();
+        result.downloaded = downloaded_count;
 
         match apply_result {
             Ok(conflicts) => {
@@ -199,14 +304,14 @@ impl<'a> SyncExecutor<'a> {
     /// 仅拉取远端变更
     ///
     /// # 参数
-    /// - `since_version`: 从哪个版本开始拉取
+    /// - `last_sync_at`: 上次同步时间戳（毫秒），首次为 None
     ///
     /// # 返回
     /// 同步结果
-    pub async fn pull_only(&self, since_version: i64) -> SyncResult {
-        log::info!("开始拉取远端变更: since_version={}", since_version);
+    pub async fn pull_only(&self, last_sync_at: Option<i64>) -> SyncResult {
+        log::info!("开始拉取远端变更: last_sync_at={:?}", last_sync_at);
 
-        let download_response = match self.api.sync_download(since_version).await {
+        let download_response = match self.api.sync_download(last_sync_at).await {
             Ok(response) => response,
             Err(e) => {
                 log::error!("拉取远端变更失败: {}", e);
@@ -214,10 +319,20 @@ impl<'a> SyncExecutor<'a> {
             }
         };
 
-        let apply_result = self.apply_server_changes(&download_response.changes);
+        let downloaded_count = download_response.server_changes.calendars.created.len()
+            + download_response.server_changes.calendars.updated.len()
+            + download_response.server_changes.calendars.deleted.len()
+            + download_response.server_changes.events.created.len()
+            + download_response.server_changes.events.updated.len()
+            + download_response.server_changes.events.deleted.len()
+            + download_response.server_changes.todos.created.len()
+            + download_response.server_changes.todos.updated.len()
+            + download_response.server_changes.todos.deleted.len();
 
-        let mut result = SyncResult::ok(download_response.server_version);
-        result.downloaded = download_response.changes.len();
+        let apply_result = self.apply_server_changes(&download_response.server_changes);
+
+        let mut result = SyncResult::ok(download_response.server_time, download_response.sync_token);
+        result.downloaded = downloaded_count;
 
         match apply_result {
             Ok(conflicts) => {
@@ -235,285 +350,275 @@ impl<'a> SyncExecutor<'a> {
     /// 将远端变更应用到本地 SQLite（使用事务）
     ///
     /// # 参数
-    /// - `changes`: 远端变更列表
+    /// - `changes`: 远端批量变更
     ///
     /// # 返回
     /// 冲突数量
-    fn apply_server_changes(&self, changes: &[SyncChange]) -> DatabaseResult<usize> {
-        if changes.is_empty() {
+    fn apply_server_changes(&self, changes: &BatchChanges) -> DatabaseResult<usize> {
+        let total = changes.calendars.created.len()
+            + changes.calendars.updated.len()
+            + changes.calendars.deleted.len()
+            + changes.events.created.len()
+            + changes.events.updated.len()
+            + changes.events.deleted.len()
+            + changes.todos.created.len()
+            + changes.todos.updated.len()
+            + changes.todos.deleted.len();
+
+        if total == 0 {
             return Ok(0);
         }
 
         let mut conflict_count = 0;
 
         self.db.execute_in_transaction(|tx| {
-            for change in changes {
-                match self.apply_single_change(tx, change) {
+            // 应用日历变更
+            for item in &changes.calendars.created {
+                if let Err(e) = self.apply_calendar_create(tx, item) {
+                    log::error!("应用日历创建变更失败: id={}, error={}", item.id, e);
+                }
+            }
+            for item in &changes.calendars.updated {
+                match self.apply_calendar_update(tx, item) {
                     Ok(has_conflict) => {
                         if has_conflict {
                             conflict_count += 1;
                         }
                     }
                     Err(e) => {
-                        log::error!(
-                            "应用变更失败: action={}, entity_type={}, error={}",
-                            change.action,
-                            change.entity_type,
-                            e
-                        );
+                        log::error!("应用日历更新变更失败: id={}, error={}", item.id, e);
                     }
                 }
             }
+            for id in &changes.calendars.deleted {
+                if let Err(e) = self.apply_calendar_delete(tx, *id) {
+                    log::error!("应用日历删除变更失败: id={}, error={}", id, e);
+                }
+            }
+
+            // 应用事件变更
+            for item in &changes.events.created {
+                if let Err(e) = self.apply_event_create(tx, item) {
+                    log::error!("应用事件创建变更失败: id={}, error={}", item.id, e);
+                }
+            }
+            for item in &changes.events.updated {
+                match self.apply_event_update(tx, item) {
+                    Ok(has_conflict) => {
+                        if has_conflict {
+                            conflict_count += 1;
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("应用事件更新变更失败: id={}, error={}", item.id, e);
+                    }
+                }
+            }
+            for id in &changes.events.deleted {
+                if let Err(e) = self.apply_event_delete(tx, *id) {
+                    log::error!("应用事件删除变更失败: id={}, error={}", id, e);
+                }
+            }
+
+            // 应用待办变更
+            for item in &changes.todos.created {
+                if let Err(e) = self.apply_todo_create(tx, item) {
+                    log::error!("应用待办创建变更失败: id={}, error={}", item.id, e);
+                }
+            }
+            for item in &changes.todos.updated {
+                match self.apply_todo_update(tx, item) {
+                    Ok(has_conflict) => {
+                        if has_conflict {
+                            conflict_count += 1;
+                        }
+                    }
+                    Err(e) => {
+                        log::error!("应用待办更新变更失败: id={}, error={}", item.id, e);
+                    }
+                }
+            }
+            for id in &changes.todos.deleted {
+                if let Err(e) = self.apply_todo_delete(tx, *id) {
+                    log::error!("应用待办删除变更失败: id={}, error={}", id, e);
+                }
+            }
+
             Ok(())
         })?;
 
         Ok(conflict_count)
     }
 
-    /// 应用单条变更到本地数据库
-    fn apply_single_change(
+    /// 应用事件创建变更
+    fn apply_event_create(
         &self,
         tx: &rusqlite::Transaction,
-        change: &SyncChange,
+        item: &EventSyncItem,
     ) -> DatabaseResult<bool> {
-        match change.entity_type.as_str() {
-            "event" => self.apply_event_change(tx, change),
-            "todo" => self.apply_todo_change(tx, change),
-            "calendar" => self.apply_calendar_change(tx, change),
-            _ => {
-                log::warn!("未知实体类型: {}", change.entity_type);
-                Ok(false)
-            }
-        }
+        let now = chrono::Utc::now().timestamp_millis();
+        tx.execute(
+            "INSERT OR IGNORE INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, location, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            rusqlite::params![
+                item.id, item.title, item.description, item.start_time, item.end_time,
+                item.all_day, item.calendar_id, item.color, item.reminder, item.location,
+                item.timezone, now, item.updated_at,
+            ],
+        )?;
+        Ok(false)
     }
 
-    /// 应用事件变更
-    fn apply_event_change(
+    /// 应用事件更新变更
+    fn apply_event_update(
         &self,
         tx: &rusqlite::Transaction,
-        change: &SyncChange,
+        item: &EventSyncItem,
     ) -> DatabaseResult<bool> {
-        let data = &change.data;
-        match change.action.as_str() {
-            "create" => {
-                let now = chrono::Utc::now().timestamp_millis();
-                let id: i64 = json_i64(data, "id").unwrap_or(0);
-                let title = json_str(data, "title").unwrap_or("");
-                let description = json_str(data, "description");
-                let start_time: i64 = json_i64(data, "start_time").unwrap_or(0);
-                let end_time: i64 = json_i64(data, "end_time").unwrap_or(0);
-                let all_day: bool = json_bool(data, "is_all_day").unwrap_or(false);
-                let calendar_id: i64 = json_i64(data, "calendar_id").unwrap_or(0);
-                let color = json_str(data, "color");
-                let reminder: Option<i32> = json_i64(data, "reminder_minutes").map(|v| v as i32);
-                let repeat_rule = json_str(data, "recurrence_rule");
-                let location = json_str(data, "location");
-                let external_id = json_str(data, "external_id");
-                let user_id = json_i64(data, "user_id");
-                let timezone = json_str(data, "timezone").unwrap_or("Asia/Shanghai");
-
-                tx.execute(
-                    "INSERT OR IGNORE INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, repeat_rule, location, external_id, user_id, timezone, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
-                    rusqlite::params![
-                        id, title, description, start_time, end_time, all_day,
-                        calendar_id, color, reminder, repeat_rule, location,
-                        external_id, user_id, timezone, now, now,
-                    ],
-                )?;
-                Ok(false)
-            }
-            "update" => {
-                let has_conflict = Self::check_conflict(tx, "events", change)?;
-                let now = chrono::Utc::now().timestamp_millis();
-                let title = json_str(data, "title").unwrap_or("");
-                let description = json_str(data, "description");
-                let start_time: i64 = json_i64(data, "start_time").unwrap_or(0);
-                let end_time: i64 = json_i64(data, "end_time").unwrap_or(0);
-                let all_day: bool = json_bool(data, "is_all_day").unwrap_or(false);
-                let calendar_id: i64 = json_i64(data, "calendar_id").unwrap_or(0);
-                let color = json_str(data, "color");
-                let reminder: Option<i32> = json_i64(data, "reminder_minutes").map(|v| v as i32);
-                let repeat_rule = json_str(data, "recurrence_rule");
-                let location = json_str(data, "location");
-                let id: i64 = json_i64(data, "id").unwrap_or(0);
-
-                tx.execute(
-                    "UPDATE events SET title=?1, description=?2, start_time=?3, end_time=?4, all_day=?5, calendar_id=?6, color=?7, reminder=?8, repeat_rule=?9, location=?10, updated_at=?11 WHERE id=?12",
-                    rusqlite::params![
-                        title, description, start_time, end_time, all_day,
-                        calendar_id, color, reminder, repeat_rule, location,
-                        now, id,
-                    ],
-                )?;
-                Ok(has_conflict)
-            }
-            "delete" => {
-                let now = chrono::Utc::now().timestamp_millis();
-                if let Some(id) = json_i64(data, "id") {
-                    tx.execute(
-                        "UPDATE events SET deleted_at=?1, updated_at=?2 WHERE id=?3",
-                        rusqlite::params![now, now, id],
-                    )?;
-                }
-                Ok(false)
-            }
-            _ => {
-                log::warn!("未知事件操作: {}", change.action);
-                Ok(false)
-            }
-        }
+        let has_conflict = Self::check_conflict_by_updated_at(tx, "events", item.id, item.updated_at)?;
+        let now = chrono::Utc::now().timestamp_millis();
+        tx.execute(
+            "UPDATE events SET title=?1, description=?2, start_time=?3, end_time=?4, all_day=?5, calendar_id=?6, color=?7, reminder=?8, location=?9, updated_at=?10 WHERE id=?11",
+            rusqlite::params![
+                item.title, item.description, item.start_time, item.end_time,
+                item.all_day, item.calendar_id, item.color, item.reminder, item.location,
+                now, item.id,
+            ],
+        )?;
+        Ok(has_conflict)
     }
 
-    /// 应用待办变更
-    fn apply_todo_change(
+    /// 应用事件删除变更
+    fn apply_event_delete(
         &self,
         tx: &rusqlite::Transaction,
-        change: &SyncChange,
+        id: i64,
     ) -> DatabaseResult<bool> {
-        let data = &change.data;
-        match change.action.as_str() {
-            "create" => {
-                let now = chrono::Utc::now().timestamp_millis();
-                let id: i64 = json_i64(data, "id").unwrap_or(0);
-                let title = json_str(data, "title").unwrap_or("");
-                let description = json_str(data, "description");
-                let due_date = json_i64(data, "due_date");
-                let completed: bool = json_bool(data, "is_completed").unwrap_or(false);
-                let priority = json_str(data, "priority").unwrap_or("medium");
-                let calendar_id: i64 = json_i64(data, "calendar_id").unwrap_or(0);
-                let user_id = json_i64(data, "user_id");
-                let timezone = json_str(data, "timezone").unwrap_or("Asia/Shanghai");
-
-                tx.execute(
-                    "INSERT OR IGNORE INTO todos (id, title, description, due_date, completed, priority, calendar_id, user_id, timezone, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-                    rusqlite::params![
-                        id, title, description, due_date, completed, priority,
-                        calendar_id, user_id, timezone, now, now,
-                    ],
-                )?;
-                Ok(false)
-            }
-            "update" => {
-                let has_conflict = Self::check_conflict(tx, "todos", change)?;
-                let now = chrono::Utc::now().timestamp_millis();
-                let title = json_str(data, "title").unwrap_or("");
-                let description = json_str(data, "description");
-                let due_date = json_i64(data, "due_date");
-                let completed: bool = json_bool(data, "is_completed").unwrap_or(false);
-                let priority = json_str(data, "priority").unwrap_or("medium");
-                let calendar_id: i64 = json_i64(data, "calendar_id").unwrap_or(0);
-                let id: i64 = json_i64(data, "id").unwrap_or(0);
-
-                tx.execute(
-                    "UPDATE todos SET title=?1, description=?2, due_date=?3, completed=?4, priority=?5, calendar_id=?6, updated_at=?7 WHERE id=?8",
-                    rusqlite::params![
-                        title, description, due_date, completed, priority,
-                        calendar_id, now, id,
-                    ],
-                )?;
-                Ok(has_conflict)
-            }
-            "delete" => {
-                let now = chrono::Utc::now().timestamp_millis();
-                if let Some(id) = json_i64(data, "id") {
-                    tx.execute(
-                        "UPDATE todos SET deleted_at=?1, updated_at=?2 WHERE id=?3",
-                        rusqlite::params![now, now, id],
-                    )?;
-                }
-                Ok(false)
-            }
-            _ => {
-                log::warn!("未知待办操作: {}", change.action);
-                Ok(false)
-            }
-        }
+        let now = chrono::Utc::now().timestamp_millis();
+        tx.execute(
+            "UPDATE events SET deleted_at=?1, updated_at=?2 WHERE id=?3",
+            rusqlite::params![now, now, id],
+        )?;
+        Ok(false)
     }
 
-    /// 应用日历变更
-    fn apply_calendar_change(
+    /// 应用待办创建变更
+    fn apply_todo_create(
         &self,
         tx: &rusqlite::Transaction,
-        change: &SyncChange,
+        item: &TodoSyncItem,
     ) -> DatabaseResult<bool> {
-        let data = &change.data;
-        match change.action.as_str() {
-            "create" => {
-                let now = chrono::Utc::now().timestamp_millis();
-                let id: i64 = json_i64(data, "id").unwrap_or(0);
-                let name = json_str(data, "name").unwrap_or("");
-                let color = json_str(data, "color").unwrap_or("#000000");
-                let type_ = json_str(data, "type").unwrap_or("local");
-                let visible: bool = json_bool(data, "visible").unwrap_or(true);
-                let sync_enabled: bool = json_bool(data, "sync_enabled").unwrap_or(false);
-                let user_id = json_i64(data, "user_id");
-                let timezone = json_str(data, "timezone").unwrap_or("Asia/Shanghai");
+        let now = chrono::Utc::now().timestamp_millis();
+        let user_id: Option<i64> = None;
+        let timezone = "Asia/Shanghai";
+        tx.execute(
+            "INSERT OR IGNORE INTO todos (id, title, description, due_date, completed, priority, calendar_id, user_id, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![
+                item.id, item.title, item.description, item.due_date, item.completed,
+                item.priority, item.calendar_id, user_id, timezone, now, item.updated_at,
+            ],
+        )?;
+        Ok(false)
+    }
 
-                tx.execute(
-                    "INSERT OR IGNORE INTO calendars (id, name, color, type, visible, sync_enabled, user_id, timezone, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                    rusqlite::params![
-                        id, name, color, type_, visible, sync_enabled,
-                        user_id, timezone, now, now,
-                    ],
-                )?;
-                Ok(false)
-            }
-            "update" => {
-                let has_conflict = Self::check_conflict(tx, "calendars", change)?;
-                let now = chrono::Utc::now().timestamp_millis();
-                let name = json_str(data, "name").unwrap_or("");
-                let color = json_str(data, "color").unwrap_or("#000000");
-                let type_ = json_str(data, "type").unwrap_or("local");
-                let visible: bool = json_bool(data, "visible").unwrap_or(true);
-                let sync_enabled: bool = json_bool(data, "sync_enabled").unwrap_or(false);
-                let user_id = json_i64(data, "user_id");
-                let id: i64 = json_i64(data, "id").unwrap_or(0);
+    /// 应用待办更新变更
+    fn apply_todo_update(
+        &self,
+        tx: &rusqlite::Transaction,
+        item: &TodoSyncItem,
+    ) -> DatabaseResult<bool> {
+        let has_conflict = Self::check_conflict_by_updated_at(tx, "todos", item.id, item.updated_at)?;
+        let now = chrono::Utc::now().timestamp_millis();
+        tx.execute(
+            "UPDATE todos SET title=?1, description=?2, due_date=?3, completed=?4, priority=?5, calendar_id=?6, updated_at=?7 WHERE id=?8",
+            rusqlite::params![
+                item.title, item.description, item.due_date, item.completed,
+                item.priority, item.calendar_id, now, item.id,
+            ],
+        )?;
+        Ok(has_conflict)
+    }
 
-                tx.execute(
-                    "UPDATE calendars SET name=?1, color=?2, type=?3, visible=?4, sync_enabled=?5, user_id=?6, updated_at=?7 WHERE id=?8",
-                    rusqlite::params![
-                        name, color, type_, visible, sync_enabled,
-                        user_id, now, id,
-                    ],
-                )?;
-                Ok(has_conflict)
-            }
-            "delete" => {
-                let now = chrono::Utc::now().timestamp_millis();
-                if let Some(id) = json_i64(data, "id") {
-                    tx.execute(
-                        "UPDATE calendars SET deleted_at=?1, updated_at=?2 WHERE id=?3",
-                        rusqlite::params![now, now, id],
-                    )?;
-                }
-                Ok(false)
-            }
-            _ => {
-                log::warn!("未知日历操作: {}", change.action);
-                Ok(false)
-            }
-        }
+    /// 应用待办删除变更
+    fn apply_todo_delete(
+        &self,
+        tx: &rusqlite::Transaction,
+        id: i64,
+    ) -> DatabaseResult<bool> {
+        let now = chrono::Utc::now().timestamp_millis();
+        tx.execute(
+            "UPDATE todos SET deleted_at=?1, updated_at=?2 WHERE id=?3",
+            rusqlite::params![now, now, id],
+        )?;
+        Ok(false)
+    }
+
+    /// 应用日历创建变更
+    fn apply_calendar_create(
+        &self,
+        tx: &rusqlite::Transaction,
+        item: &CalendarSyncItem,
+    ) -> DatabaseResult<bool> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let user_id: Option<i64> = None;
+        let timezone = "Asia/Shanghai";
+        tx.execute(
+            "INSERT OR IGNORE INTO calendars (id, name, color, type, visible, sync_enabled, user_id, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            rusqlite::params![
+                item.id, item.name, item.color, item.r#type, item.visible, item.sync_enabled,
+                user_id, timezone, now, item.updated_at,
+            ],
+        )?;
+        Ok(false)
+    }
+
+    /// 应用日历更新变更
+    fn apply_calendar_update(
+        &self,
+        tx: &rusqlite::Transaction,
+        item: &CalendarSyncItem,
+    ) -> DatabaseResult<bool> {
+        let has_conflict = Self::check_conflict_by_updated_at(tx, "calendars", item.id, item.updated_at)?;
+        let now = chrono::Utc::now().timestamp_millis();
+        let user_id: Option<i64> = None;
+        tx.execute(
+            "UPDATE calendars SET name=?1, color=?2, type=?3, visible=?4, sync_enabled=?5, user_id=?6, updated_at=?7 WHERE id=?8",
+            rusqlite::params![
+                item.name, item.color, item.r#type, item.visible, item.sync_enabled,
+                user_id, now, item.id,
+            ],
+        )?;
+        Ok(has_conflict)
+    }
+
+    /// 应用日历删除变更
+    fn apply_calendar_delete(
+        &self,
+        tx: &rusqlite::Transaction,
+        id: i64,
+    ) -> DatabaseResult<bool> {
+        let now = chrono::Utc::now().timestamp_millis();
+        tx.execute(
+            "UPDATE calendars SET deleted_at=?1, updated_at=?2 WHERE id=?3",
+            rusqlite::params![now, now, id],
+        )?;
+        Ok(false)
     }
 
     /// 冲突检测（Last-Wins 策略）
     ///
-    /// 比较本地记录的 updated_at 与远端变更的 timestamp，
+    /// 比较本地记录的 updated_at 与远端条目的 updated_at，
     /// 如果本地更新时间晚于远端变更时间，则认为发生冲突。
     /// Last-Wins 策略下，仍应用远端变更（因为远端时间戳更大才应该赢），
     /// 但记录冲突数量供上层决策。
-    fn check_conflict(
+    fn check_conflict_by_updated_at(
         tx: &rusqlite::Transaction,
         table: &str,
-        change: &SyncChange,
+        entity_id: i64,
+        remote_updated_at: i64,
     ) -> DatabaseResult<bool> {
-        let entity_id = match json_i64(&change.data, "id") {
-            Some(id) => id,
-            None => return Ok(false),
-        };
-
         let local_updated_at: i64 = tx
             .query_row(
                 &format!("SELECT updated_at FROM {} WHERE id = ?1", table),
@@ -523,15 +628,15 @@ impl<'a> SyncExecutor<'a> {
             .unwrap_or(0);
 
         // 如果本地记录存在且本地更新时间晚于远端变更时间，视为冲突
-        let has_conflict = local_updated_at > 0 && local_updated_at > change.timestamp;
+        let has_conflict = local_updated_at > 0 && local_updated_at > remote_updated_at;
 
         if has_conflict {
             log::info!(
-                "检测到冲突: table={}, id={}, local_updated_at={}, remote_timestamp={}",
+                "检测到冲突: table={}, id={}, local_updated_at={}, remote_updated_at={}",
                 table,
                 entity_id,
                 local_updated_at,
-                change.timestamp
+                remote_updated_at
             );
         }
 
@@ -624,21 +729,30 @@ mod tests {
         let api = Arc::new(MockApiClient::new());
         let executor = SyncExecutor::new(&db, api.clone());
 
-        let change = SyncChange {
-            action: "create".to_string(),
-            entity_type: "event".to_string(),
-            data: serde_json::json!({
-                "id": 100,
-                "title": "远端事件",
-                "start_time": 1700000000000_i64,
-                "end_time": 1700003600000_i64,
-                "is_all_day": false,
-                "calendar_id": 1,
-            }),
-            timestamp: 1700000000000,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges {
+                created: vec![EventSyncItem {
+                    id: 100,
+                    title: "远端事件".to_string(),
+                    description: None,
+                    start_time: 1700000000000,
+                    end_time: 1700003600000,
+                    all_day: false,
+                    calendar_id: 1,
+                    timezone: "Asia/Shanghai".to_string(),
+                    color: None,
+                    reminder: None,
+                    location: None,
+                    updated_at: 1700000000000,
+                }],
+                updated: vec![],
+                deleted: vec![],
+            },
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&[change]);
+        let result = executor.apply_server_changes(&changes);
         assert!(result.is_ok());
 
         let count: i64 = db
@@ -669,21 +783,30 @@ mod tests {
         })
         .unwrap();
 
-        let change = SyncChange {
-            action: "update".to_string(),
-            entity_type: "event".to_string(),
-            data: serde_json::json!({
-                "id": 100,
-                "title": "更新标题",
-                "start_time": now,
-                "end_time": now + 3600000,
-                "is_all_day": false,
-                "calendar_id": calendar_id,
-            }),
-            timestamp: now + 1000,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges {
+                created: vec![],
+                updated: vec![EventSyncItem {
+                    id: 100,
+                    title: "更新标题".to_string(),
+                    description: None,
+                    start_time: now,
+                    end_time: now + 3600000,
+                    all_day: false,
+                    calendar_id,
+                    timezone: "Asia/Shanghai".to_string(),
+                    color: None,
+                    reminder: None,
+                    location: None,
+                    updated_at: now + 1000,
+                }],
+                deleted: vec![],
+            },
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&[change]);
+        let result = executor.apply_server_changes(&changes);
         assert!(result.is_ok());
 
         let title: String = db
@@ -714,14 +837,17 @@ mod tests {
         })
         .unwrap();
 
-        let change = SyncChange {
-            action: "delete".to_string(),
-            entity_type: "event".to_string(),
-            data: serde_json::json!({"id": 200}),
-            timestamp: now + 1000,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges {
+                created: vec![],
+                updated: vec![],
+                deleted: vec![200],
+            },
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&[change]);
+        let result = executor.apply_server_changes(&changes);
         assert!(result.is_ok());
 
         let deleted_at: Option<i64> = db
@@ -741,21 +867,26 @@ mod tests {
         let api = Arc::new(MockApiClient::new());
         let executor = SyncExecutor::new(&db, api.clone());
 
-        let change = SyncChange {
-            action: "create".to_string(),
-            entity_type: "calendar".to_string(),
-            data: serde_json::json!({
-                "id": 500,
-                "name": "远端日历",
-                "color": "#00FF00",
-                "type": "local",
-                "visible": true,
-                "sync_enabled": false,
-            }),
-            timestamp: 1700000000000,
+        let changes = BatchChanges {
+            calendars: EntityChanges {
+                created: vec![CalendarSyncItem {
+                    id: 500,
+                    name: "远端日历".to_string(),
+                    color: "#00FF00".to_string(),
+                    r#type: "local".to_string(),
+                    account_id: None,
+                    visible: true,
+                    sync_enabled: false,
+                    updated_at: 1700000000000,
+                }],
+                updated: vec![],
+                deleted: vec![],
+            },
+            events: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&[change]);
+        let result = executor.apply_server_changes(&changes);
         assert!(result.is_ok());
 
         let name: String = db
@@ -776,20 +907,26 @@ mod tests {
         let api = Arc::new(MockApiClient::new());
         let executor = SyncExecutor::new(&db, api.clone());
 
-        let change = SyncChange {
-            action: "create".to_string(),
-            entity_type: "todo".to_string(),
-            data: serde_json::json!({
-                "id": 300,
-                "title": "远端待办",
-                "is_completed": false,
-                "priority": "high",
-                "calendar_id": calendar_id,
-            }),
-            timestamp: 1700000000000,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            todos: EntityChanges {
+                created: vec![TodoSyncItem {
+                    id: 300,
+                    title: "远端待办".to_string(),
+                    description: None,
+                    due_date: None,
+                    completed: false,
+                    priority: "high".to_string(),
+                    calendar_id,
+                    updated_at: 1700000000000,
+                }],
+                updated: vec![],
+                deleted: vec![],
+            },
         };
 
-        let result = executor.apply_server_changes(&[change]);
+        let result = executor.apply_server_changes(&changes);
         assert!(result.is_ok());
 
         let title: String = db
@@ -821,21 +958,30 @@ mod tests {
         })
         .unwrap();
 
-        let change = SyncChange {
-            action: "update".to_string(),
-            entity_type: "event".to_string(),
-            data: serde_json::json!({
-                "id": 100,
-                "title": "远端标题",
-                "start_time": now,
-                "end_time": now + 3600000,
-                "is_all_day": false,
-                "calendar_id": calendar_id,
-            }),
-            timestamp: now,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges {
+                created: vec![],
+                updated: vec![EventSyncItem {
+                    id: 100,
+                    title: "远端标题".to_string(),
+                    description: None,
+                    start_time: now,
+                    end_time: now + 3600000,
+                    all_day: false,
+                    calendar_id,
+                    timezone: "Asia/Shanghai".to_string(),
+                    color: None,
+                    reminder: None,
+                    location: None,
+                    updated_at: now,
+                }],
+                deleted: vec![],
+            },
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let conflicts = executor.apply_server_changes(&[change]).unwrap();
+        let conflicts = executor.apply_server_changes(&changes).unwrap();
         assert_eq!(conflicts, 1);
     }
 
@@ -858,21 +1004,30 @@ mod tests {
         })
         .unwrap();
 
-        let change = SyncChange {
-            action: "update".to_string(),
-            entity_type: "event".to_string(),
-            data: serde_json::json!({
-                "id": 100,
-                "title": "远端标题",
-                "start_time": now,
-                "end_time": now + 3600000,
-                "is_all_day": false,
-                "calendar_id": calendar_id,
-            }),
-            timestamp: now,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges {
+                created: vec![],
+                updated: vec![EventSyncItem {
+                    id: 100,
+                    title: "远端标题".to_string(),
+                    description: None,
+                    start_time: now,
+                    end_time: now + 3600000,
+                    all_day: false,
+                    calendar_id,
+                    timezone: "Asia/Shanghai".to_string(),
+                    color: None,
+                    reminder: None,
+                    location: None,
+                    updated_at: now,
+                }],
+                deleted: vec![],
+            },
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let conflicts = executor.apply_server_changes(&[change]).unwrap();
+        let conflicts = executor.apply_server_changes(&changes).unwrap();
         assert_eq!(conflicts, 0);
     }
 
@@ -883,26 +1038,13 @@ mod tests {
         let api = Arc::new(MockApiClient::new());
         let executor = SyncExecutor::new(&db, api);
 
-        let result = executor.apply_server_changes(&[]);
-        assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 0);
-    }
-
-    /// 测试未知实体类型
-    #[test]
-    fn test_apply_unknown_entity_type() {
-        let db = setup_test_db();
-        let api = Arc::new(MockApiClient::new());
-        let executor = SyncExecutor::new(&db, api);
-
-        let change = SyncChange {
-            action: "create".to_string(),
-            entity_type: "unknown".to_string(),
-            data: serde_json::json!({"id": 1}),
-            timestamp: 1700000000000,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&[change]);
+        let result = executor.apply_server_changes(&changes);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
     }
@@ -910,9 +1052,10 @@ mod tests {
     /// 测试 SyncResult 构建
     #[test]
     fn test_sync_result_ok() {
-        let result = SyncResult::ok(42);
+        let result = SyncResult::ok(42, "token_123".to_string());
         assert!(result.success);
-        assert_eq!(result.server_version, 42);
+        assert_eq!(result.server_time, 42);
+        assert_eq!(result.sync_token, "token_123");
         assert_eq!(result.uploaded, 0);
         assert_eq!(result.downloaded, 0);
         assert!(result.errors.is_empty());
@@ -935,34 +1078,44 @@ mod tests {
         let api = Arc::new(MockApiClient::new());
         let executor = SyncExecutor::new(&db, api);
 
-        let changes = vec![
-            SyncChange {
-                action: "create".to_string(),
-                entity_type: "event".to_string(),
-                data: serde_json::json!({
-                    "id": 101,
-                    "title": "事件1",
-                    "start_time": 1700000000000_i64,
-                    "end_time": 1700003600000_i64,
-                    "is_all_day": false,
-                    "calendar_id": 1,
-                }),
-                timestamp: 1700000000000,
+        let changes = BatchChanges {
+            calendars: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+            events: EntityChanges {
+                created: vec![
+                    EventSyncItem {
+                        id: 101,
+                        title: "事件1".to_string(),
+                        description: None,
+                        start_time: 1700000000000,
+                        end_time: 1700003600000,
+                        all_day: false,
+                        calendar_id: 1,
+                        timezone: "Asia/Shanghai".to_string(),
+                        color: None,
+                        reminder: None,
+                        location: None,
+                        updated_at: 1700000000000,
+                    },
+                    EventSyncItem {
+                        id: 102,
+                        title: "事件2".to_string(),
+                        description: None,
+                        start_time: 1700000000000,
+                        end_time: 1700003600000,
+                        all_day: false,
+                        calendar_id: 1,
+                        timezone: "Asia/Shanghai".to_string(),
+                        color: None,
+                        reminder: None,
+                        location: None,
+                        updated_at: 1700000000000,
+                    },
+                ],
+                updated: vec![],
+                deleted: vec![],
             },
-            SyncChange {
-                action: "create".to_string(),
-                entity_type: "event".to_string(),
-                data: serde_json::json!({
-                    "id": 102,
-                    "title": "事件2",
-                    "start_time": 1700000000000_i64,
-                    "end_time": 1700003600000_i64,
-                    "is_all_day": false,
-                    "calendar_id": 1,
-                }),
-                timestamp: 1700000000000,
-            },
-        ];
+            todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
+        };
 
         let result = executor.apply_server_changes(&changes);
         assert!(result.is_ok());
