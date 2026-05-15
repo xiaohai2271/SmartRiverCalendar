@@ -28,7 +28,7 @@ export class AuthService {
    */
   async login(username: string, password: string): Promise<AuthResponse | null> {
     const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_login', {
-      username,
+      email: username,
       password
     })
 
@@ -51,9 +51,9 @@ export class AuthService {
    */
   async register(username: string, email: string, password: string): Promise<AuthResponse | null> {
     const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_register', {
-      username,
       email,
-      password
+      password,
+      display_name: username
     })
 
     if (response?.data) {
@@ -84,7 +84,7 @@ export class AuthService {
    * @returns 认证响应或 null
    */
   async githubLogin(clientId: string, redirectUri: string): Promise<AuthResponse | null> {
-    const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_github_login', {
+    const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_oauth_github', {
       clientId,
       redirectUri
     })
@@ -129,7 +129,7 @@ export class AuthService {
    * @returns 用户信息或 null
    */
   async getCurrentUser(): Promise<User | null> {
-    const response = await safeInvoke<ApiResponse<User>>('auth_get_current_user')
+    const response = await safeInvoke<ApiResponse<User>>('auth_get_profile')
     return response?.data ?? null
   }
 

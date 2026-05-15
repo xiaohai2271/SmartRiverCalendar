@@ -1182,6 +1182,96 @@ pub fn delete_sync_state(
     SyncStateRepository::delete(&conn, account_id, calendar_id).map_err(|e| e.into())
 }
 
+// ============================================================
+// 远程认证命令
+// ============================================================
+
+/// 检查是否已登录（Token 是否存在且未过期）
+#[tauri::command]
+pub async fn auth_check_status() -> Result<bool, String> {
+    info!("[auth_check_status] 检查认证状态");
+    // TODO: 调用 auth handler 检查 Token
+    Ok(false)
+}
+
+/// 邮箱密码登录
+#[tauri::command]
+pub async fn auth_login(
+    email: String,
+    password: String,
+) -> Result<serde_json::Value, String> {
+    info!("[auth_login] 邮箱密码登录: {}", email);
+    // TODO: 调用 auth handler.login()
+    Err("认证模块尚未连接".to_string())
+}
+
+/// 邮箱密码注册
+#[tauri::command]
+pub async fn auth_register(
+    email: String,
+    password: String,
+    display_name: String,
+) -> Result<serde_json::Value, String> {
+    info!("[auth_register] 邮箱注册: {}", email);
+    // TODO: 调用 auth handler.register()
+    Err("认证模块尚未连接".to_string())
+}
+
+/// GitHub OAuth 登录
+#[tauri::command]
+pub async fn auth_oauth_github() -> Result<serde_json::Value, String> {
+    info!("[auth_oauth_github] GitHub OAuth 登录");
+    // TODO: 调用 auth handler.oauth_github()
+    Err("认证模块尚未连接".to_string())
+}
+
+/// 退出登录
+#[tauri::command]
+pub async fn auth_logout() -> Result<(), String> {
+    info!("[auth_logout] 退出登录");
+    // TODO: 调用 auth handler.logout()
+    Ok(())
+}
+
+/// 获取用户资料
+#[tauri::command]
+pub async fn auth_get_profile() -> Result<serde_json::Value, String> {
+    info!("[auth_get_profile] 获取用户资料");
+    // TODO: 调用 auth handler.get_profile()
+    Err("认证模块尚未连接".to_string())
+}
+
+/// 刷新 Token
+#[tauri::command]
+pub async fn auth_refresh_token() -> Result<bool, String> {
+    info!("[auth_refresh_token] 刷新 Token");
+    // TODO: 调用 auth handler.refresh_token()
+    Ok(false)
+}
+
+// ============================================================
+// 云同步命令
+// ============================================================
+
+/// 启动同步
+#[tauri::command]
+pub async fn cloud_sync_trigger() -> Result<serde_json::Value, String> {
+    info!("[cloud_sync_trigger] 触发同步");
+    // TODO: 调用 sync engine.trigger_sync()
+    Err("同步引擎尚未连接".to_string())
+}
+
+/// 获取同步状态
+#[tauri::command]
+pub async fn cloud_sync_get_status() -> Result<serde_json::Value, String> {
+    info!("[cloud_sync_get_status] 获取同步状态");
+    Ok(serde_json::json!({
+        "status": "idle",
+        "lastSyncAt": null,
+        "pendingChanges": 0
+    }))
+}
+
 // ==================== 时钟点击 Hook 相关命令 ====================
 
 #[cfg(target_os = "windows")]

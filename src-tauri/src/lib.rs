@@ -386,6 +386,17 @@ pub fn run() {
             commands::add_user_holiday,
             commands::remove_user_holiday,
             commands::get_all_user_holidays,
+            // 远程认证命令
+            commands::auth_check_status,
+            commands::auth_login,
+            commands::auth_register,
+            commands::auth_oauth_github,
+            commands::auth_logout,
+            commands::auth_get_profile,
+            commands::auth_refresh_token,
+            // 云同步命令
+            commands::cloud_sync_trigger,
+            commands::cloud_sync_get_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

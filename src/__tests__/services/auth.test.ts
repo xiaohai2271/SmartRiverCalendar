@@ -42,7 +42,7 @@ describe('AuthService', () => {
       const result = await authService.login('testuser', 'password')
 
       expect(mockSafeInvoke).toHaveBeenCalledWith('auth_login', {
-        username: 'testuser',
+        email: 'testuser',
         password: 'password'
       })
       expect(result).not.toBeNull()
@@ -81,9 +81,9 @@ describe('AuthService', () => {
       const result = await authService.register('newuser', 'newuser@example.com', 'password')
 
       expect(mockSafeInvoke).toHaveBeenCalledWith('auth_register', {
-        username: 'newuser',
         email: 'newuser@example.com',
-        password: 'password'
+        password: 'password',
+        display_name: 'newuser'
       })
       expect(result).not.toBeNull()
       expect(result?.user).toEqual(mockUser)
@@ -122,7 +122,7 @@ describe('AuthService', () => {
 
       const result = await authService.githubLogin('client-id', 'http://localhost/callback')
 
-      expect(mockSafeInvoke).toHaveBeenCalledWith('auth_github_login', {
+      expect(mockSafeInvoke).toHaveBeenCalledWith('auth_oauth_github', {
         clientId: 'client-id',
         redirectUri: 'http://localhost/callback'
       })
@@ -189,7 +189,7 @@ describe('AuthService', () => {
 
       const result = await authService.getCurrentUser()
 
-      expect(mockSafeInvoke).toHaveBeenCalledWith('auth_get_current_user')
+      expect(mockSafeInvoke).toHaveBeenCalledWith('auth_get_profile')
       expect(result).toEqual(mockUser)
     })
 
