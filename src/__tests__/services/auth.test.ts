@@ -20,22 +20,27 @@ describe('AuthService', () => {
   })
 
   describe('login', () => {
-    it('应该调用 auth_login 命令并返回用户', async () => {
-      const mockUser = {
-        id: '1',
-        username: 'testuser',
-        email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
-      }
+    it('应该调用 auth_login 命令并返回认证响应', async () => {
+      // 登录响应 mock
       mockSafeInvoke.mockResolvedValueOnce({
         code: 0,
         message: 'success',
         data: {
-          user: mockUser,
+          userId: 1,
           accessToken: 'access-token',
           refreshToken: 'refresh-token',
           expiresIn: 3600
+        }
+      })
+      // getCurrentUser 响应 mock
+      mockSafeInvoke.mockResolvedValueOnce({
+        code: 0,
+        message: 'success',
+        data: {
+          id: '1',
+          email: 'test@example.com',
+          displayName: '测试用户',
+          provider: 'local'
         }
       })
 
@@ -46,7 +51,7 @@ describe('AuthService', () => {
         password: 'password'
       })
       expect(result).not.toBeNull()
-      expect(result?.user).toEqual(mockUser)
+      expect(result?.userId).toBe(1)
     })
 
     it('登录失败返回 null', async () => {
@@ -59,22 +64,27 @@ describe('AuthService', () => {
   })
 
   describe('register', () => {
-    it('应该调用 auth_register 命令并返回用户', async () => {
-      const mockUser = {
-        id: '1',
-        username: 'newuser',
-        email: 'newuser@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
-      }
+    it('应该调用 auth_register 命令并返回认证响应', async () => {
+      // 注册响应 mock
       mockSafeInvoke.mockResolvedValueOnce({
         code: 0,
         message: 'success',
         data: {
-          user: mockUser,
+          userId: 1,
           accessToken: 'access-token',
           refreshToken: 'refresh-token',
           expiresIn: 3600
+        }
+      })
+      // getCurrentUser 响应 mock
+      mockSafeInvoke.mockResolvedValueOnce({
+        code: 0,
+        message: 'success',
+        data: {
+          id: '1',
+          email: 'newuser@example.com',
+          displayName: '新用户',
+          provider: 'local'
         }
       })
 
@@ -86,7 +96,7 @@ describe('AuthService', () => {
         display_name: 'newuser'
       })
       expect(result).not.toBeNull()
-      expect(result?.user).toEqual(mockUser)
+      expect(result?.userId).toBe(1)
     })
   })
 
@@ -101,22 +111,27 @@ describe('AuthService', () => {
   })
 
   describe('githubLogin', () => {
-    it('应该调用 auth_github_login 命令并返回用户', async () => {
-      const mockUser = {
-        id: '1',
-        username: 'githubuser',
-        email: 'github@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
-      }
+    it('应该调用 auth_github_login 命令并返回认证响应', async () => {
+      // GitHub 登录响应 mock
       mockSafeInvoke.mockResolvedValueOnce({
         code: 0,
         message: 'success',
         data: {
-          user: mockUser,
+          userId: 1,
           accessToken: 'access-token',
           refreshToken: 'refresh-token',
           expiresIn: 3600
+        }
+      })
+      // getCurrentUser 响应 mock
+      mockSafeInvoke.mockResolvedValueOnce({
+        code: 0,
+        message: 'success',
+        data: {
+          id: '1',
+          email: 'github@example.com',
+          displayName: 'GitHub 用户',
+          provider: 'github'
         }
       })
 
@@ -127,7 +142,7 @@ describe('AuthService', () => {
         redirectUri: 'http://localhost/callback'
       })
       expect(result).not.toBeNull()
-      expect(result?.user).toEqual(mockUser)
+      expect(result?.userId).toBe(1)
     })
   })
 
@@ -142,10 +157,9 @@ describe('AuthService', () => {
     it('应该调用 auth_check_status 命令', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       mockSafeInvoke.mockResolvedValueOnce({
         code: 0,
@@ -173,13 +187,12 @@ describe('AuthService', () => {
   })
 
   describe('getCurrentUser', () => {
-    it('应该调用 auth_get_current_user 命令', async () => {
+    it('应该调用 auth_get_profile 命令', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       mockSafeInvoke.mockResolvedValueOnce({
         code: 0,

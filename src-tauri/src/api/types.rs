@@ -30,25 +30,25 @@ pub struct RegisterRequest {
 /// 认证响应（登录/注册/OAuth 成功后返回）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthResponse {
+    /// 用户 ID
+    pub user_id: i64,
     /// 访问令牌
     pub access_token: String,
     /// 刷新令牌
     pub refresh_token: String,
     /// 过期时间（秒）
     pub expires_in: i64,
-    /// 用户 ID
-    pub user_id: i64,
-    /// 用户邮箱
-    pub email: String,
-    /// 显示名称
-    pub display_name: String,
 }
 
 /// 刷新 Token 响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenResponse {
+    /// 用户 ID
+    pub user_id: i64,
     /// 新的访问令牌
     pub access_token: String,
+    /// 新的刷新令牌
+    pub refresh_token: String,
     /// 过期时间（秒）
     pub expires_in: i64,
 }
@@ -57,15 +57,15 @@ pub struct RefreshTokenResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserProfile {
     /// 用户 ID
-    pub user_id: i64,
+    pub id: i64,
     /// 用户邮箱
     pub email: String,
     /// 显示名称
     pub display_name: String,
-    /// 创建时间 (Unix 时间戳，毫秒)
-    pub created_at: i64,
-    /// 更新时间 (Unix 时间戳，毫秒)
-    pub updated_at: i64,
+    /// 头像 URL
+    pub avatar_url: Option<String>,
+    /// 认证提供商
+    pub provider: String,
 }
 
 // ================================================================
@@ -265,12 +265,10 @@ mod tests {
     #[test]
     fn test_auth_response_serialization() {
         let response = AuthResponse {
+            user_id: 1,
             access_token: "at_123".to_string(),
             refresh_token: "rt_456".to_string(),
             expires_in: 3600,
-            user_id: 1,
-            email: "test@example.com".to_string(),
-            display_name: "测试".to_string(),
         };
         let json = serde_json::to_string(&response).unwrap();
         let deserialized: AuthResponse = serde_json::from_str(&json).unwrap();
@@ -282,7 +280,9 @@ mod tests {
     #[test]
     fn test_refresh_token_response_serialization() {
         let response = RefreshTokenResponse {
+            user_id: 1,
             access_token: "new_at".to_string(),
+            refresh_token: "new_rt".to_string(),
             expires_in: 7200,
         };
         let json = serde_json::to_string(&response).unwrap();
@@ -295,15 +295,15 @@ mod tests {
     #[test]
     fn test_user_profile_serialization() {
         let profile = UserProfile {
-            user_id: 42,
+            id: 42,
             email: "user@example.com".to_string(),
             display_name: "用户名".to_string(),
-            created_at: 1700000000000,
-            updated_at: 1700000000000,
+            avatar_url: Some("https://example.com/avatar.png".to_string()),
+            provider: "local".to_string(),
         };
         let json = serde_json::to_string(&profile).unwrap();
         let deserialized: UserProfile = serde_json::from_str(&json).unwrap();
-        assert_eq!(deserialized.user_id, 42);
+        assert_eq!(deserialized.id, 42);
     }
 
     /// 测试 SyncChange 序列化

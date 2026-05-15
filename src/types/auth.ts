@@ -14,11 +14,10 @@ export interface AuthState {
 // 用户信息
 export interface User {
   id: string
-  username: string
   email: string
-  avatar?: string
-  createdAt: number
-  updatedAt: number
+  displayName: string
+  avatarUrl?: string
+  provider: 'local' | 'github' | 'google' | 'wechat'
 }
 
 // 登录请求
@@ -36,7 +35,7 @@ export interface RegisterRequest {
 
 // 认证响应
 export interface AuthResponse {
-  user: User
+  userId: number
   accessToken: string
   refreshToken: string
   expiresIn: number // 过期时间（秒）
@@ -95,6 +94,7 @@ export interface RefreshTokenRequest {
 
 // 刷新令牌响应
 export interface RefreshTokenResponse {
+  userId: number
   accessToken: string
   refreshToken: string
   expiresIn: number

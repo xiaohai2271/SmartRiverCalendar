@@ -4,8 +4,8 @@
       <!-- 用户头像 -->
       <div class="avatar-container">
         <img
-          v-if="user?.avatar"
-          :src="user.avatar"
+          v-if="user?.avatarUrl"
+          :src="user.avatarUrl"
           alt="用户头像"
           class="avatar"
         />
@@ -18,7 +18,7 @@
 
       <!-- 用户基本信息 -->
       <div class="user-info">
-        <h3 class="username">{{ user?.username || '未知用户' }}</h3>
+        <h3 class="username">{{ user?.displayName || '未知用户' }}</h3>
         <p class="email">{{ user?.email || '未设置邮箱' }}</p>
         <div class="provider-badge">
           <span class="provider-icon">
@@ -45,12 +45,12 @@
     <!-- 用户统计信息 -->
     <div class="profile-stats">
       <div class="stat-item">
-        <span class="stat-value">{{ formatDate(user?.createdAt) }}</span>
-        <span class="stat-label">注册时间</span>
+        <span class="stat-value">{{ user?.id.slice(0, 8) || '-' }}</span>
+        <span class="stat-label">用户 ID</span>
       </div>
       <div class="stat-item">
-        <span class="stat-value">{{ formatDate(user?.updatedAt) }}</span>
-        <span class="stat-label">最后更新</span>
+        <span class="stat-value">{{ providerText }}</span>
+        <span class="stat-label">登录方式</span>
       </div>
     </div>
   </div>
@@ -74,10 +74,7 @@ const props = withDefaults(defineProps<Props>(), {
  * 认证提供商
  */
 const provider = computed(() => {
-  if (!props.user?.id) return 'local'
-  // 根据用户 ID 前缀判断提供商
-  if (props.user.id.startsWith('github_')) return 'github'
-  return 'local'
+  return props.user?.provider || 'local'
 })
 
 /**
@@ -87,24 +84,15 @@ const providerText = computed(() => {
   switch (provider.value) {
     case 'github':
       return 'GitHub 账号'
+    case 'google':
+      return 'Google 账号'
+    case 'wechat':
+      return '微信账号'
     default:
       return '本地账号'
   }
 })
 
-// ==================== Methods ====================
-/**
- * 格式化日期
- */
-function formatDate(timestamp: number | undefined): string {
-  if (!timestamp) return '-'
-  const date = new Date(timestamp)
-  return date.toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  })
-}
 </script>
 
 <style scoped>

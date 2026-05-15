@@ -56,10 +56,9 @@ describe('auth Store', () => {
     it('从 authService 恢复认证状态', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local' as const
       }
       mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
@@ -104,17 +103,17 @@ describe('auth Store', () => {
     it('登录成功更新认证状态', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local' as const
       }
       mockLogin.mockResolvedValueOnce({
-        user: mockUser,
+        userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600
       })
+      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -145,17 +144,17 @@ describe('auth Store', () => {
     it('注册成功更新认证状态', async () => {
       const mockUser = {
         id: '1',
-        username: 'newuser',
         email: 'newuser@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '新用户',
+        provider: 'local' as const
       }
       mockRegister.mockResolvedValueOnce({
-        user: mockUser,
+        userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600
       })
+      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -177,17 +176,17 @@ describe('auth Store', () => {
     it('GitHub 登录成功更新认证状态', async () => {
       const mockUser = {
         id: '1',
-        username: 'githubuser',
         email: 'github@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: 'GitHub 用户',
+        provider: 'github' as const
       }
       mockGithubLogin.mockResolvedValueOnce({
-        user: mockUser,
+        userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600
       })
+      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -212,10 +211,9 @@ describe('auth Store', () => {
       // 手动设置已登录状态
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       store.isAuthenticated = true
       store.syncStatus = 'syncing'
@@ -239,10 +237,9 @@ describe('auth Store', () => {
       // 手动设置已登录状态
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       store.isAuthenticated = true
 
@@ -263,10 +260,9 @@ describe('auth Store', () => {
       // 手动设置已登录状态
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       store.isAuthenticated = true
 
@@ -286,10 +282,9 @@ describe('auth Store', () => {
       // 手动设置已登录状态
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       store.isAuthenticated = true
 
@@ -305,10 +300,9 @@ describe('auth Store', () => {
     it('检查成功更新认证状态', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local' as const
       }
       mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 

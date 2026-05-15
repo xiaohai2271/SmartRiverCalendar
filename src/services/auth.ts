@@ -22,7 +22,7 @@ export class AuthService {
 
   /**
    * 用户登录
-   * @param username 用户名
+   * @param username 用户名（邮箱）
    * @param password 密码
    * @returns 认证响应或 null
    */
@@ -34,8 +34,10 @@ export class AuthService {
 
     if (response?.data) {
       const authResponse = response.data
+      // 登录响应不再包含用户信息，需要调用 getProfile 获取
+      const user = await this.getCurrentUser()
       // 触发认证状态变化回调
-      this.triggerAuthChange(true, authResponse.user)
+      this.triggerAuthChange(true, user)
       return authResponse
     }
 
@@ -58,8 +60,10 @@ export class AuthService {
 
     if (response?.data) {
       const authResponse = response.data
+      // 注册响应不再包含用户信息，需要调用 getProfile 获取
+      const user = await this.getCurrentUser()
       // 触发认证状态变化回调
-      this.triggerAuthChange(true, authResponse.user)
+      this.triggerAuthChange(true, user)
       return authResponse
     }
 
@@ -91,8 +95,10 @@ export class AuthService {
 
     if (response?.data) {
       const authResponse = response.data
+      // OAuth 响应不再包含用户信息，需要调用 getProfile 获取
+      const user = await this.getCurrentUser()
       // 触发认证状态变化回调
-      this.triggerAuthChange(true, authResponse.user)
+      this.triggerAuthChange(true, user)
       return authResponse
     }
 
@@ -131,6 +137,15 @@ export class AuthService {
   async getCurrentUser(): Promise<User | null> {
     const response = await safeInvoke<ApiResponse<User>>('auth_get_profile')
     return response?.data ?? null
+  }
+
+  /**
+   * 获取 RSA 公钥
+   * @returns 公钥字符串或 null
+   */
+  async getPublicKey(): Promise<string | null> {
+    const response = await safeInvoke<ApiResponse<{ publicKey: string }>>('auth_get_public_key')
+    return response?.data?.publicKey ?? null
   }
 
   /**

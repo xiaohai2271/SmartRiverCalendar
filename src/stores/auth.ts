@@ -59,7 +59,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const response = await authService.login(credentials.username, credentials.password)
       if (response) {
-        user.value = response.user
+        // 登录响应不再包含用户信息，需调用 getCurrentUser 获取
+        const currentUser = await authService.getCurrentUser()
+        user.value = currentUser
         isAuthenticated.value = true
         return true
       }
@@ -79,7 +81,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const response = await authService.register(data.username, data.email, data.password)
       if (response) {
-        user.value = response.user
+        // 注册响应不再包含用户信息，需调用 getCurrentUser 获取
+        const currentUser = await authService.getCurrentUser()
+        user.value = currentUser
         isAuthenticated.value = true
         return true
       }
@@ -100,7 +104,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const response = await authService.githubLogin(clientId, redirectUri)
       if (response) {
-        user.value = response.user
+        // OAuth 响应不再包含用户信息，需调用 getCurrentUser 获取
+        const currentUser = await authService.getCurrentUser()
+        user.value = currentUser
         isAuthenticated.value = true
         return true
       }

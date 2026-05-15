@@ -246,10 +246,9 @@ impl HttpClient {
         let refresh_response: RefreshTokenResponse = self.handle_response(response).await?;
 
         // 更新 Token 存储
-        let current = current_token.ok_or(ApiError::AuthError("无当前 Token".to_string()))?;
         let new_token = TokenInfo {
             access_token: refresh_response.access_token,
-            refresh_token: current.refresh_token, // refresh_token 不变
+            refresh_token: refresh_response.refresh_token, // 使用服务端返回的新 refresh_token
             expires_at: chrono::Utc::now().timestamp_millis() + refresh_response.expires_in * 1000,
         };
 

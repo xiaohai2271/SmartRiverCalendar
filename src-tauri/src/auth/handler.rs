@@ -38,25 +38,25 @@ pub struct RegisterRequest {
 /// 认证响应（登录/注册/OAuth 成功后返回）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthResponse {
+    /// 用户 ID
+    pub user_id: i64,
     /// 访问令牌
     pub access_token: String,
     /// 刷新令牌
     pub refresh_token: String,
     /// 过期时间（秒）
     pub expires_in: i64,
-    /// 用户 ID
-    pub user_id: i64,
-    /// 用户邮箱
-    pub email: String,
-    /// 显示名称
-    pub display_name: String,
 }
 
 /// 刷新 Token 响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenResponse {
+    /// 用户 ID
+    pub user_id: i64,
     /// 新的访问令牌
     pub access_token: String,
+    /// 新的刷新令牌
+    pub refresh_token: String,
     /// 过期时间（秒）
     pub expires_in: i64,
 }
@@ -101,7 +101,22 @@ pub trait CalendarApi: Send + Sync {
     async fn refresh_token(&self, refresh_token: &str) -> Result<RefreshTokenResponse, ApiError>;
 
     /// 获取用户资料
-    async fn get_profile(&self, access_token: &str) -> Result<AuthResponse, ApiError>;
+    async fn get_profile(&self, access_token: &str) -> Result<UserProfile, ApiError>;
+}
+
+/// 用户资料（从 profile API 获取）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserProfile {
+    /// 用户 ID
+    pub id: i64,
+    /// 用户邮箱
+    pub email: String,
+    /// 显示名称
+    pub display_name: String,
+    /// 头像 URL
+    pub avatar_url: Option<String>,
+    /// 认证提供商
+    pub provider: String,
 }
 
 // ============================================================================
@@ -203,7 +218,7 @@ impl AuthHandler {
     /// 登录（邮箱+密码）
     ///
     /// 调用 API 登录接口，成功后保存 Token 到 keyring，
-    /// 保存用户信息到本地数据库，更新认证状态
+    /// 调用 getProfile 获取用户信息并保存到本地数据库，更新认证状态
     pub async fn login(&self, email: &str, password: &str) -> Result<AuthResponse, AuthError> {
         let response = self
             .api
@@ -223,15 +238,22 @@ impl AuthHandler {
         };
         self.token_store.save_tokens(&tokens)?;
 
+        // 调用 getProfile 获取用户信息
+        let profile = self
+            .api
+            .get_profile(&response.access_token)
+            .await
+            .map_err(AuthError::ApiError)?;
+
         // 保存用户信息到本地数据库
-        self.save_local_user(&response).await?;
+        self.save_local_user_from_profile(&profile).await?;
 
         // 更新认证状态
         let mut status = self.current_status.lock().await;
         *status = AuthStatus::Authenticated {
             user_id: response.user_id,
-            email: email.to_string(),
-            display_name: response.display_name.clone(),
+            email: profile.email.clone(),
+            display_name: profile.display_name.clone(),
         };
 
         log::info!("用户登录成功: user_id={}, email={}", response.user_id, email);
@@ -267,8 +289,15 @@ impl AuthHandler {
         };
         self.token_store.save_tokens(&tokens)?;
 
+        // 调用 getProfile 获取用户信息
+        let profile = self
+            .api
+            .get_profile(&response.access_token)
+            .await
+            .map_err(AuthError::ApiError)?;
+
         // 保存用户信息到本地数据库
-        self.save_local_user(&response).await?;
+        self.save_local_user_from_profile(&profile).await?;
 
         // 更新认证状态
         let mut status = self.current_status.lock().await;
@@ -320,15 +349,22 @@ impl AuthHandler {
         };
         self.token_store.save_tokens(&tokens)?;
 
+        // 调用 getProfile 获取用户信息
+        let profile = self
+            .api
+            .get_profile(&response.access_token)
+            .await
+            .map_err(AuthError::ApiError)?;
+
         // 保存用户信息到本地数据库
-        self.save_local_user(&response).await?;
+        self.save_local_user_from_profile(&profile).await?;
 
         // 更新认证状态
         let mut status = self.current_status.lock().await;
         *status = AuthStatus::Authenticated {
             user_id: response.user_id,
-            email: response.email.clone(),
-            display_name: response.display_name.clone(),
+            email: profile.email.clone(),
+            display_name: profile.display_name.clone(),
         };
 
         log::info!(
@@ -366,7 +402,6 @@ impl AuthHandler {
     /// 刷新 Token（401 时自动调用）
     ///
     /// 使用 refresh_token 获取新的 access_token
-    /// refresh_token 本身不变
     pub async fn refresh_token(&self) -> Result<TokenInfo, AuthError> {
         let status = self.current_status.lock().await;
         if let AuthStatus::Authenticated { user_id, .. } = &*status {
@@ -381,7 +416,7 @@ impl AuthHandler {
 
             let new_tokens = TokenInfo {
                 access_token: response.access_token,
-                refresh_token: tokens.refresh_token, // refresh_token 不变
+                refresh_token: response.refresh_token, // 使用服务端返回的新 refresh_token
                 expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
                 user_id: uid,
             };
@@ -496,10 +531,10 @@ impl AuthHandler {
     // 内部方法: 本地用户数据库操作
     // ========================================================================
 
-    /// 保存用户到 local_users 表
+    /// 保存用户到 local_users 表（基于 UserProfile）
     ///
     /// 如果用户已存在则更新，否则插入
-    async fn save_local_user(&self, auth_response: &AuthResponse) -> Result<(), AuthError> {
+    async fn save_local_user_from_profile(&self, profile: &UserProfile) -> Result<(), AuthError> {
         let now = chrono::Utc::now().timestamp();
         let db = self.db.clone();
 
@@ -515,9 +550,9 @@ impl AuthHandler {
                 "INSERT OR REPLACE INTO local_users (user_id, email, display_name, is_current, created_at, updated_at)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                 rusqlite::params![
-                    auth_response.user_id,
-                    auth_response.email,
-                    auth_response.display_name,
+                    profile.id,
+                    profile.email,
+                    profile.display_name,
                     1, // is_current = true
                     now,
                     now,
@@ -631,12 +666,10 @@ mod tests {
                 return Err(ApiError::Unauthorized("测试失败".to_string()));
             }
             Ok(AuthResponse {
+                user_id: 1,
                 access_token: "mock_access_token".to_string(),
                 refresh_token: "mock_refresh_token".to_string(),
                 expires_in: 3600,
-                user_id: 1,
-                email: "test@example.com".to_string(),
-                display_name: "测试用户".to_string(),
             })
         }
 
@@ -645,12 +678,10 @@ mod tests {
                 return Err(ApiError::Other("注册失败".to_string()));
             }
             Ok(AuthResponse {
+                user_id: 2,
                 access_token: "mock_access_token".to_string(),
                 refresh_token: "mock_refresh_token".to_string(),
                 expires_in: 3600,
-                user_id: 2,
-                email: "new@example.com".to_string(),
-                display_name: "新用户".to_string(),
             })
         }
 
@@ -660,12 +691,10 @@ mod tests {
             _state: &str,
         ) -> Result<AuthResponse, ApiError> {
             Ok(AuthResponse {
+                user_id: 3,
                 access_token: "mock_github_token".to_string(),
                 refresh_token: "mock_github_refresh".to_string(),
                 expires_in: 3600,
-                user_id: 3,
-                email: "github@example.com".to_string(),
-                display_name: "GitHub 用户".to_string(),
             })
         }
 
@@ -674,7 +703,9 @@ mod tests {
             _refresh_token: &str,
         ) -> Result<RefreshTokenResponse, ApiError> {
             Ok(RefreshTokenResponse {
+                user_id: 1,
                 access_token: "new_access_token".to_string(),
+                refresh_token: "new_refresh_token".to_string(),
                 expires_in: 3600,
             })
         }
@@ -682,14 +713,13 @@ mod tests {
         async fn get_profile(
             &self,
             _access_token: &str,
-        ) -> Result<AuthResponse, ApiError> {
-            Ok(AuthResponse {
-                access_token: "mock_access_token".to_string(),
-                refresh_token: "mock_refresh_token".to_string(),
-                expires_in: 3600,
-                user_id: 1,
+        ) -> Result<UserProfile, ApiError> {
+            Ok(UserProfile {
+                id: 1,
                 email: "test@example.com".to_string(),
                 display_name: "测试用户".to_string(),
+                avatar_url: None,
+                provider: "local".to_string(),
             })
         }
     }
@@ -777,12 +807,10 @@ mod tests {
     #[test]
     fn test_auth_response_serialization() {
         let response = AuthResponse {
+            user_id: 1,
             access_token: "at_123".to_string(),
             refresh_token: "rt_456".to_string(),
             expires_in: 3600,
-            user_id: 1,
-            email: "test@example.com".to_string(),
-            display_name: "测试".to_string(),
         };
         let json = serde_json::to_string(&response).unwrap();
         let deserialized: AuthResponse = serde_json::from_str(&json).unwrap();
@@ -797,7 +825,9 @@ mod tests {
     #[test]
     fn test_refresh_token_response_serialization() {
         let response = RefreshTokenResponse {
+            user_id: 1,
             access_token: "new_at".to_string(),
+            refresh_token: "new_rt".to_string(),
             expires_in: 7200,
         };
         let json = serde_json::to_string(&response).unwrap();
@@ -886,7 +916,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(result.user_id, 1);
-        assert_eq!(result.email, "test@example.com");
+        assert_eq!(result.access_token, "mock_access_token");
     }
 
     /// 测试 MockApi 登录失败

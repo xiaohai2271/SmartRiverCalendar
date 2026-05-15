@@ -394,6 +394,7 @@ pub fn run() {
             commands::auth_logout,
             commands::auth_get_profile,
             commands::auth_refresh_token,
+            commands::auth_get_public_key,
             // 云同步命令
             commands::cloud_sync_trigger,
             commands::cloud_sync_get_status,

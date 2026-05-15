@@ -87,12 +87,10 @@ impl CalendarApi for MockApiClient {
         *current = Some(token);
 
         Ok(AuthResponse {
+            user_id,
             access_token: "mock_access_token_12345".to_string(),
             refresh_token: "mock_refresh_token_67890".to_string(),
             expires_in: 3600,
-            user_id,
-            email: request.email,
-            display_name: "Mock 用户".to_string(),
         })
     }
 
@@ -106,12 +104,10 @@ impl CalendarApi for MockApiClient {
         *current = Some(token);
 
         Ok(AuthResponse {
+            user_id,
             access_token: "mock_access_token_register".to_string(),
             refresh_token: "mock_refresh_token_register".to_string(),
             expires_in: 3600,
-            user_id,
-            email: request.email,
-            display_name: request.display_name,
         })
     }
 
@@ -125,19 +121,19 @@ impl CalendarApi for MockApiClient {
         *current = Some(token);
 
         Ok(AuthResponse {
+            user_id,
             access_token: "mock_github_token".to_string(),
             refresh_token: "mock_github_refresh".to_string(),
             expires_in: 3600,
-            user_id,
-            email: "github@example.com".to_string(),
-            display_name: "GitHub 用户".to_string(),
         })
     }
 
     /// 刷新 Token
     async fn refresh_token(&self, _refresh_token: &str) -> ApiResult<RefreshTokenResponse> {
         Ok(RefreshTokenResponse {
+            user_id: 1,
             access_token: "mock_new_access_token".to_string(),
+            refresh_token: "mock_new_refresh_token".to_string(),
             expires_in: 3600,
         })
     }
@@ -147,11 +143,11 @@ impl CalendarApi for MockApiClient {
         let current = self.current_token.lock().await;
         match &*current {
             Some(token) => Ok(UserProfile {
-                user_id: token.user_id,
+                id: token.user_id,
                 email: token.email.clone(),
                 display_name: token.display_name.clone(),
-                created_at: chrono::Utc::now().timestamp_millis(),
-                updated_at: chrono::Utc::now().timestamp_millis(),
+                avatar_url: None,
+                provider: "local".to_string(),
             }),
             None => Err(ApiError::AuthError("未登录".to_string())),
         }
@@ -467,8 +463,8 @@ mod tests {
         };
 
         let response = client.login(request).await.unwrap();
-        assert_eq!(response.email, "test@example.com");
         assert!(response.access_token.starts_with("mock_"));
+        assert_eq!(response.user_id > 0, true);
     }
 
     /// 测试 MockApiClient 注册
@@ -482,8 +478,8 @@ mod tests {
         };
 
         let response = client.register(request).await.unwrap();
-        assert_eq!(response.email, "new@example.com");
-        assert_eq!(response.display_name, "新用户");
+        assert!(response.access_token.starts_with("mock_"));
+        assert_eq!(response.user_id > 0, true);
     }
 
     /// 测试 MockApiClient GitHub OAuth
@@ -491,8 +487,8 @@ mod tests {
     async fn test_mock_api_github_oauth() {
         let client = MockApiClient::new();
         let response = client.github_oauth("code123", "state456").await.unwrap();
-        assert_eq!(response.email, "github@example.com");
-        assert_eq!(response.display_name, "GitHub 用户");
+        assert!(response.access_token.starts_with("mock_"));
+        assert_eq!(response.user_id > 0, true);
     }
 
     /// 测试 MockApiClient 刷新 Token
@@ -502,6 +498,7 @@ mod tests {
         let response = client.refresh_token("old_refresh_token").await.unwrap();
         assert!(response.access_token.starts_with("mock_"));
         assert_eq!(response.expires_in, 3600);
+        assert_eq!(response.user_id, 1);
     }
 
     /// 测试 MockApiClient 获取用户资料

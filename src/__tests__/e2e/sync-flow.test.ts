@@ -66,17 +66,17 @@ describe('同步流程 E2E 测试', () => {
     it('登录成功后更新 store 状态', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       mockLogin.mockResolvedValueOnce({
-        user: mockUser,
+        userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600
       })
+      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -110,10 +110,9 @@ describe('同步流程 E2E 测试', () => {
       // 模拟已登录状态
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
       store.isAuthenticated = true
       store.syncStatus = 'success'
@@ -233,10 +232,9 @@ describe('同步流程 E2E 测试', () => {
       store.isAuthenticated = true
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
 
       const { cloudSyncService } = await import('@/services/cloudSync')
@@ -256,10 +254,9 @@ describe('同步流程 E2E 测试', () => {
       store.isAuthenticated = true
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
 
       const { cloudSyncService } = await import('@/services/cloudSync')
@@ -279,10 +276,9 @@ describe('同步流程 E2E 测试', () => {
       store.isAuthenticated = true
       store.user = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
 
       const { cloudSyncService } = await import('@/services/cloudSync')
@@ -328,19 +324,19 @@ describe('同步流程 E2E 测试', () => {
     it('登录 → 触发同步 → 登出 完整链路', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
 
       // 步骤 1: 登录
       mockLogin.mockResolvedValueOnce({
-        user: mockUser,
+        userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600
       })
+      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -369,19 +365,19 @@ describe('同步流程 E2E 测试', () => {
     it('登录 → 同步失败 → 重试 → 成功 流程', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
 
       // 登录
       mockLogin.mockResolvedValueOnce({
-        user: mockUser,
+        userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600
       })
+      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -404,19 +400,19 @@ describe('同步流程 E2E 测试', () => {
     it('Token 过期触发登出', async () => {
       const mockUser = {
         id: '1',
-        username: 'testuser',
         email: 'test@example.com',
-        createdAt: 1234567890,
-        updatedAt: 1234567890
+        displayName: '测试用户',
+        provider: 'local'
       }
 
       // 登录
       mockLogin.mockResolvedValueOnce({
-        user: mockUser,
+        userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600
       })
+      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()

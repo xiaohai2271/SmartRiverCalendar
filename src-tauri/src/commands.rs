@@ -1249,6 +1249,13 @@ pub async fn auth_refresh_token() -> Result<bool, String> {
     Ok(false)
 }
 
+/// 获取 RSA 公钥
+#[tauri::command]
+pub async fn auth_get_public_key() -> Result<serde_json::Value, String> {
+    info!("[auth_get_public_key] 获取 RSA 公钥");
+    Err("认证模块尚未连接".to_string())
+}
+
 // ============================================================
 // 云同步命令
 // ============================================================
