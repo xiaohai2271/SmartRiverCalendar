@@ -1,5 +1,6 @@
-import { safeInvoke } from '../utils/tauri'
+import { safeInvoke, isTauri } from '../utils/tauri'
 import { encryptPassword, clearCachedPublicKey } from './rsa'
+import { webApi } from './webApi'
 import type {
   User,
   AuthResponse,
@@ -7,7 +8,8 @@ import type {
   ApiResponse
 } from '../types/auth'
 
-// 注意: Token 仅在 Rust 层通过 keyring 安全存储，前端不存储 Token
+// 注意: Tauri 模式下 Token 仅在 Rust 层通过 keyring 安全存储
+// Web 模式下 Token 存储在 localStorage（由 webApi 管理）
 
 // 认证状态变化回调类型
 type AuthChangeCallback = (isAuthenticated: boolean, user: User | null) => void
@@ -35,21 +37,37 @@ export class AuthService {
       return null
     }
 
-    const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_login', {
-      email: username,
-      password: encryptedPassword
-    })
+    if (isTauri()) {
+      // Tauri 模式：通过 IPC 调用 Rust 命令
+      const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_login', {
+        email: username,
+        password: encryptedPassword
+      })
 
-    if (response?.data) {
-      const authResponse = response.data
-      // 登录响应不再包含用户信息，需要调用 getProfile 获取
-      const user = await this.getCurrentUser()
-      // 触发认证状态变化回调
-      this.triggerAuthChange(true, user)
-      return authResponse
+      if (response?.data) {
+        const authResponse = response.data
+        const user = await this.getCurrentUser()
+        this.triggerAuthChange(true, user)
+        return authResponse
+      }
+
+      return null
+    } else {
+      // Web 模式：直接调用 API
+      const data = await webApi.login(username, encryptedPassword)
+      if (data.code === 0 && data.data) {
+        const authResponse: AuthResponse = {
+          userId: data.data.user_id,
+          accessToken: data.data.access_token,
+          refreshToken: data.data.refresh_token,
+          expiresIn: data.data.expires_in
+        }
+        const user = await this.getCurrentUser()
+        this.triggerAuthChange(true, user)
+        return authResponse
+      }
+      return null
     }
-
-    return null
   }
 
   /**
@@ -67,30 +85,51 @@ export class AuthService {
       return null
     }
 
-    const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_register', {
-      email,
-      password: encryptedPassword,
-      display_name: username
-    })
+    if (isTauri()) {
+      // Tauri 模式：通过 IPC 调用 Rust 命令
+      const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_register', {
+        email,
+        password: encryptedPassword,
+        display_name: username
+      })
 
-    if (response?.data) {
-      const authResponse = response.data
-      // 注册响应不再包含用户信息，需要调用 getProfile 获取
-      const user = await this.getCurrentUser()
-      // 触发认证状态变化回调
-      this.triggerAuthChange(true, user)
-      return authResponse
+      if (response?.data) {
+        const authResponse = response.data
+        const user = await this.getCurrentUser()
+        this.triggerAuthChange(true, user)
+        return authResponse
+      }
+
+      return null
+    } else {
+      // Web 模式：直接调用 API
+      const data = await webApi.register(email, encryptedPassword, username)
+      if (data.code === 0 && data.data) {
+        const authResponse: AuthResponse = {
+          userId: data.data.user_id,
+          accessToken: data.data.access_token,
+          refreshToken: data.data.refresh_token,
+          expiresIn: data.data.expires_in
+        }
+        const user = await this.getCurrentUser()
+        this.triggerAuthChange(true, user)
+        return authResponse
+      }
+      return null
     }
-
-    return null
   }
 
   /**
    * 用户登出
    */
   async logout(): Promise<void> {
-    // 调用后端登出接口
-    await safeInvoke('auth_logout')
+    if (isTauri()) {
+      // Tauri 模式：通过 IPC 调用 Rust 命令
+      await safeInvoke('auth_logout')
+    } else {
+      // Web 模式：直接调用 API
+      await webApi.logout()
+    }
 
     // 清除缓存的 RSA 公钥
     clearCachedPublicKey()
@@ -106,6 +145,12 @@ export class AuthService {
    * @returns 认证响应或 null
    */
   async githubLogin(clientId: string, redirectUri: string): Promise<AuthResponse | null> {
+    // OAuth 登录目前仅支持 Tauri 模式（需要本地 HTTP 服务器接收回调）
+    if (!isTauri()) {
+      console.warn('[AuthService] GitHub OAuth 登录暂不支持 Web 模式')
+      return null
+    }
+
     const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_oauth_github', {
       clientId,
       redirectUri
@@ -113,9 +158,7 @@ export class AuthService {
 
     if (response?.data) {
       const authResponse = response.data
-      // OAuth 响应不再包含用户信息，需要调用 getProfile 获取
       const user = await this.getCurrentUser()
-      // 触发认证状态变化回调
       this.triggerAuthChange(true, user)
       return authResponse
     }
@@ -128,15 +171,33 @@ export class AuthService {
    * @returns 是否刷新成功
    */
   async refreshToken(): Promise<boolean> {
-    const response = await safeInvoke<ApiResponse<RefreshTokenResponse>>('auth_refresh_token')
+    if (isTauri()) {
+      // Tauri 模式：通过 IPC 调用 Rust 命令
+      const response = await safeInvoke<ApiResponse<RefreshTokenResponse>>('auth_refresh_token')
 
-    if (response?.data) {
-      return true
+      if (response?.data) {
+        return true
+      }
+
+      // 刷新失败，触发登出
+      this.triggerAuthChange(false, null)
+      return false
+    } else {
+      // Web 模式：直接调用 API
+      try {
+        const data = await webApi.refreshToken()
+        if (data.code === 0 && data.data) {
+          localStorage.setItem('access_token', data.data.access_token)
+          return true
+        }
+        // 刷新失败，触发登出
+        this.triggerAuthChange(false, null)
+        return false
+      } catch {
+        this.triggerAuthChange(false, null)
+        return false
+      }
     }
-
-    // 刷新失败，触发登出
-    this.triggerAuthChange(false, null)
-    return false
   }
 
   /**
@@ -144,8 +205,25 @@ export class AuthService {
    * @returns 用户信息或 null
    */
   async checkAuthStatus(): Promise<User | null> {
-    const response = await safeInvoke<ApiResponse<User>>('auth_check_status')
-    return response?.data ?? null
+    if (isTauri()) {
+      const response = await safeInvoke<ApiResponse<User>>('auth_check_status')
+      return response?.data ?? null
+    } else {
+      try {
+        const data = await webApi.checkStatus()
+        if (data.code === 0 && data.data) {
+          return {
+            id: String(data.data.id),
+            email: data.data.email,
+            displayName: data.data.display_name,
+            provider: 'local'
+          }
+        }
+        return null
+      } catch {
+        return null
+      }
+    }
   }
 
   /**
@@ -153,8 +231,26 @@ export class AuthService {
    * @returns 用户信息或 null
    */
   async getCurrentUser(): Promise<User | null> {
-    const response = await safeInvoke<ApiResponse<User>>('auth_get_profile')
-    return response?.data ?? null
+    if (isTauri()) {
+      const response = await safeInvoke<ApiResponse<User>>('auth_get_profile')
+      return response?.data ?? null
+    } else {
+      try {
+        const data = await webApi.getProfile()
+        if (data.code === 0 && data.data) {
+          return {
+            id: String(data.data.id),
+            email: data.data.email,
+            displayName: data.data.display_name,
+            avatarUrl: data.data.avatar_url ?? undefined,
+            provider: (data.data.provider as User['provider']) || 'local'
+          }
+        }
+        return null
+      } catch {
+        return null
+      }
+    }
   }
 
   /**
@@ -162,22 +258,35 @@ export class AuthService {
    * @returns 公钥字符串或 null
    */
   async getPublicKey(): Promise<string | null> {
-    const response = await safeInvoke<ApiResponse<{ publicKey: string }>>('auth_get_public_key')
-    return response?.data?.publicKey ?? null
+    if (isTauri()) {
+      const response = await safeInvoke<ApiResponse<{ publicKey: string }>>('auth_get_public_key')
+      return response?.data?.publicKey ?? null
+    } else {
+      try {
+        const data = await webApi.getPublicKey()
+        return data?.data?.public_key ?? null
+      } catch {
+        return null
+      }
+    }
   }
 
   /**
    * 获取访问令牌
    * @returns 访问令牌或 null
-   * @deprecated Token 仅在 Rust 层存储，前端不应访问
+   * @deprecated Tauri 模式下 Token 仅在 Rust 层存储；Web 模式下由 webApi 管理
    */
   getAccessToken(): string | null {
-    console.warn('[AuthService] getAccessToken 已废弃：Token 仅在 Rust 层通过 keyring 安全存储')
-    return null
+    if (isTauri()) {
+      console.warn('[AuthService] getAccessToken 已废弃：Token 仅在 Rust 层通过 keyring 安全存储')
+      return null
+    }
+    return webApi.getAccessToken()
   }
 
-  // 移除以下方法：getRefreshToken、saveTokens、clearTokens
-  // Token 现在由 Rust 层通过 keyring 安全存储，前端不再需要管理
+  // 移除以下方法：saveTokens、clearTokens
+  // Tauri 模式下 Token 由 Rust 层通过 keyring 安全存储
+  // Web 模式下 Token 由 webApi 管理
 
   /**
    * 注册认证状态变化回调

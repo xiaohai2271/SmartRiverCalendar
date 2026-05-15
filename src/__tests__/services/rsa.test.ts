@@ -1,10 +1,28 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock safeInvoke
+// Mock safeInvoke 和 isTauri
 const mockSafeInvoke = vi.fn()
 
 vi.mock('@/utils/tauri', () => ({
-  safeInvoke: mockSafeInvoke
+  safeInvoke: mockSafeInvoke,
+  isTauri: vi.fn(() => true) // 默认模拟 Tauri 环境
+}))
+
+// Mock webApi
+vi.mock('@/services/webApi', () => ({
+  webApi: {
+    getPublicKey: vi.fn(),
+    login: vi.fn(),
+    register: vi.fn(),
+    logout: vi.fn(),
+    getProfile: vi.fn(),
+    refreshToken: vi.fn(),
+    checkStatus: vi.fn(),
+    storeTokens: vi.fn(),
+    clearTokens: vi.fn(),
+    getAccessToken: vi.fn(() => null),
+    getRefreshToken: vi.fn(() => null)
+  }
 }))
 
 describe('RSA 加密服务', () => {
