@@ -42,6 +42,11 @@ impl RealApiClient {
         self.http_client.set_token(token).await;
     }
 
+    /// 获取当前认证 Token
+    pub async fn get_auth_token(&self) -> Option<crate::api::http_client::TokenInfo> {
+        self.http_client.get_token().await
+    }
+
     /// 清除认证 Token
     pub async fn clear_auth_token(&self) {
         self.http_client.clear_token().await;

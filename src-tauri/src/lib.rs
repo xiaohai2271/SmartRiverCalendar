@@ -414,6 +414,8 @@ pub fn run() {
             // 云同步命令
             commands::cloud_sync_trigger,
             commands::cloud_sync_get_status,
+            // 日历同步命令
+            commands::sync_calendars_from_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

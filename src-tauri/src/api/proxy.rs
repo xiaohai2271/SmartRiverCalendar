@@ -57,6 +57,18 @@ impl ProxyApiClient {
         }
     }
 
+    /// 获取内部客户端的认证 Token
+    ///
+    /// 用于 auth_check_status 成功后，读取可能已刷新的 Token 回写到 keyring
+    pub async fn get_inner_token(&self) -> Option<crate::api::http_client::TokenInfo> {
+        let inner = self.inner.read().unwrap().clone();
+        if let Some(real_client) = inner.as_ref().as_any().downcast_ref::<RealApiClient>() {
+            real_client.get_auth_token().await
+        } else {
+            None
+        }
+    }
+
     /// 清除内部客户端的认证 Token
     pub async fn clear_inner_token(&self) {
         let inner = self.inner.read().unwrap().clone();

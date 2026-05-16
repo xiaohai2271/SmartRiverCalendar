@@ -166,6 +166,57 @@ impl<'a> CalendarRepository<'a> {
         })
     }
 
+    /// 使用指定 ID 插入日历（用于服务端同步，跳过 AUTOINCREMENT）
+    ///
+    /// 使用 INSERT OR IGNORE 策略，如果 ID 已存在则忽略插入。
+    /// 这样可以保留本地日历数据，同时同步服务端日历。
+    ///
+    /// # 参数
+    /// - `id`: 服务端日历 ID
+    /// - `req`: 创建日历请求
+    ///
+    /// # 返回
+    /// 成功返回日历实体（可能是新插入的或已存在的）
+    pub fn insert_with_id(&self, id: i64, req: &CreateCalendarRequest) -> DatabaseResult<Calendar> {
+        let now = chrono::Utc::now().timestamp_millis();
+        let timezone = req
+            .timezone
+            .clone()
+            .unwrap_or_else(|| "Asia/Shanghai".to_string());
+
+        self.db.execute_in_transaction(|tx| {
+            tx.execute(
+                r#"
+                INSERT OR IGNORE INTO calendars (id, name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                "#,
+                params![
+                    id,
+                    req.name,
+                    req.color,
+                    req.type_,
+                    req.account_id,
+                    req.visible as i64,
+                    req.sync_enabled as i64,
+                    req.user_id,
+                    timezone,
+                    now,
+                    now,
+                ],
+            )?;
+
+            // 如果 INSERT OR IGNORE 忽略了插入，需要查询现有记录
+            // 如果成功插入，返回新记录
+            let calendar = tx.query_row(
+                &format!("SELECT {CALENDAR_COLUMNS} FROM calendars WHERE id = ?1"),
+                params![id],
+                |row| Calendar::from_row(row),
+            )?;
+
+            Ok(calendar)
+        })
+    }
+
     /// 获取所有日历（未软删除的）
     ///
     /// 按创建时间降序排列
@@ -852,5 +903,67 @@ mod tests {
         let calendar = repo.create(&req).expect("创建日历失败");
         assert_eq!(calendar.user_id, Some(42));
         assert_eq!(calendar.timezone, "America/New_York");
+    }
+
+    #[test]
+    fn test_insert_with_id() {
+        let db = setup_test_db();
+        let repo = CalendarRepository::new(&db);
+
+        let req = CreateCalendarRequest {
+            name: "服务端日历".to_string(),
+            color: "#FF5733".to_string(),
+            type_: "online".to_string(),
+            account_id: None, // 不引用外部账户，避免外键约束
+            visible: true,
+            sync_enabled: true,
+            user_id: Some(1),
+            timezone: None,
+        };
+
+        // 使用服务端 ID 插入
+        let calendar = repo.insert_with_id(100, &req).expect("插入日历失败");
+        assert_eq!(calendar.id, 100);
+        assert_eq!(calendar.name, "服务端日历");
+        assert_eq!(calendar.type_, "online");
+        assert_eq!(calendar.account_id, None);
+        assert_eq!(calendar.user_id, Some(1));
+    }
+
+    #[test]
+    fn test_insert_with_id_ignore_existing() {
+        let db = setup_test_db();
+        let repo = CalendarRepository::new(&db);
+
+        // 先插入一个日历
+        let req1 = CreateCalendarRequest {
+            name: "本地日历".to_string(),
+            color: "#000000".to_string(),
+            type_: "local".to_string(),
+            account_id: None,
+            visible: true,
+            sync_enabled: false,
+            user_id: None,
+            timezone: None,
+        };
+        repo.insert_with_id(100, &req1).expect("插入日历失败");
+
+        // 尝试插入相同 ID 的日历（应该被忽略）
+        let req2 = CreateCalendarRequest {
+            name: "服务端日历".to_string(),
+            color: "#FF5733".to_string(),
+            type_: "online".to_string(),
+            account_id: Some(2),
+            visible: true,
+            sync_enabled: true,
+            user_id: Some(1),
+            timezone: None,
+        };
+        repo.insert_with_id(100, &req2).expect("插入日历失败");
+
+        // 验证日历名称仍然是"本地日历"
+        let calendar = repo.get_by_id(100).expect("获取日历失败");
+        assert_eq!(calendar.name, "本地日历");
+        assert_eq!(calendar.type_, "local");
     }
 }

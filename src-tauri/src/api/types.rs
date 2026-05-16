@@ -420,12 +420,25 @@ pub struct CalendarDTO {
     pub name: String,
     /// 日历颜色
     pub color: String,
+    /// 日历类型：online / exchange / caldav
+    #[serde(default = "default_calendar_type")]
+    pub r#type: String,
+    /// 关联外部账户 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64", default)]
+    pub account_id: Option<i64>,
+    /// 是否在 UI 中显示
+    #[serde(default = "default_visible")]
+    pub visible: bool,
+    /// 是否启用同步
+    #[serde(default)]
+    pub sync_enabled: bool,
     /// 日历描述
     pub description: Option<String>,
     /// 用户 ID
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub user_id: i64,
     /// 是否默认日历
+    #[serde(default)]
     pub is_default: bool,
     /// 创建时间 (Unix 时间戳，毫秒)
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
@@ -433,6 +446,14 @@ pub struct CalendarDTO {
     /// 更新时间 (Unix 时间戳，毫秒)
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
+}
+
+fn default_calendar_type() -> String {
+    "online".to_string()
+}
+
+fn default_visible() -> bool {
+    true
 }
 
 // ================================================================
@@ -740,6 +761,10 @@ mod tests {
             id: 1,
             name: "工作日历".to_string(),
             color: "#FF5733".to_string(),
+            r#type: "online".to_string(),
+            account_id: None,
+            visible: true,
+            sync_enabled: false,
             description: Some("工作相关事件".to_string()),
             user_id: 1,
             is_default: true,
