@@ -62,6 +62,22 @@ export const cloudSyncService = {
       if (result?.success) {
         authStore.syncStatus = 'success'
         authStore.lastSyncAt = Date.now()
+
+        // 同步成功后，重新从数据库加载数据到各 Store
+        try {
+          const { useCalendarStore } = await import('../stores/calendar')
+          const { useTodoStore } = await import('../stores/todo')
+          const calendarStore = useCalendarStore()
+          const todoStore = useTodoStore()
+          await Promise.all([
+            calendarStore.reloadFromDatabase(),
+            todoStore.reloadFromDatabase(),
+          ])
+          console.log('[cloudSync] 同步后数据已刷新')
+        } catch (reloadError) {
+          console.error('[cloudSync] 同步后数据刷新失败:', reloadError)
+        }
+
         return true
       }
       authStore.syncStatus = 'error'

@@ -87,6 +87,9 @@ export interface ISyncRepository {
   /** 触发云同步 */
   triggerCloudSync(): Promise<boolean>
 
+  /** 从服务端获取日历列表并同步到本地数据库 */
+  syncCalendarsFromServer(): Promise<boolean>
+
   /** 获取同步状态 */
   getSyncStatus(): Promise<{ status: string; lastSyncAt: number | null; pendingChanges: number }>
 

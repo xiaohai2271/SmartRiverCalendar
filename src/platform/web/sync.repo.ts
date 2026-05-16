@@ -174,6 +174,13 @@ export class WebSyncRepository implements ISyncRepository {
     return response?.code === 0
   }
 
+  async syncCalendarsFromServer(): Promise<boolean> {
+    // Web 端不需要特殊处理，calendarRepo.getAll() 已经直接调用 API
+    // 返回 true 表示同步完成
+    console.info('[WebSyncRepository] Web 端无需同步日历，直接使用在线日历')
+    return true
+  }
+
   async getSyncStatus(): Promise<{ status: string; lastSyncAt: number | null; pendingChanges: number }> {
     try {
       // API 返回 SyncStatusDTO[]，取第一条

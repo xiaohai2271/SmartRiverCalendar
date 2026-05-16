@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import type { User, CloudSyncStatus, AuthState, LoginRequest, RegisterRequest } from '../types/auth'
 import { usePlatform } from '@/platform/provider'
 import { encryptPassword, clearCachedPublicKey } from '../services/rsa'
+import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 /**
  * 认证 Store
@@ -27,6 +28,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 初始化认证状态
+   *
+   * 区分三种情况：
+   * 1. 认证有效 → isAuthenticated = true
+   * 2. 未认证（无 token / token 无效）→ isAuthenticated = false，显示登录页
+   * 3. 系统错误（keyring 故障 / 网络问题）→ 不清除认证状态，避免误判为未登录
    */
   async function initialize(): Promise<void> {
     if (isInitialized.value) {
@@ -43,10 +49,20 @@ export const useAuthStore = defineStore('auth', () => {
           isAuthenticated.value = true
         }
       }
+      // isAuth === false: 合法的"未认证"，不做额外处理
     } catch (error) {
-      console.error('初始化认证状态失败:', error)
-      user.value = null
-      isAuthenticated.value = false
+      // RepositoryError：系统错误，不清除认证状态
+      // 避免 keyring 故障或网络问题导致已登录用户被踢到登录页
+      if (error instanceof RepositoryError) {
+        console.error('[AuthStore] 认证状态检查系统错误:', error.code, error.message)
+        // 系统错误时保持当前状态，不做任何变更
+        // 如果之前有缓存的认证信息，用户仍可继续使用
+      } else {
+        // 未知错误，保守处理：清除认证状态
+        console.error('初始化认证状态失败:', error)
+        user.value = null
+        isAuthenticated.value = false
+      }
     } finally {
       isInitialized.value = true
     }
@@ -71,6 +87,10 @@ export const useAuthStore = defineStore('auth', () => {
         if (currentUser) {
           user.value = currentUser
           isAuthenticated.value = true
+
+          // 登录成功后同步服务端日历到本地
+          await syncCalendarsFromServer()
+
           return true
         } else {
           console.error('[AuthStore] 登录成功但获取用户信息失败，回滚认证状态')
@@ -104,6 +124,10 @@ export const useAuthStore = defineStore('auth', () => {
         if (currentUser) {
           user.value = currentUser
           isAuthenticated.value = true
+
+          // 注册成功后同步服务端日历到本地
+          await syncCalendarsFromServer()
+
           return true
         } else {
           console.error('[AuthStore] 注册成功但获取用户信息失败，回滚认证状态')
@@ -217,6 +241,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 开始云同步
+   * 同步完成后重新加载各 Store 的数据，确保前端显示最新
    */
   async function startSync(): Promise<void> {
     if (!isAuthenticated.value) {
@@ -230,6 +255,23 @@ export const useAuthStore = defineStore('auth', () => {
       await syncRepo.triggerCloudSync()
       syncStatus.value = 'success'
       lastSyncAt.value = Date.now()
+
+      // 同步成功后，重新从数据库加载数据到各 Store
+      // Rust 后端已将远端变更写入 SQLite，前端需要刷新响应式状态
+      try {
+        const { useCalendarStore } = await import('./calendar')
+        const { useTodoStore } = await import('./todo')
+        const calendarStore = useCalendarStore()
+        const todoStore = useTodoStore()
+        await Promise.all([
+          calendarStore.reloadFromDatabase(),
+          todoStore.reloadFromDatabase(),
+        ])
+        console.log('[AuthStore] 同步后数据已刷新')
+      } catch (reloadError) {
+        // 数据刷新失败不影响同步状态
+        console.error('[AuthStore] 同步后数据刷新失败:', reloadError)
+      }
     } catch (error) {
       console.error('同步失败:', error)
       syncStatus.value = 'error'
@@ -241,6 +283,32 @@ export const useAuthStore = defineStore('auth', () => {
    */
   function stopSync(): void {
     syncStatus.value = 'idle'
+  }
+
+  /**
+   * 从服务端同步日历到本地
+   * 登录/注册成功后调用，确保本地日历数据与服务端一致
+   */
+  async function syncCalendarsFromServer(): Promise<void> {
+    try {
+      const { syncRepo } = usePlatform()
+      const success = await syncRepo.syncCalendarsFromServer()
+
+      if (success) {
+        // 重新加载日历数据
+        const { useCalendarStore } = await import('./calendar')
+        const calendarStore = useCalendarStore()
+        await calendarStore.reloadFromDatabase()
+
+        console.log('[AuthStore] 日历同步完成')
+      } else {
+        console.warn('[AuthStore] 日历同步返回失败')
+      }
+    } catch (error) {
+      console.error('[AuthStore] 日历同步失败:', error)
+      // 显示错误提示给用户，但不阻塞登录流程
+      // 用户可以手动触发重试
+    }
   }
 
   return {
@@ -261,6 +329,7 @@ export const useAuthStore = defineStore('auth', () => {
     refreshToken,
     checkAuthStatus,
     startSync,
-    stopSync
+    stopSync,
+    syncCalendarsFromServer
   }
 })

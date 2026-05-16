@@ -203,6 +203,16 @@ export class TauriSyncRepository implements ISyncRepository {
     return result?.success ?? false
   }
 
+  async syncCalendarsFromServer(): Promise<boolean> {
+    try {
+      const result = await safeInvoke<{ success: boolean }>('sync_calendars_from_server')
+      return result?.success ?? false
+    } catch (error) {
+      console.error('[TauriSyncRepository] 从服务端同步日历失败:', error)
+      throw error
+    }
+  }
+
   async getSyncStatus(): Promise<{ status: string; lastSyncAt: number | null; pendingChanges: number }> {
     const result = await safeInvoke<{
       status: string

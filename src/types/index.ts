@@ -30,7 +30,7 @@ export interface Calendar {
   id: string
   name: string
   color: string
-  type: 'local' | 'exchange' | 'caldav'
+  type: 'local' | 'online' | 'exchange' | 'caldav'
   accountId?: string
   // 外部日历的账号信息
   accountType?: string

@@ -81,8 +81,36 @@ export class TauriAuthRepository implements IAuthRepository {
   }
 
   async checkAuthStatus(): Promise<boolean> {
-    const result = await safeInvoke<boolean>('auth_check_status')
-    return result === true
+    // 认证状态检查必须区分"未认证"和"系统错误"
+    // 使用 invoke() 直接调用，让 Rust 端的 Err 能正确传播为异常
+    // safeInvoke 会吞掉所有错误返回 null，导致系统故障也被误判为"未认证"
+    try {
+      const { invoke } = await import('@tauri-apps/api/core')
+      const result = await invoke<boolean>('auth_check_status')
+      return result === true
+    } catch (error) {
+      // Rust 端返回 Err 时，invoke() 会抛出异常
+      // 解析错误前缀区分错误类型
+      const message = error instanceof Error ? error.message : String(error)
+
+      if (message.startsWith('TOKEN_LOAD_ERROR:')) {
+        // Token 存储系统故障（数据库/解密），不是"未认证"，需要抛出让前端做差异化处理
+        throw new RepositoryError({
+          code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
+          message: `凭据存储访问失败: ${message.replace('TOKEN_LOAD_ERROR:', '')}`,
+          platform: this.platform,
+          cause: error,
+        })
+      }
+
+      // 其他错误（网络、服务器等），同样需要区分
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: `认证状态检查失败: ${message}`,
+        platform: this.platform,
+        cause: error,
+      })
+    }
   }
 
   async refreshToken(): Promise<boolean> {
