@@ -617,3 +617,43 @@ export async function debugGetLogs(): Promise<LogEntry[]> {
 export async function debugClearLogs(): Promise<void> {
   await safeInvoke('debug_clear_logs')
 }
+
+// ============================================================
+// API 配置命令
+// ============================================================
+
+/** API 配置信息 */
+export interface ApiConfigInfo {
+  /** API 模式: "mock" 或 "real" */
+  mode: string
+  /** API 基础 URL */
+  baseUrl: string
+}
+
+/** 获取当前 API 配置 */
+export async function getApiConfig(): Promise<ApiConfigInfo | null> {
+  if (!isTauri()) return null
+  return await safeInvoke<ApiConfigInfo>('get_api_config')
+}
+
+/** 切换 API 配置 */
+export async function switchApiConfig(mode: string, baseUrl: string): Promise<{ success: boolean; mode: string; baseUrl: string } | null> {
+  if (!isTauri()) return null
+  return await safeInvoke('switch_api_config', { mode, baseUrl })
+}
+
+// ============================================================
+// 日志级别命令
+// ============================================================
+
+/** 获取当前日志级别 */
+export async function getLogLevel(): Promise<string | null> {
+  if (!isTauri()) return null
+  return await safeInvoke<string>('get_log_level')
+}
+
+/** 设置日志级别 (error/warn/info/debug/trace/off) */
+export async function setLogLevel(level: string): Promise<string | null> {
+  if (!isTauri()) return null
+  return await safeInvoke<string>('set_log_level', { level })
+}

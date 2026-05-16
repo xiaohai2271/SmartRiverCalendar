@@ -1,5 +1,5 @@
 import type { ISettingsRepository } from '../types/settings.repository'
-import type { ISyncRepository, ConnectResult, ExternalEventParams } from '../types/sync.repository'
+import type { ISyncRepository, ConnectResult, ExternalEventParams, ExternalCalendarInfo } from '../types/sync.repository'
 import type { CalendarEvent, ExternalAccount } from '@/types'
 import { safeInvoke, safeInvokeWithResult } from '@/utils/tauri'
 import { transformAccount, transformEvent, type RawAccount, type RawEvent } from './transforms'
@@ -60,6 +60,29 @@ export class TauriSyncRepository implements ISyncRepository {
 
   async deleteAccount(accountId: string): Promise<void> {
     await safeInvoke('delete_account', { accountId })
+  }
+
+  async getExternalCalendars(params: ExternalEventParams): Promise<ExternalCalendarInfo[]> {
+    const result = await safeInvoke<Array<{ id: string; name: string; color?: string; url: string; read_only?: boolean; readOnly?: boolean }>>(
+      'get_external_calendars',
+      {
+        accountId: params.accountId,
+        accountType: params.accountType,
+        serverUrl: params.serverUrl,
+        username: params.username,
+        encryptedPassword: params.encryptedPassword,
+      }
+    )
+    if (result === null) {
+      return []
+    }
+    return result.map(cal => ({
+      id: cal.id,
+      name: cal.name,
+      color: cal.color,
+      url: cal.url,
+      readOnly: cal.read_only ?? cal.readOnly ?? false,
+    }))
   }
 
   async getExternalEvents(params: ExternalEventParams & {

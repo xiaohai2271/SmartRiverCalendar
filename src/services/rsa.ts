@@ -1,32 +1,20 @@
 // RSA 密码加密服务
 // 使用 Web Crypto API 的 RSA-OAEP (SHA-256) 加密密码
 
-import { isTauri } from '../utils/tauri'
-import type { ApiResponse } from '../types/auth'
+import { usePlatform } from '@/platform/provider'
 
 // 缓存的公钥
 let cachedPublicKey: CryptoKey | null = null
 
 /**
  * 从后端获取 RSA 公钥并导入为 CryptoKey
- * 支持 Tauri 和 Web 两种模式
+ * 通过 authRepo 统一获取，自动适配平台
  * @returns CryptoKey 或 null
  */
 async function fetchPublicKey(): Promise<CryptoKey | null> {
   try {
-    let publicKeyBase64: string | null = null
-
-    if (isTauri()) {
-      // Tauri 模式：通过 IPC 调用 Rust 命令
-      const { safeInvoke } = await import('../utils/tauri')
-      const response = await safeInvoke<ApiResponse<{ publicKey: string }>>('auth_get_public_key')
-      publicKeyBase64 = response?.data?.publicKey ?? null
-    } else {
-      // Web 模式：直接调用 API
-      const { webApi } = await import('./webApi')
-      const data = await webApi.getPublicKey()
-      publicKeyBase64 = data?.data?.public_key ?? null
-    }
+    const { authRepo } = usePlatform()
+    const publicKeyBase64 = await authRepo.getPublicKey()
 
     if (!publicKeyBase64) return null
 

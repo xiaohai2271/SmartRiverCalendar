@@ -22,6 +22,14 @@ export interface ExternalEventParams {
   calendarUrl: string
 }
 
+export interface ExternalCalendarInfo {
+  id: string
+  name: string
+  color?: string
+  url: string
+  readOnly: boolean
+}
+
 export interface ISyncRepository {
   /** 连接 Exchange 服务器 */
   connectExchange(serverUrl: string | null, username: string, password: string): Promise<ConnectResult>
@@ -34,6 +42,9 @@ export interface ISyncRepository {
 
   /** 删除外部账号 */
   deleteAccount(accountId: string): Promise<void>
+
+  /** 获取外部日历列表 */
+  getExternalCalendars(params: ExternalEventParams): Promise<ExternalCalendarInfo[]>
 
   /** 获取外部日历事件 */
   getExternalEvents(params: ExternalEventParams & {

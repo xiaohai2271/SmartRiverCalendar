@@ -1,4 +1,4 @@
-import type { ISyncRepository, ConnectResult, ExternalEventParams } from '../types/sync.repository'
+import type { ISyncRepository, ConnectResult, ExternalEventParams, ExternalCalendarInfo } from '../types/sync.repository'
 import type { CalendarEvent, ExternalAccount } from '@/types'
 import { WebApiClient } from './api-client'
 import { transformWebAccount, transformWebEvent, type ApiResponse, type WebAccount, type WebEvent } from './transforms'
@@ -58,6 +58,24 @@ export class WebSyncRepository implements ISyncRepository {
         platform: this.platform,
       })
     }
+  }
+
+  async getExternalCalendars(params: ExternalEventParams): Promise<ExternalCalendarInfo[]> {
+    const response = await this.apiClient.post<
+      ApiResponse<Array<{ id: string; name: string; color?: string; url: string; read_only?: boolean }>>
+    >('/sync/external-calendars', {
+      account_id: params.accountId,
+    })
+    if (response.code !== 0 || !response.data) {
+      return []
+    }
+    return response.data.map(cal => ({
+      id: cal.id,
+      name: cal.name,
+      color: cal.color,
+      url: cal.url,
+      readOnly: cal.read_only ?? false,
+    }))
   }
 
   async getExternalEvents(params: ExternalEventParams & {

@@ -3,6 +3,8 @@
  *
  * 验证完整的认证 → 同步触发 → 状态更新流程，
  * 模拟用户从登录到触发同步再到状态变更的完整链路。
+ *
+ * 使用 Repository + PlatformCapabilities 架构的 mock 模式。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
@@ -14,40 +16,118 @@ vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn().mockResolvedValue(() => {})
 }))
 
-// Mock Tauri 工具函数
+// Mock Tauri 工具函数（cloudSync 桌面端仍使用 safeInvoke）
 const mockSafeInvoke = vi.fn()
-const mockIsTauri = vi.fn().mockReturnValue(false)
 
 vi.mock('@/utils/tauri', () => ({
   safeInvoke: mockSafeInvoke,
-  isTauri: mockIsTauri
+  isTauri: vi.fn().mockReturnValue(false),
+  safeInvokeWithResult: vi.fn(),
 }))
 
-// Mock authService（auth store 依赖）
-const mockLogin = vi.fn()
-const mockRegister = vi.fn()
-const mockLogout = vi.fn()
-const mockGetCurrentUser = vi.fn()
-const mockRefreshToken = vi.fn()
+// ===== Repository Mocks =====
 
-vi.mock('@/services/auth', () => ({
-  authService: {
-    login: mockLogin,
-    register: mockRegister,
-    logout: mockLogout,
-    getCurrentUser: mockGetCurrentUser,
-    refreshToken: mockRefreshToken,
-    githubLogin: vi.fn().mockResolvedValue(null),
-    checkAuthStatus: vi.fn().mockResolvedValue(null)
-  }
+const mockAuthRepo = {
+  login: vi.fn(),
+  register: vi.fn(),
+  logout: vi.fn(),
+  getCurrentUser: vi.fn(),
+  checkAuthStatus: vi.fn(),
+  refreshToken: vi.fn(),
+  getPublicKey: vi.fn(),
+}
+
+const mockSyncRepo = {
+  triggerCloudSync: vi.fn().mockResolvedValue(false),
+  connectExchange: vi.fn(),
+  connectCalDAV: vi.fn(),
+  getAllAccounts: vi.fn().mockResolvedValue([]),
+  deleteAccount: vi.fn(),
+  getExternalCalendars: vi.fn().mockResolvedValue([]),
+  getExternalEvents: vi.fn().mockResolvedValue([]),
+  createExternalEvent: vi.fn(),
+  updateExternalEvent: vi.fn(),
+  deleteExternalEvent: vi.fn(),
+  getSyncStatus: vi.fn().mockResolvedValue({ status: 'idle', lastSyncAt: null, pendingChanges: 0 }),
+  startAutoSync: vi.fn(),
+  stopAutoSync: vi.fn(),
+}
+
+const mockCalendarRepo = {
+  getAll: vi.fn().mockResolvedValue([]),
+  getById: vi.fn(),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+}
+
+const mockEventRepo = {
+  getByDateRange: vi.fn().mockResolvedValue([]),
+  getByCalendarId: vi.fn().mockResolvedValue([]),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+}
+
+const mockTodoRepo = {
+  getAll: vi.fn().mockResolvedValue([]),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),
+  toggleComplete: vi.fn(),
+}
+
+const mockSettingsRepo = {
+  getAll: vi.fn().mockResolvedValue({}),
+  get: vi.fn(),
+  update: vi.fn(),
+}
+
+// ===== 能力声明 Mock =====
+
+const mockCapabilities = {
+  hasLocalDatabase: true,
+  hasOfflineMode: true,
+  dataPriority: 'local-first' as const,
+  hasReminderPopup: true,
+  hasSystemNotification: true,
+  hasSnoozeReminder: true,
+  hasSystemTray: true,
+  hasAutoStart: true,
+  hasClockHook: true,
+  hasMultiWindow: true,
+  hasAutoUpdate: true,
+  hasMinimizeToTray: true,
+  hasProxySettings: true,
+  hasOAuthCallback: true,
+}
+
+vi.mock('@/platform/provider', () => ({
+  usePlatform: () => ({
+    capabilities: mockCapabilities,
+    authRepo: mockAuthRepo,
+    calendarRepo: mockCalendarRepo,
+    eventRepo: mockEventRepo,
+    todoRepo: mockTodoRepo,
+    settingsRepo: mockSettingsRepo,
+    syncRepo: mockSyncRepo,
+  }),
+  useCapabilities: () => mockCapabilities,
+}))
+
+// Mock encryptPassword（auth store 依赖）
+vi.mock('@/services/rsa', () => ({
+  encryptPassword: vi.fn().mockResolvedValue('encrypted-password'),
+  clearCachedPublicKey: vi.fn(),
 }))
 
 describe('同步流程 E2E 测试', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     setActivePinia(createPinia())
-    // 默认非 Tauri 环境
-    mockIsTauri.mockReturnValue(false)
+    // 默认桌面端能力
+    mockCapabilities.hasOfflineMode = true
+    mockCapabilities.hasLocalDatabase = true
   })
 
   // ===== 1. 登录流程 =====
@@ -70,15 +150,13 @@ describe('同步流程 E2E 测试', () => {
         displayName: '测试用户',
         provider: 'local'
       }
-      mockLogin.mockResolvedValueOnce({
-        authResponse: {
-          userId: 1,
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-          expiresIn: 3600
-        },
-        user: mockUser
+      mockAuthRepo.login.mockResolvedValueOnce({
+        userId: 1,
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
       })
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -91,7 +169,7 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('登录失败保持未登录状态', async () => {
-      mockLogin.mockResolvedValueOnce(null)
+      mockAuthRepo.login.mockResolvedValueOnce(null)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -104,7 +182,7 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('登出后清除认证和同步状态', async () => {
-      mockLogout.mockResolvedValueOnce(undefined)
+      mockAuthRepo.logout.mockResolvedValueOnce(undefined)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -140,6 +218,8 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('已登录用户调用 startSync 后状态变为 success', async () => {
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
+
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
 
@@ -172,24 +252,49 @@ describe('同步流程 E2E 测试', () => {
     })
   })
 
-  // ===== 3. cloudSync 服务（非 Tauri 环境） =====
+  // ===== 3. cloudSync 服务（Web 端） =====
 
-  describe('cloudSync 服务 - 非 Tauri 环境', () => {
-    it('triggerSync 返回 false', async () => {
+  describe('cloudSync 服务 - Web 端', () => {
+    beforeEach(() => {
+      // Web 端能力
+      mockCapabilities.hasOfflineMode = false
+      mockCapabilities.hasLocalDatabase = false
+    })
+
+    it('triggerSync 通过 syncRepo 同步', async () => {
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
+
+      const { cloudSyncService } = await import('@/services/cloudSync')
+      const result = await cloudSyncService.triggerSync()
+      expect(result).toBe(true)
+      expect(mockSyncRepo.triggerCloudSync).toHaveBeenCalled()
+    })
+
+    it('triggerSync 失败时返回 false', async () => {
+      mockSyncRepo.triggerCloudSync.mockRejectedValueOnce(new Error('网络错误'))
+
       const { cloudSyncService } = await import('@/services/cloudSync')
       const result = await cloudSyncService.triggerSync()
       expect(result).toBe(false)
     })
 
-    it('getSyncStatus 返回 null', async () => {
+    it('getSyncStatus 返回 null（Web 端不支持）', async () => {
       const { cloudSyncService } = await import('@/services/cloudSync')
       const result = await cloudSyncService.getSyncStatus()
       expect(result).toBeNull()
     })
 
-    it('startAutoSync 不抛出错误', async () => {
+    it('startAutoSync 在 Web 端不启动', async () => {
       const { cloudSyncService } = await import('@/services/cloudSync')
       expect(() => cloudSyncService.startAutoSync(5)).not.toThrow()
+    })
+
+    it('initEventListeners 在 Web 端不执行', async () => {
+      const { cloudSyncService } = await import('@/services/cloudSync')
+      await expect(cloudSyncService.initEventListeners()).resolves.toBeUndefined()
+      // 不应调用 listen
+      const { listen } = await import('@tauri-apps/api/event')
+      expect(listen).not.toHaveBeenCalled()
     })
 
     it('stopAutoSync 不抛出错误', async () => {
@@ -201,21 +306,15 @@ describe('同步流程 E2E 测试', () => {
       const { cloudSyncService } = await import('@/services/cloudSync')
       expect(() => cloudSyncService.cleanupEventListeners()).not.toThrow()
     })
-
-    it('initEventListeners 在非 Tauri 环境下不执行', async () => {
-      const { cloudSyncService } = await import('@/services/cloudSync')
-      await cloudSyncService.initEventListeners()
-      // 不应调用 listen
-      const { listen } = await import('@tauri-apps/api/event')
-      expect(listen).not.toHaveBeenCalled()
-    })
   })
 
-  // ===== 4. cloudSync 服务（Tauri 环境） =====
+  // ===== 4. cloudSync 服务（桌面端） =====
 
-  describe('cloudSync 服务 - Tauri 环境', () => {
+  describe('cloudSync 服务 - 桌面端', () => {
     beforeEach(() => {
-      mockIsTauri.mockReturnValue(true)
+      // 桌面端能力
+      mockCapabilities.hasOfflineMode = true
+      mockCapabilities.hasLocalDatabase = true
     })
 
     it('未登录时 triggerSync 返回 false', async () => {
@@ -265,7 +364,6 @@ describe('同步流程 E2E 测试', () => {
       const result = await cloudSyncService.triggerSync()
 
       expect(result).toBe(false)
-      // 同步失败状态应非 success
       expect(store.syncStatus).not.toBe('success')
     })
 
@@ -287,11 +385,10 @@ describe('同步流程 E2E 测试', () => {
       const result = await cloudSyncService.triggerSync()
 
       expect(result).toBe(false)
-      // 同步异常状态应非 success
       expect(store.syncStatus).not.toBe('success')
     })
 
-    it('getSyncStatus 调用 cloud_sync_get_status', async () => {
+    it('getSyncStatus 调用 safeInvoke', async () => {
       const mockStatus = {
         status: 'success' as const,
         lastSyncAt: 1234567890,
@@ -320,7 +417,9 @@ describe('同步流程 E2E 测试', () => {
 
   describe('完整同步流程', () => {
     beforeEach(() => {
-      mockIsTauri.mockReturnValue(true)
+      // 桌面端能力
+      mockCapabilities.hasOfflineMode = true
+      mockCapabilities.hasLocalDatabase = true
     })
 
     it('登录 → 触发同步 → 登出 完整链路', async () => {
@@ -332,15 +431,13 @@ describe('同步流程 E2E 测试', () => {
       }
 
       // 步骤 1: 登录
-      mockLogin.mockResolvedValueOnce({
-        authResponse: {
-          userId: 1,
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-          expiresIn: 3600
-        },
-        user: mockUser
+      mockAuthRepo.login.mockResolvedValueOnce({
+        userId: 1,
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
       })
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -349,7 +446,7 @@ describe('同步流程 E2E 测试', () => {
       expect(loginResult).toBe(true)
       expect(store.isAuthenticated).toBe(true)
 
-      // 步骤 2: 触发云同步
+      // 步骤 2: 触发云同步（桌面端通过 safeInvoke）
       mockSafeInvoke.mockResolvedValueOnce({ success: true })
       const { cloudSyncService } = await import('@/services/cloudSync')
       const syncResult = await cloudSyncService.triggerSync()
@@ -358,7 +455,7 @@ describe('同步流程 E2E 测试', () => {
       expect(store.lastSyncAt).not.toBeNull()
 
       // 步骤 3: 登出
-      mockLogout.mockResolvedValueOnce(undefined)
+      mockAuthRepo.logout.mockResolvedValueOnce(undefined)
       await store.logout()
       expect(store.isAuthenticated).toBe(false)
       expect(store.user).toBeNull()
@@ -375,15 +472,13 @@ describe('同步流程 E2E 测试', () => {
       }
 
       // 登录
-      mockLogin.mockResolvedValueOnce({
-        authResponse: {
-          userId: 1,
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-          expiresIn: 3600
-        },
-        user: mockUser
+      mockAuthRepo.login.mockResolvedValueOnce({
+        userId: 1,
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
       })
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -412,15 +507,13 @@ describe('同步流程 E2E 测试', () => {
       }
 
       // 登录
-      mockLogin.mockResolvedValueOnce({
-        authResponse: {
-          userId: 1,
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-          expiresIn: 3600
-        },
-        user: mockUser
+      mockAuthRepo.login.mockResolvedValueOnce({
+        userId: 1,
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
       })
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -428,7 +521,7 @@ describe('同步流程 E2E 测试', () => {
       expect(store.isAuthenticated).toBe(true)
 
       // Token 刷新失败
-      mockRefreshToken.mockResolvedValueOnce(false)
+      mockAuthRepo.refreshToken.mockResolvedValueOnce(false)
       const refreshResult = await store.refreshToken()
       expect(refreshResult).toBe(false)
       expect(store.isAuthenticated).toBe(false)
