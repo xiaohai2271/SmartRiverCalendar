@@ -131,7 +131,10 @@ impl AuthHandler {
             expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
             user_id: response.user_id,
         };
-        self.token_store.save_tokens(&tokens)?;
+        {
+            let conn = self.db.get_connection();
+            self.token_store.save_tokens(&conn, &tokens)?;
+        }
 
         // 调用 getProfile 获取用户信息（Token 由 HttpClient 自动管理）
         let profile = self
@@ -182,7 +185,10 @@ impl AuthHandler {
             expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
             user_id: response.user_id,
         };
-        self.token_store.save_tokens(&tokens)?;
+        {
+            let conn = self.db.get_connection();
+            self.token_store.save_tokens(&conn, &tokens)?;
+        }
 
         // 调用 getProfile 获取用户信息（Token 由 HttpClient 自动管理）
         let profile = self
@@ -242,7 +248,10 @@ impl AuthHandler {
             expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
             user_id: response.user_id,
         };
-        self.token_store.save_tokens(&tokens)?;
+        {
+            let conn = self.db.get_connection();
+            self.token_store.save_tokens(&conn, &tokens)?;
+        }
 
         // 调用 getProfile 获取用户信息（Token 由 HttpClient 自动管理）
         let profile = self
@@ -279,7 +288,8 @@ impl AuthHandler {
             let uid = *user_id;
 
             // 从 keyring 删除 Token
-            self.token_store.delete_tokens(uid)?;
+            let conn = self.db.get_connection();
+            self.token_store.delete_tokens(&conn, uid)?;
 
             // 从本地数据库删除用户信息
             self.delete_local_user(uid).await?;
@@ -301,9 +311,10 @@ impl AuthHandler {
         let status = self.current_status.lock().await;
         if let AuthStatus::Authenticated { user_id, .. } = &*status {
             let uid = *user_id;
+            let conn = self.db.get_connection();
             let tokens = self
                 .token_store
-                .load_tokens(uid)?
+                .load_tokens(&conn, uid)?
                 .ok_or(AuthError::TokenNotFound)?;
             drop(status);
 
@@ -315,7 +326,8 @@ impl AuthHandler {
                 expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
                 user_id: uid,
             };
-            self.token_store.save_tokens(&new_tokens)?;
+            let conn = self.db.get_connection();
+            self.token_store.save_tokens(&conn, &new_tokens)?;
 
             log::info!("Token 刷新成功: user_id={}", uid);
 
@@ -338,7 +350,8 @@ impl AuthHandler {
         // 从本地数据库获取用户 ID
         let user_id = self.get_local_user_id().await;
         if let Some(uid) = user_id {
-            match self.token_store.load_tokens(uid) {
+            let conn = self.db.get_connection();
+            match self.token_store.load_tokens(&conn, uid) {
                 Ok(Some(tokens)) => {
                     if !self.token_store.is_token_expired(&tokens) {
                         // Token 有效，恢复认证状态
@@ -395,9 +408,10 @@ impl AuthHandler {
         let status = self.current_status.lock().await;
         if let AuthStatus::Authenticated { user_id, .. } = &*status {
             let uid = *user_id;
+            let conn = self.db.get_connection();
             let tokens = self
                 .token_store
-                .load_tokens(uid)?
+                .load_tokens(&conn, uid)?
                 .ok_or(AuthError::TokenNotFound)?;
 
             if self.token_store.is_token_expired(&tokens) {

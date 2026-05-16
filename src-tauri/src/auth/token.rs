@@ -1,11 +1,17 @@
 // Token 管理模块
 // 负责 JWT Token 的安全存储、读取、刷新和过期检查
-// 使用 keyring crate 实现跨平台安全存储:
-// - Windows: Windows Credential Manager
-// - macOS: Keychain
-// - Linux: Secret Service (GNOME Keyring / KDE Wallet)
+//
+// 存储策略：SQLite + AES-256-GCM 加密
+// Token 以加密形式存储在 app_settings 表中，key 格式为 "auth_tokens:{user_id}"
+// 加密使用与项目一致的 AES-256-GCM 算法（crypto 模块），密钥由主机名派生
+//
+// 历史原因：之前使用 keyring crate 存储到操作系统凭据管理器，
+// 但 keyring 在 Windows 上存在严重 bug：
+// - set_password 返回 Ok 但凭据未实际写入 (Windows Credential Manager)
+// - 重新创建 Entry 实例后 get_password 返回 NoEntry
+// 详见 https://github.com/hwchen/keyring-rs/issues/163
+// 改用 SQLite 存储后，读写一致性有保障，同时通过加密保护敏感数据
 
-use keyring::Entry;
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,75 +28,91 @@ pub struct TokenInfo {
     pub user_id: i64,
 }
 
-/// Token 存储服务 — 使用 keyring crate 操作系统安全存储
+/// Token 存储服务 — 使用 SQLite 加密存储
 ///
-/// 跨平台安全存储:
-/// - Windows: Windows Credential Manager
-/// - macOS: Keychain
-/// - Linux: Secret Service (GNOME Keyring / KDE Wallet)
-pub struct TokenStore {
-    /// 服务名称，用于 keyring 条目标识
-    service_name: String,
-}
+/// Token 以 AES-256-GCM 加密后存储在 app_settings 表中，
+/// key 格式为 "auth_tokens:{user_id}"
+/// 与 Web 端（localStorage）和 Tauri 端共享同一套 Token 数据结构
+pub struct TokenStore;
 
 impl TokenStore {
     /// 创建新的 TokenStore 实例
     pub fn new() -> Self {
-        Self {
-            service_name: "SmartRiverCalendar".to_string(),
-        }
+        Self
     }
 
-    /// 保存 Token 到操作系统安全存储
+    /// 生成存储 key
+    fn storage_key(user_id: i64) -> String {
+        format!("auth_tokens:{}", user_id)
+    }
+
+    /// 保存 Token 到 SQLite（加密存储）
     ///
-    /// 使用 keyring::Entry 存储，键格式为 "tokens:{user_id}"
-    /// TokenInfo 序列化为 JSON 便于读取完整信息
-    pub fn save_tokens(&self, tokens: &TokenInfo) -> Result<(), TokenError> {
-        let entry = Entry::new(&self.service_name, &format!("tokens:{}", tokens.user_id))
-            .map_err(|e| TokenError::KeyringError(e.to_string()))?;
+    /// 使用 AES-256-GCM 加密后存储到 app_settings 表
+    pub fn save_tokens(&self, conn: &rusqlite::Connection, tokens: &TokenInfo) -> Result<(), TokenError> {
         let json = serde_json::to_string(tokens)
             .map_err(|e| TokenError::SerializeError(e.to_string()))?;
-        entry
-            .set_password(&json)
-            .map_err(|e| TokenError::KeyringError(e.to_string()))?;
+
+        // 加密 Token JSON
+        let encrypted = crate::crypto::encrypt_password(&json)
+            .map_err(|e| TokenError::EncryptError(e))?;
+
+        let key = Self::storage_key(tokens.user_id);
+        let now = chrono::Utc::now().timestamp();
+
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, description, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![key, encrypted, "加密存储的用户认证 Token", now],
+        )
+        .map_err(|e| TokenError::DbError(e.to_string()))?;
+
         Ok(())
     }
 
-    /// 从操作系统安全存储读取 Token
+    /// 从 SQLite 读取 Token（解密）
     ///
     /// # 返回
-    /// - `Ok(Some(TokenInfo))`: 找到并成功解析 Token
+    /// - `Ok(Some(TokenInfo))`: 找到并成功解密解析 Token
     /// - `Ok(None)`: 未找到 Token（用户未登录）
-    /// - `Err(...)`: 读取或解析失败
-    pub fn load_tokens(&self, user_id: i64) -> Result<Option<TokenInfo>, TokenError> {
-        let entry = Entry::new(&self.service_name, &format!("tokens:{}", user_id))
-            .map_err(|e| TokenError::KeyringError(e.to_string()))?;
-        match entry.get_password() {
-            Ok(json) => {
+    /// - `Err(...)`: 读取或解密失败
+    pub fn load_tokens(&self, conn: &rusqlite::Connection, user_id: i64) -> Result<Option<TokenInfo>, TokenError> {
+        let key = Self::storage_key(user_id);
+
+        let encrypted: Option<String> = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                rusqlite::params![key],
+                |row| row.get(0),
+            )
+            .ok();
+
+        match encrypted {
+            Some(enc) => {
+                // 解密
+                let json = crate::crypto::decrypt_password(&enc)
+                    .map_err(|e| TokenError::DecryptError(e))?;
                 let tokens: TokenInfo = serde_json::from_str(&json)
                     .map_err(|e| TokenError::DeserializeError(e.to_string()))?;
                 Ok(Some(tokens))
             }
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(e) => Err(TokenError::KeyringError(e.to_string())),
+            None => Ok(None),
         }
     }
 
     /// 删除 Token（退出登录时调用）
-    ///
-    /// 忽略"条目不存在"错误（退出登录时可能已删除）
-    pub fn delete_tokens(&self, user_id: i64) -> Result<(), TokenError> {
-        let entry = Entry::new(&self.service_name, &format!("tokens:{}", user_id))
-            .map_err(|e| TokenError::KeyringError(e.to_string()))?;
-        // 忽略"条目不存在"错误
-        let _ = entry.delete_credential();
+    pub fn delete_tokens(&self, conn: &rusqlite::Connection, user_id: i64) -> Result<(), TokenError> {
+        let key = Self::storage_key(user_id);
+        conn.execute(
+            "DELETE FROM app_settings WHERE key = ?1",
+            rusqlite::params![key],
+        )
+        .map_err(|e| TokenError::DbError(e.to_string()))?;
         Ok(())
     }
 
     /// 检查 Token 是否过期
     ///
     /// 提前5分钟视为过期，避免临界情况
-    /// 在 Token 即将过期时就刷新，确保请求不会因 Token 过期而失败
     pub fn is_token_expired(&self, tokens: &TokenInfo) -> bool {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -110,9 +132,15 @@ impl Default for TokenStore {
 /// Token 错误类型
 #[derive(Debug, thiserror::Error)]
 pub enum TokenError {
-    /// keyring 操作错误
-    #[error("Keyring 错误: {0}")]
-    KeyringError(String),
+    /// 数据库操作错误
+    #[error("数据库错误: {0}")]
+    DbError(String),
+    /// 加密错误
+    #[error("加密错误: {0}")]
+    EncryptError(String),
+    /// 解密错误
+    #[error("解密错误: {0}")]
+    DecryptError(String),
     /// 序列化错误
     #[error("序列化错误: {0}")]
     SerializeError(String),
@@ -171,7 +199,6 @@ mod tests {
     #[test]
     fn test_token_not_expired() {
         let store = TokenStore::new();
-        // 设置过期时间为1小时后
         let future_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -191,7 +218,6 @@ mod tests {
     #[test]
     fn test_token_expired() {
         let store = TokenStore::new();
-        // 设置过期时间为1小时前
         let past_time = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -211,12 +237,11 @@ mod tests {
     #[test]
     fn test_token_near_expiry() {
         let store = TokenStore::new();
-        // 设置过期时间为4分钟后（在5分钟提前量内）
         let near_future = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64
-            + 240_000; // 4分钟
+            + 240_000;
         let token = TokenInfo {
             access_token: "test".to_string(),
             refresh_token: "test".to_string(),
@@ -224,7 +249,6 @@ mod tests {
             user_id: 1,
         };
 
-        // 4分钟后过期，在5分钟提前量内，应视为过期
         assert!(store.is_token_expired(&token));
     }
 
@@ -232,12 +256,11 @@ mod tests {
     #[test]
     fn test_token_not_near_expiry() {
         let store = TokenStore::new();
-        // 设置过期时间为6分钟后（在5分钟提前量之外）
         let near_future = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_millis() as i64
-            + 360_000; // 6分钟
+            + 360_000;
         let token = TokenInfo {
             access_token: "test".to_string(),
             refresh_token: "test".to_string(),
@@ -245,34 +268,122 @@ mod tests {
             user_id: 1,
         };
 
-        // 6分钟后过期，不在5分钟提前量内，不应视为过期
         assert!(!store.is_token_expired(&token));
     }
 
-    /// 测试 TokenStore 服务名称
+    /// 测试 storage_key 格式
     #[test]
-    fn test_token_store_service_name() {
-        let store = TokenStore::new();
-        assert_eq!(store.service_name, "SmartRiverCalendar");
+    fn test_storage_key_format() {
+        assert_eq!(TokenStore::storage_key(1), "auth_tokens:1");
+        assert_eq!(TokenStore::storage_key(42), "auth_tokens:42");
     }
 
     /// 测试 TokenStore Default trait
     #[test]
     fn test_token_store_default() {
-        let store = TokenStore::default();
-        assert_eq!(store.service_name, "SmartRiverCalendar");
+        let _store = TokenStore::default();
     }
 
     /// 测试 TokenError 显示
     #[test]
     fn test_token_error_display() {
-        let err = TokenError::KeyringError("test error".to_string());
-        assert_eq!(format!("{}", err), "Keyring 错误: test error");
+        let err = TokenError::DbError("test error".to_string());
+        assert_eq!(format!("{}", err), "数据库错误: test error");
+
+        let err = TokenError::EncryptError("enc error".to_string());
+        assert_eq!(format!("{}", err), "加密错误: enc error");
 
         let err = TokenError::TokenExpired;
         assert_eq!(format!("{}", err), "Token 已过期");
 
         let err = TokenError::TokenNotFound;
         assert_eq!(format!("{}", err), "未找到 Token");
+    }
+
+    /// 测试 SQLite 存储的完整流程（使用内存数据库）
+    #[test]
+    fn test_save_load_delete_tokens() {
+        use crate::db::schema;
+
+        // 创建内存数据库
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        schema::init_database(&conn).unwrap();
+
+        let store = TokenStore::new();
+        let token = TokenInfo {
+            access_token: "test_access".to_string(),
+            refresh_token: "test_refresh".to_string(),
+            expires_at: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64
+                + 3600_000,
+            user_id: 1,
+        };
+
+        // 保存
+        store.save_tokens(&conn, &token).unwrap();
+
+        // 读取
+        let loaded = store.load_tokens(&conn, 1).unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.access_token, "test_access");
+        assert_eq!(loaded.refresh_token, "test_refresh");
+        assert_eq!(loaded.user_id, 1);
+
+        // 删除
+        store.delete_tokens(&conn, 1).unwrap();
+
+        // 确认已删除
+        let loaded = store.load_tokens(&conn, 1).unwrap();
+        assert!(loaded.is_none());
+    }
+
+    /// 测试未存储的 Token 返回 None
+    #[test]
+    fn test_load_nonexistent_tokens() {
+        use crate::db::schema;
+
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        schema::init_database(&conn).unwrap();
+
+        let store = TokenStore::new();
+        let result = store.load_tokens(&conn, 999).unwrap();
+        assert!(result.is_none());
+    }
+
+    /// 测试覆盖更新 Token
+    #[test]
+    fn test_update_tokens() {
+        use crate::db::schema;
+
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        schema::init_database(&conn).unwrap();
+
+        let store = TokenStore::new();
+
+        // 保存初始 Token
+        let token_v1 = TokenInfo {
+            access_token: "access_v1".to_string(),
+            refresh_token: "refresh_v1".to_string(),
+            expires_at: 1700000000000,
+            user_id: 1,
+        };
+        store.save_tokens(&conn, &token_v1).unwrap();
+
+        // 更新为新 Token
+        let token_v2 = TokenInfo {
+            access_token: "access_v2".to_string(),
+            refresh_token: "refresh_v2".to_string(),
+            expires_at: 1700001000000,
+            user_id: 1,
+        };
+        store.save_tokens(&conn, &token_v2).unwrap();
+
+        // 读取应为新 Token
+        let loaded = store.load_tokens(&conn, 1).unwrap().unwrap();
+        assert_eq!(loaded.access_token, "access_v2");
+        assert_eq!(loaded.refresh_token, "refresh_v2");
     }
 }
