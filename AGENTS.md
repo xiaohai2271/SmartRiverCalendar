@@ -78,22 +78,22 @@ cargo test --lib          # 库单元测试
 │   │   ├── capabilities.ts # PlatformCapabilities 类型定义
 │   │   ├── provider.ts     # PlatformProvider + 注入机制
 │   │   ├── errors.ts       # RepositoryError 统一错误类型
-│   │   ├── tauri/          # Tauri 平台实现
-│   │   └── web/            # Web 平台实现
+│   │   ├── tauri/          # Tauri 平台实现（9 文件：auth/calendar/event/settings/sync/todo repo + transforms + index）
+│   │   └── web/            # Web 平台实现（10 文件：同上 + api-client）
 │   ├── __tests__/          # 单元测试 (Vitest)
-│   ├── components/         # 通用组件 (calendar/, settings/, todo/)
-│   ├── views/              # 页面视图
-│   ├── stores/             # Pinia 状态管理（只依赖 Repository 接口）
-│   ├── services/           # 业务逻辑服务（通过能力判断降级）
+│   ├── components/         # 组件 (calendar/ common/ home/ popup/ profile/ reminder/ settings/ update/)
+│   ├── views/              # 页面视图（10 个：Calendar/Schedule/Todos/Settings/About/Profile/Home/Debug/CalendarPopup/ReminderPopup）
+│   ├── stores/             # Pinia 状态管理（只依赖 Repository 接口）：auth/calendar/todo/settings/popupSettings
+│   ├── services/           # 业务逻辑服务（通过能力判断降级）：auth/cloudSync/reminder/rsa/settings/sync/updater/webApi
 │   ├── composables/        # 组合式函数
 │   ├── router/             # 路由配置
 │   ├── types/              # TypeScript 类型定义（共享，两端一致）
 │   ├── utils/              # 纯工具函数 (date, lunar, helpers)
 │   └── styles/             # 样式文件
 ├── src-tauri/              # Rust 后端（仅桌面端）
-│   ├── src/                # Rust 源码
+│   ├── src/                # Rust 源码（commands/caldav/exchange/clock_hook/updater 等）
 │   └── tauri.conf.json     # Tauri 配置
-└── .agents/skills/         # 技能文档 (按需加载)
+└── .agents/skills/         # 技能文档 (7 个，按需加载)
 ```
 
 ## 技能导航
