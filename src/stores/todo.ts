@@ -1,12 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Todo } from '../types'
-import {
-  invokeGetTodos,
-  invokeCreateTodo,
-  invokeUpdateTodo,
-  invokeDeleteTodo
-} from '../utils/tauri'
+import { usePlatform } from '@/platform/provider'
 import { useCalendarStore } from './calendar'
 
 export const useTodoStore = defineStore('todo', () => {
@@ -17,7 +12,8 @@ export const useTodoStore = defineStore('todo', () => {
     if (isInitialized.value) return
 
     try {
-      const loadedTodos = await invokeGetTodos()
+      const { todoRepo } = usePlatform()
+      const loadedTodos = await todoRepo.getAll()
       todos.value = loadedTodos
       isInitialized.value = true
       console.log('Todo store initialized:', todos.value.length)
@@ -57,10 +53,11 @@ export const useTodoStore = defineStore('todo', () => {
   }
 
   async function addTodo(todo: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) {
+    const { todoRepo } = usePlatform()
     // 获取有效的日历 ID
     const calendarId = getValidCalendarId(todo.calendarId)
     
-    const created = await invokeCreateTodo({
+    const created = await todoRepo.create({
       title: todo.title,
       description: todo.description,
       dueDate: todo.dueDate,
@@ -69,12 +66,8 @@ export const useTodoStore = defineStore('todo', () => {
       calendarId
     })
     
-    if (created) {
-      todos.value.push(created)
-      console.log('Todo created:', created.id)
-    } else {
-      console.error('Failed to create todo')
-    }
+    todos.value.push(created)
+    console.log('Todo created:', created.id)
   }
 
   async function updateTodo(id: string, updates: Partial<Todo>) {
@@ -83,7 +76,8 @@ export const useTodoStore = defineStore('todo', () => {
       const todoId = parseInt(id)
       
       if (!isNaN(todoId)) {
-        const updated = await invokeUpdateTodo({
+        const { todoRepo } = usePlatform()
+        const updated = await todoRepo.update({
           id: todoId,
           title: updates.title,
           description: updates.description,
@@ -96,12 +90,8 @@ export const useTodoStore = defineStore('todo', () => {
           })() : undefined
         })
         
-        if (updated) {
-          todos.value[index] = updated
-          console.log('Todo updated:', id)
-        } else {
-          console.error('Failed to update todo:', id)
-        }
+        todos.value[index] = updated
+        console.log('Todo updated:', id)
       } else {
         // 临时 ID，仅更新本地状态
         todos.value[index] = {
@@ -124,7 +114,8 @@ export const useTodoStore = defineStore('todo', () => {
     const todoId = parseInt(id)
     
     if (!isNaN(todoId)) {
-      await invokeDeleteTodo(todoId)
+      const { todoRepo } = usePlatform()
+      await todoRepo.delete(todoId)
     }
     
     todos.value = todos.value.filter(t => t.id !== id)

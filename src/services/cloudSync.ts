@@ -1,8 +1,10 @@
 // 云端同步服务
 // 提供云同步触发、状态查询、自动同步等功能
 
-import { safeInvoke, isTauri } from '../utils/tauri'
+import { safeInvoke } from '../utils/tauri'
 import { useAuthStore } from '../stores/auth'
+import { useCapabilities } from '@/platform/provider'
+import { usePlatform } from '@/platform/provider'
 
 // 自动同步定时器
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null
@@ -25,17 +27,29 @@ export interface SyncStatusResponse {
 
 /**
  * 云同步服务
+ * 桌面端通过 Tauri invoke 调用 Rust 后端同步
+ * Web 端通过 syncRepo 调用远端 API
  */
 export const cloudSyncService = {
   /**
    * 触发手动同步
    */
   async triggerSync(): Promise<boolean> {
-    if (!isTauri()) {
-      console.warn('[cloudSync] 非 Tauri 环境，跳过同步')
-      return false
+    const capabilities = useCapabilities()
+
+    if (!capabilities.hasOfflineMode) {
+      // Web 端：通过 syncRepo 同步
+      try {
+        const { syncRepo } = usePlatform()
+        const result = await syncRepo.triggerCloudSync()
+        return result
+      } catch (error) {
+        console.error('[cloudSync] Web 端同步失败:', error)
+        return false
+      }
     }
 
+    // 桌面端：通过 Tauri invoke 同步
     const authStore = useAuthStore()
     if (!authStore.isAuthenticated) {
       console.warn('[cloudSync] 未登录，无法同步')
@@ -64,7 +78,12 @@ export const cloudSyncService = {
    * 获取同步状态
    */
   async getSyncStatus(): Promise<SyncStatusResponse | null> {
-    if (!isTauri()) return null
+    const capabilities = useCapabilities()
+
+    if (!capabilities.hasOfflineMode) {
+      // Web 端暂不支持获取详细同步状态
+      return null
+    }
 
     try {
       return await safeInvoke<SyncStatusResponse>('cloud_sync_get_status')
@@ -81,7 +100,8 @@ export const cloudSyncService = {
   startAutoSync(intervalMinutes: number = 5): void {
     this.stopAutoSync()
 
-    if (!isTauri()) return
+    const capabilities = useCapabilities()
+    if (!capabilities.hasOfflineMode) return
 
     const intervalMs = intervalMinutes * 60 * 1000
     autoSyncInterval = setInterval(async () => {
@@ -106,10 +126,11 @@ export const cloudSyncService = {
   },
 
   /**
-   * 初始化 Tauri 事件监听
+   * 初始化 Tauri 事件监听（仅桌面端）
    */
   async initEventListeners(): Promise<void> {
-    if (!isTauri()) return
+    const capabilities = useCapabilities()
+    if (!capabilities.hasOfflineMode) return
 
     try {
       const { listen } = await import('@tauri-apps/api/event')

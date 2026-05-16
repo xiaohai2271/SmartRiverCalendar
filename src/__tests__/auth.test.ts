@@ -1,23 +1,77 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
-// Mock authService
-const mockGetCurrentUser = vi.fn()
-const mockLogin = vi.fn()
-const mockRegister = vi.fn()
-const mockGithubLogin = vi.fn()
-const mockLogout = vi.fn()
-const mockRefreshToken = vi.fn()
+// Mock authRepo
+const mockAuthRepo = {
+  login: vi.fn(),
+  register: vi.fn(),
+  logout: vi.fn(),
+  getCurrentUser: vi.fn(),
+  checkAuthStatus: vi.fn(),
+  refreshToken: vi.fn(),
+  getPublicKey: vi.fn(),
+}
 
-vi.mock('@/services/auth', () => ({
-  authService: {
-    getCurrentUser: mockGetCurrentUser,
-    login: mockLogin,
-    register: mockRegister,
-    githubLogin: mockGithubLogin,
-    logout: mockLogout,
-    refreshToken: mockRefreshToken
-  }
+// Mock syncRepo
+const mockSyncRepo = {
+  triggerCloudSync: vi.fn(),
+  connectExchange: vi.fn(),
+  connectCalDAV: vi.fn(),
+  getAllAccounts: vi.fn(),
+  deleteAccount: vi.fn(),
+  getExternalCalendars: vi.fn(),
+  getExternalEvents: vi.fn(),
+  createExternalEvent: vi.fn(),
+  updateExternalEvent: vi.fn(),
+  deleteExternalEvent: vi.fn(),
+  getSyncStatus: vi.fn(),
+  startAutoSync: vi.fn(),
+  stopAutoSync: vi.fn(),
+}
+
+// Mock capabilities
+const mockCapabilities = {
+  hasLocalDatabase: true,
+  hasOfflineMode: true,
+  dataPriority: 'local-first' as const,
+  hasReminderPopup: true,
+  hasSystemNotification: true,
+  hasSnoozeReminder: true,
+  hasSystemTray: true,
+  hasAutoStart: true,
+  hasClockHook: true,
+  hasMultiWindow: true,
+  hasAutoUpdate: true,
+  hasMinimizeToTray: true,
+  hasProxySettings: true,
+  hasOAuthCallback: true,
+}
+
+vi.mock('@/platform/provider', () => ({
+  usePlatform: () => ({
+    capabilities: mockCapabilities,
+    authRepo: mockAuthRepo,
+    calendarRepo: {},
+    eventRepo: {},
+    todoRepo: {},
+    settingsRepo: {},
+    syncRepo: mockSyncRepo,
+  }),
+  useCapabilities: () => mockCapabilities,
+}))
+
+// Mock encryptPassword
+const mockEncryptPassword = vi.fn()
+
+vi.mock('@/services/rsa', () => ({
+  encryptPassword: mockEncryptPassword,
+  clearCachedPublicKey: vi.fn(),
+}))
+
+// Mock safeInvoke（OAuth 用）
+vi.mock('@/utils/tauri', () => ({
+  safeInvoke: vi.fn(),
+  isTauri: vi.fn(() => true),
 }))
 
 describe('auth Store', () => {
@@ -47,34 +101,35 @@ describe('auth Store', () => {
         user: null,
         syncStatus: 'idle',
         lastSyncAt: null,
-        isInitialized: false
+        isInitialized: false,
       })
     })
   })
 
   describe('initialize', () => {
-    it('从 authService 恢复认证状态', async () => {
+    it('从 authRepo 恢复认证状态', async () => {
       const mockUser = {
         id: '1',
         email: 'test@example.com',
         displayName: '测试用户',
-        provider: 'local' as const
+        provider: 'local' as const,
       }
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
+      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(true)
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
       await store.initialize()
 
-      expect(mockGetCurrentUser).toHaveBeenCalled()
+      expect(mockAuthRepo.checkAuthStatus).toHaveBeenCalled()
       expect(store.isAuthenticated).toBe(true)
       expect(store.user).toEqual(mockUser)
       expect(store.isInitialized).toBe(true)
     })
 
     it('认证失败时保持未登录状态', async () => {
-      mockGetCurrentUser.mockResolvedValueOnce(null)
+      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(false)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -87,7 +142,7 @@ describe('auth Store', () => {
     })
 
     it('只初始化一次', async () => {
-      mockGetCurrentUser.mockResolvedValueOnce(null)
+      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(false)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -95,7 +150,7 @@ describe('auth Store', () => {
       await store.initialize()
       await store.initialize() // 第二次调用
 
-      expect(mockGetCurrentUser).toHaveBeenCalledTimes(1)
+      expect(mockAuthRepo.checkAuthStatus).toHaveBeenCalledTimes(1)
     })
   })
 
@@ -105,29 +160,52 @@ describe('auth Store', () => {
         id: '1',
         email: 'test@example.com',
         displayName: '测试用户',
-        provider: 'local' as const
+        provider: 'local' as const,
       }
-      mockLogin.mockResolvedValueOnce({
+      mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
+      mockAuthRepo.login.mockResolvedValueOnce({
         userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 3600
+        expiresIn: 3600,
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
       const result = await store.login({ username: 'testuser', password: 'password' })
 
-      expect(mockLogin).toHaveBeenCalledWith('testuser', 'password')
+      expect(mockEncryptPassword).toHaveBeenCalledWith('password')
+      expect(mockAuthRepo.login).toHaveBeenCalledWith('testuser', 'encrypted-password')
       expect(result).toBe(true)
       expect(store.isAuthenticated).toBe(true)
       expect(store.user).toEqual(mockUser)
     })
 
+    it('登录成功但获取用户信息失败时回滚认证状态', async () => {
+      mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
+      mockAuthRepo.login.mockResolvedValueOnce({
+        userId: 1,
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
+      })
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(null)
+
+      const { useAuthStore } = await import('../stores/auth')
+      const store = useAuthStore()
+
+      const result = await store.login({ username: 'testuser', password: 'password' })
+
+      expect(result).toBe(false)
+      expect(store.isAuthenticated).toBe(false)
+      expect(store.user).toBeNull()
+    })
+
     it('登录失败保持未登录状态', async () => {
-      mockLogin.mockResolvedValueOnce(null)
+      mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
+      mockAuthRepo.login.mockResolvedValueOnce(null)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -146,15 +224,16 @@ describe('auth Store', () => {
         id: '1',
         email: 'newuser@example.com',
         displayName: '新用户',
-        provider: 'local' as const
+        provider: 'local' as const,
       }
-      mockRegister.mockResolvedValueOnce({
+      mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
+      mockAuthRepo.register.mockResolvedValueOnce({
         userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
-        expiresIn: 3600
+        expiresIn: 3600,
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -162,10 +241,10 @@ describe('auth Store', () => {
       const result = await store.register({
         username: 'newuser',
         email: 'newuser@example.com',
-        password: 'password'
+        password: 'password',
       })
 
-      expect(mockRegister).toHaveBeenCalledWith('newuser', 'newuser@example.com', 'password')
+      expect(mockAuthRepo.register).toHaveBeenCalledWith('newuser@example.com', 'encrypted-password', 'newuser')
       expect(result).toBe(true)
       expect(store.isAuthenticated).toBe(true)
       expect(store.user).toEqual(mockUser)
@@ -178,22 +257,26 @@ describe('auth Store', () => {
         id: '1',
         email: 'github@example.com',
         displayName: 'GitHub 用户',
-        provider: 'github' as const
+        provider: 'github' as const,
       }
-      mockGithubLogin.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+      const { safeInvoke } = await import('@/utils/tauri')
+      vi.mocked(safeInvoke).mockResolvedValueOnce({
+        user_id: 1,
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600,
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
       const result = await store.loginWithGithub('client-id', 'http://localhost/callback')
 
-      expect(mockGithubLogin).toHaveBeenCalledWith('client-id', 'http://localhost/callback')
+      expect(safeInvoke).toHaveBeenCalledWith('auth_oauth_github', {
+        clientId: 'client-id',
+        redirectUri: 'http://localhost/callback',
+      })
       expect(result).toBe(true)
       expect(store.isAuthenticated).toBe(true)
       expect(store.user).toEqual(mockUser)
@@ -202,8 +285,7 @@ describe('auth Store', () => {
 
   describe('logout', () => {
     it('登出清除认证状态', async () => {
-      // 先登录
-      mockLogout.mockResolvedValueOnce(undefined)
+      mockAuthRepo.logout.mockResolvedValueOnce(undefined)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -213,7 +295,7 @@ describe('auth Store', () => {
         id: '1',
         email: 'test@example.com',
         displayName: '测试用户',
-        provider: 'local'
+        provider: 'local',
       }
       store.isAuthenticated = true
       store.syncStatus = 'syncing'
@@ -221,7 +303,7 @@ describe('auth Store', () => {
 
       await store.logout()
 
-      expect(mockLogout).toHaveBeenCalled()
+      expect(mockAuthRepo.logout).toHaveBeenCalled()
       expect(store.isAuthenticated).toBe(false)
       expect(store.user).toBeNull()
       expect(store.syncStatus).toBe('idle')
@@ -229,7 +311,7 @@ describe('auth Store', () => {
     })
 
     it('登出失败仍清除本地状态', async () => {
-      mockLogout.mockRejectedValueOnce(new Error('登出失败'))
+      mockAuthRepo.logout.mockRejectedValueOnce(new Error('登出失败'))
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -239,7 +321,7 @@ describe('auth Store', () => {
         id: '1',
         email: 'test@example.com',
         displayName: '测试用户',
-        provider: 'local'
+        provider: 'local',
       }
       store.isAuthenticated = true
 
@@ -252,7 +334,7 @@ describe('auth Store', () => {
 
   describe('refreshToken', () => {
     it('刷新成功保持认证状态', async () => {
-      mockRefreshToken.mockResolvedValueOnce(true)
+      mockAuthRepo.refreshToken.mockResolvedValueOnce(true)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -262,7 +344,7 @@ describe('auth Store', () => {
         id: '1',
         email: 'test@example.com',
         displayName: '测试用户',
-        provider: 'local'
+        provider: 'local',
       }
       store.isAuthenticated = true
 
@@ -274,7 +356,7 @@ describe('auth Store', () => {
     })
 
     it('刷新失败清除认证状态', async () => {
-      mockRefreshToken.mockResolvedValueOnce(false)
+      mockAuthRepo.refreshToken.mockResolvedValueOnce(false)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -284,7 +366,7 @@ describe('auth Store', () => {
         id: '1',
         email: 'test@example.com',
         displayName: '测试用户',
-        provider: 'local'
+        provider: 'local',
       }
       store.isAuthenticated = true
 
@@ -302,9 +384,10 @@ describe('auth Store', () => {
         id: '1',
         email: 'test@example.com',
         displayName: '测试用户',
-        provider: 'local' as const
+        provider: 'local' as const,
       }
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
+      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(true)
+      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -317,7 +400,7 @@ describe('auth Store', () => {
     })
 
     it('检查失败清除认证状态', async () => {
-      mockGetCurrentUser.mockResolvedValueOnce(null)
+      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(false)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -332,6 +415,8 @@ describe('auth Store', () => {
 
   describe('startSync/stopSync', () => {
     it('startSync 更新同步状态为 success', async () => {
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
+
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 

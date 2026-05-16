@@ -575,7 +575,7 @@ pub async fn update_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
-    calendar_url: String,
+    _calendar_url: String,
     event: ExternalEventInput,
 ) -> Result<ExternalEventResult, String> {
     info!("[update_external_event] 更新事件: 账号 {}, 事件 {}", account_id, event.id);
@@ -625,7 +625,7 @@ pub async fn delete_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
-    calendar_url: String,
+    _calendar_url: String,
     event_id: String,
 ) -> Result<ExternalEventResult, String> {
     info!("[delete_external_event] 删除事件: 账号 {}, 事件 {}", account_id, event_id);
@@ -1258,7 +1258,22 @@ pub async fn auth_login(
             });
         }
         Err(e) => {
-            error!("[auth_login] 获取用户资料失败: {}", e);
+            error!("[auth_login] 获取用户资料失败: {}, 清除已设置的 Token", e);
+            // 清除已设置的 Token，避免 isAuthenticated=true 但 user=null 的不一致状态
+            if let Some(proxy) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::ProxyApiClient>()
+            {
+                proxy.clear_inner_token().await;
+            } else if let Some(real_client) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::RealApiClient>()
+            {
+                real_client.clear_auth_token().await;
+            }
+            return Err(format!("登录成功但获取用户信息失败: {}", e));
         }
     }
 
@@ -1302,7 +1317,22 @@ pub async fn auth_register(
             });
         }
         Err(e) => {
-            error!("[auth_register] 获取用户资料失败: {}", e);
+            error!("[auth_register] 获取用户资料失败: {}, 清除已设置的 Token", e);
+            // 清除已设置的 Token，避免不一致状态
+            if let Some(proxy) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::ProxyApiClient>()
+            {
+                proxy.clear_inner_token().await;
+            } else if let Some(real_client) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::RealApiClient>()
+            {
+                real_client.clear_auth_token().await;
+            }
+            return Err(format!("注册成功但获取用户信息失败: {}", e));
         }
     }
 
@@ -1367,7 +1397,22 @@ pub async fn auth_oauth_github(
             });
         }
         Err(e) => {
-            error!("[auth_oauth_github] 获取用户资料失败: {}", e);
+            error!("[auth_oauth_github] 获取用户资料失败: {}, 清除已设置的 Token", e);
+            // 清除已设置的 Token，避免不一致状态
+            if let Some(proxy) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::ProxyApiClient>()
+            {
+                proxy.clear_inner_token().await;
+            } else if let Some(real_client) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::RealApiClient>()
+            {
+                real_client.clear_auth_token().await;
+            }
+            return Err(format!("GitHub OAuth 登录成功但获取用户信息失败: {}", e));
         }
     }
 
@@ -1383,7 +1428,14 @@ pub async fn auth_logout(
     info!("[auth_logout] 退出登录");
 
     // 清除 API 客户端 Token
-    if let Some(real_client) = api_client
+    // 优先检查 ProxyApiClient（运行时切换模式），fallback 到 RealApiClient（直接模式）
+    if let Some(proxy) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+    {
+        proxy.clear_inner_token().await;
+    } else if let Some(real_client) = api_client
         .as_ref()
         .as_any()
         .downcast_ref::<crate::api::RealApiClient>()
@@ -1407,10 +1459,20 @@ pub async fn auth_get_profile(
     api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
 ) -> Result<serde_json::Value, String> {
     info!("[auth_get_profile] 获取用户资料");
+    
+    // 调试：检查 Token 状态
+    if let Some(proxy) = api_client.as_ref().as_any().downcast_ref::<crate::api::ProxyApiClient>() {
+        let config = proxy.get_config();
+        info!("[auth_get_profile] API 模式: {:?}, base_url: {}", config.mode, config.base_url);
+    }
+    
     let profile = api_client
         .get_profile()
         .await
-        .map_err(|e| format!("获取用户资料失败: {}", e))?;
+        .map_err(|e| {
+            error!("[auth_get_profile] 获取用户资料失败: {}", e);
+            format!("获取用户资料失败: {}", e)
+        })?;
     serde_json::to_value(&profile).map_err(|e| format!("序列化失败: {}", e))
 }
 
@@ -1440,15 +1502,29 @@ pub async fn auth_get_public_key(
     api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
 ) -> Result<serde_json::Value, String> {
     info!("[auth_get_public_key] 获取 RSA 公钥");
-    // 直接使用 reqwest 调用公钥端点（不需要认证）
-    let base_url = if let Some(real_client) = api_client
+    // 优先检查 ProxyApiClient（运行时切换模式），fallback 到 RealApiClient（直接模式）
+    let base_url = if let Some(proxy) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+    {
+        match proxy.get_base_url() {
+            Some(url) => url,
+            None => {
+                // Mock 模式返回模拟公钥
+                return Ok(serde_json::json!({
+                    "public_key": "mock_rsa_public_key"
+                }));
+            }
+        }
+    } else if let Some(real_client) = api_client
         .as_ref()
         .as_any()
         .downcast_ref::<crate::api::RealApiClient>()
     {
         real_client.base_url().to_string()
     } else {
-        // Mock 模式返回模拟公钥
+        // 未知客户端类型，返回模拟公钥
         return Ok(serde_json::json!({
             "public_key": "mock_rsa_public_key"
         }));
@@ -1540,6 +1616,123 @@ pub async fn cloud_sync_get_status(
         "lastSyncAt": last_sync_at,
         "pendingChanges": 0
     }))
+}
+
+// ============================================================
+// API 配置命令
+// ============================================================
+
+/// 获取当前 API 配置
+#[tauri::command]
+pub async fn get_api_config(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<serde_json::Value, String> {
+    info!("[get_api_config] 获取 API 配置");
+
+    let proxy = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+        .ok_or("API 客户端不支持运行时配置查询")?;
+
+    let config = proxy.get_config();
+
+    serde_json::to_value(serde_json::json!({
+        "mode": format!("{:?}", config.mode).to_lowercase(),
+        "baseUrl": config.base_url,
+    }))
+    .map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 切换 API 配置
+///
+/// 切换时会：
+/// 1. 清除旧客户端的认证 Token
+/// 2. 清除本地登录状态
+/// 3. 创建新客户端并替换
+/// 4. 持久化新配置到数据库
+#[tauri::command]
+pub async fn switch_api_config(
+    mode: String,
+    base_url: String,
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<serde_json::Value, String> {
+    info!("[switch_api_config] 切换 API 配置: mode={}, base_url={}", mode, base_url);
+
+    // 解析模式
+    let api_mode = match mode.to_lowercase().as_str() {
+        "mock" => crate::api::ApiMode::Mock,
+        "real" => crate::api::ApiMode::Real,
+        _ => return Err(format!("无效的 API 模式: {}，仅支持 mock/real", mode)),
+    };
+
+    // 获取代理客户端
+    let proxy = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+        .ok_or("API 客户端不支持运行时切换")?;
+
+    // 构建新配置
+    let new_config = crate::api::ApiConfig {
+        mode: api_mode,
+        base_url: base_url.clone(),
+        github_client_id: crate::api::ApiConfig::from_env().github_client_id,
+    };
+
+    // 切换客户端（内部会清理旧 Token）
+    proxy.switch(new_config.clone()).await;
+
+    // 清除本地登录状态并持久化新配置
+    {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let _ = db_conn.execute(|conn| {
+            conn.execute("UPDATE local_users SET is_current = 0 WHERE is_current = 1", [])
+        });
+        // 持久化新配置到数据库
+        let conn = db_conn.get_connection();
+        let _ = new_config.save_to_db(&conn);
+    }
+
+    info!("[switch_api_config] API 配置切换完成: mode={:?}", api_mode);
+
+    serde_json::to_value(serde_json::json!({
+        "success": true,
+        "mode": format!("{:?}", api_mode).to_lowercase(),
+        "baseUrl": base_url,
+    }))
+    .map_err(|e| format!("序列化失败: {}", e))
+}
+
+// ============================================================
+// 日志级别命令
+// ============================================================
+
+/// 获取当前日志级别
+#[tauri::command]
+pub fn get_log_level() -> Result<String, String> {
+    let level = crate::log_buffer::get_log_level();
+    Ok(format!("{:?}", level).to_lowercase())
+}
+
+/// 设置日志级别
+///
+/// 支持的级别: error, warn, info, debug, trace
+#[tauri::command]
+pub fn set_log_level(level: String) -> Result<String, String> {
+    let level_filter = match level.to_lowercase().as_str() {
+        "error" => log::LevelFilter::Error,
+        "warn" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        "off" => log::LevelFilter::Off,
+        _ => return Err(format!("无效的日志级别: {}，支持: error/warn/info/debug/trace/off", level)),
+    };
+    crate::log_buffer::set_log_level(level_filter);
+    info!("[set_log_level] 日志级别已切换为: {:?}", level_filter);
+    Ok(format!("{:?}", level_filter).to_lowercase())
 }
 
 // ==================== 时钟点击 Hook 相关命令 ====================

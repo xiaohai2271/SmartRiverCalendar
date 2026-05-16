@@ -7,6 +7,48 @@ vi.mock('@tauri-apps/plugin-notification', () => ({
   sendNotification: mockSendNotification
 }))
 
+// Mock useCapabilities — 桌面端能力
+vi.mock('@/platform/provider', () => ({
+  useCapabilities: () => ({
+    hasLocalDatabase: true,
+    hasOfflineMode: true,
+    dataPriority: 'local-first',
+    hasReminderPopup: true,
+    hasSystemNotification: true,
+    hasSnoozeReminder: true,
+    hasSystemTray: true,
+    hasAutoStart: true,
+    hasClockHook: true,
+    hasMultiWindow: true,
+    hasAutoUpdate: true,
+    hasMinimizeToTray: true,
+    hasProxySettings: true,
+  }),
+  usePlatform: () => ({
+    capabilities: {
+      hasLocalDatabase: true,
+      hasOfflineMode: true,
+      dataPriority: 'local-first',
+      hasReminderPopup: true,
+      hasSystemNotification: true,
+      hasSnoozeReminder: true,
+      hasSystemTray: true,
+      hasAutoStart: true,
+      hasClockHook: true,
+      hasMultiWindow: true,
+      hasAutoUpdate: true,
+      hasMinimizeToTray: true,
+      hasProxySettings: true,
+    },
+    authRepo: {},
+    calendarRepo: {},
+    eventRepo: {},
+    todoRepo: {},
+    settingsRepo: {},
+    syncRepo: {},
+  }),
+}))
+
 // Mock Pinia stores
 const mockCalendarStore = {
   isInitialized: true,

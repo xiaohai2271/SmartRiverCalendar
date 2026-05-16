@@ -4,7 +4,8 @@ import router from './router'
 import App from './App.vue'
 import './style.css'
 import { initHolidayCache } from './utils/lunar'
-import { migrateLocalStorageToDb } from './services/settings'
+import { isTauri } from './utils/tauri'
+import { initPlatform } from './platform/provider'
 
 // 最早期全局错误捕获（在任何代码执行前注册）
 window.addEventListener('error', (event) => {
@@ -20,10 +21,28 @@ window.addEventListener('unhandledrejection', (event) => {
 console.log('[main.ts] 开始初始化应用...')
 
 async function initializeApp() {
-  console.log('[main.ts] 1. 开始迁移 localStorage 数据...')
+  console.log('[main.ts] 0. 初始化平台 Provider...')
   try {
-    // 1. 先迁移 localStorage 数据到数据库（在 Store 初始化前执行）
-    await migrateLocalStorageToDb()
+    if (isTauri()) {
+      const { createTauriProvider } = await import('@/platform/tauri')
+      initPlatform(createTauriProvider())
+    } else {
+      const { createWebProvider } = await import('@/platform/web')
+      initPlatform(createWebProvider())
+    }
+    console.log('[main.ts] 0. 平台 Provider 初始化完成')
+  } catch (e) {
+    console.error('[main.ts] 0. 平台 Provider 初始化失败:', e)
+  }
+
+  console.log('[main.ts] 1. 迁移 localStorage 数据...')
+  try {
+    // 桌面端执行 localStorage → 数据库迁移（通过 settingsRepo）
+    if (isTauri()) {
+      const { usePlatform } = await import('@/platform/provider')
+      const { settingsRepo } = usePlatform()
+      await settingsRepo.migrateFromLocalStorage?.()
+    }
     console.log('[main.ts] 1. localStorage 迁移完成')
   } catch (e) {
     console.error('[main.ts] 1. localStorage 迁移失败（非致命）:', e)

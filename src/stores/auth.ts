@@ -1,7 +1,8 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { User, CloudSyncStatus, AuthState, LoginRequest, RegisterRequest } from '../types/auth'
-import { authService } from '../services/auth'
+import { usePlatform } from '@/platform/provider'
+import { encryptPassword, clearCachedPublicKey } from '../services/rsa'
 
 /**
  * 认证 Store
@@ -26,7 +27,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 初始化认证状态
-   * 从 localStorage 恢复用户信息和令牌
    */
   async function initialize(): Promise<void> {
     if (isInitialized.value) {
@@ -34,15 +34,17 @@ export const useAuthStore = defineStore('auth', () => {
     }
 
     try {
-      // 尝试从 authService 恢复认证状态
-      const currentUser = await authService.getCurrentUser()
-      if (currentUser) {
-        user.value = currentUser
-        isAuthenticated.value = true
+      const { authRepo } = usePlatform()
+      const isAuth = await authRepo.checkAuthStatus()
+      if (isAuth) {
+        const currentUser = await authRepo.getCurrentUser()
+        if (currentUser) {
+          user.value = currentUser
+          isAuthenticated.value = true
+        }
       }
     } catch (error) {
       console.error('初始化认证状态失败:', error)
-      // 初始化失败时清除状态
       user.value = null
       isAuthenticated.value = false
     } finally {
@@ -52,18 +54,30 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 用户登录
-   * @param credentials 登录凭据
-   * @returns 是否登录成功
    */
   async function login(credentials: LoginRequest): Promise<boolean> {
     try {
-      const response = await authService.login(credentials.username, credentials.password)
-      if (response) {
-        // 登录响应不再包含用户信息，需调用 getCurrentUser 获取
-        const currentUser = await authService.getCurrentUser()
-        user.value = currentUser
-        isAuthenticated.value = true
-        return true
+      const { authRepo } = usePlatform()
+      // 使用 RSA 加密密码
+      const encryptedPassword = await encryptPassword(credentials.password)
+      if (!encryptedPassword) {
+        console.error('[AuthStore] 密码加密失败，无法登录')
+        return false
+      }
+
+      const result = await authRepo.login(credentials.username, encryptedPassword)
+      if (result) {
+        const currentUser = await authRepo.getCurrentUser()
+        if (currentUser) {
+          user.value = currentUser
+          isAuthenticated.value = true
+          return true
+        } else {
+          console.error('[AuthStore] 登录成功但获取用户信息失败，回滚认证状态')
+          user.value = null
+          isAuthenticated.value = false
+          return false
+        }
       }
       return false
     } catch (error) {
@@ -74,18 +88,29 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 用户注册
-   * @param data 注册数据
-   * @returns 是否注册成功
    */
   async function register(data: RegisterRequest): Promise<boolean> {
     try {
-      const response = await authService.register(data.username, data.email, data.password)
-      if (response) {
-        // 注册响应不再包含用户信息，需调用 getCurrentUser 获取
-        const currentUser = await authService.getCurrentUser()
-        user.value = currentUser
-        isAuthenticated.value = true
-        return true
+      const { authRepo } = usePlatform()
+      const encryptedPassword = await encryptPassword(data.password)
+      if (!encryptedPassword) {
+        console.error('[AuthStore] 密码加密失败，无法注册')
+        return false
+      }
+
+      const result = await authRepo.register(data.email, encryptedPassword, data.username)
+      if (result) {
+        const currentUser = await authRepo.getCurrentUser()
+        if (currentUser) {
+          user.value = currentUser
+          isAuthenticated.value = true
+          return true
+        } else {
+          console.error('[AuthStore] 注册成功但获取用户信息失败，回滚认证状态')
+          user.value = null
+          isAuthenticated.value = false
+          return false
+        }
       }
       return false
     } catch (error) {
@@ -96,19 +121,31 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * GitHub OAuth 登录
-   * @param clientId GitHub 客户端 ID
-   * @param redirectUri 重定向 URI
-   * @returns 是否登录成功
    */
   async function loginWithGithub(clientId: string, redirectUri: string): Promise<boolean> {
     try {
-      const response = await authService.githubLogin(clientId, redirectUri)
-      if (response) {
-        // OAuth 响应不再包含用户信息，需调用 getCurrentUser 获取
-        const currentUser = await authService.getCurrentUser()
-        user.value = currentUser
-        isAuthenticated.value = true
-        return true
+      const { authRepo, capabilities } = usePlatform()
+      if (!capabilities.hasOAuthCallback) {
+        console.warn('[AuthStore] GitHub OAuth 登录暂不支持当前平台')
+        return false
+      }
+
+      // OAuth 通过 Tauri 平台的 safeInvoke 实现
+      const { safeInvoke } = await import('@/utils/tauri')
+      const response = await safeInvoke<{
+        user_id: number
+        access_token: string
+        refresh_token: string
+        expires_in: number
+      }>('auth_oauth_github', { clientId, redirectUri })
+
+      if (response?.access_token) {
+        const currentUser = await authRepo.getCurrentUser()
+        if (currentUser) {
+          user.value = currentUser
+          isAuthenticated.value = true
+          return true
+        }
       }
       return false
     } catch (error) {
@@ -122,10 +159,13 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function logout(): Promise<void> {
     try {
-      await authService.logout()
+      const { authRepo } = usePlatform()
+      await authRepo.logout()
     } catch (error) {
       console.error('登出失败:', error)
     } finally {
+      // 清除缓存的 RSA 公钥
+      clearCachedPublicKey()
       // 无论后端登出是否成功，都清除本地状态
       user.value = null
       isAuthenticated.value = false
@@ -136,13 +176,12 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 刷新访问令牌
-   * @returns 是否刷新成功
    */
   async function refreshToken(): Promise<boolean> {
     try {
-      const success = await authService.refreshToken()
+      const { authRepo } = usePlatform()
+      const success = await authRepo.refreshToken()
       if (!success) {
-        // 刷新失败，清除认证状态
         user.value = null
         isAuthenticated.value = false
       }
@@ -157,11 +196,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 检查认证状态
-   * @returns 当前是否已认证
    */
   async function checkAuthStatus(): Promise<boolean> {
     try {
-      const currentUser = await authService.getCurrentUser()
+      const { authRepo } = usePlatform()
+      const currentUser = await authRepo.getCurrentUser()
       if (currentUser) {
         user.value = currentUser
         isAuthenticated.value = true
@@ -187,8 +226,8 @@ export const useAuthStore = defineStore('auth', () => {
 
     try {
       syncStatus.value = 'syncing'
-      // 调用 authService 的同步方法（待实现）
-      // await authService.sync()
+      const { syncRepo } = usePlatform()
+      await syncRepo.triggerCloudSync()
       syncStatus.value = 'success'
       lastSyncAt.value = Date.now()
     } catch (error) {
