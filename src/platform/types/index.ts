@@ -1,0 +1,6 @@
+export type { ICalendarRepository } from './calendar.repository'
+export type { IEventRepository } from './event.repository'
+export type { ITodoRepository } from './todo.repository'
+export type { ISettingsRepository } from './settings.repository'
+export type { IAuthRepository, AuthResult } from './auth.repository'
+export type { ISyncRepository, ConnectResult, ExternalEventParams } from './sync.repository'
