@@ -29,7 +29,13 @@ export class AuthService {
    * @param password 密码
    * @returns 认证响应或 null
    */
-  async login(username: string, password: string): Promise<AuthResponse | null> {
+  /**
+   * 用户登录
+   * @param username 用户名（邮箱）
+   * @param password 密码
+   * @returns 认证响应和用户信息，或 null
+   */
+  async login(username: string, password: string): Promise<{ authResponse: AuthResponse; user: User | null } | null> {
     // 使用 RSA 加密密码
     const encryptedPassword = await encryptPassword(password)
     if (!encryptedPassword) {
@@ -39,16 +45,28 @@ export class AuthService {
 
     if (isTauri()) {
       // Tauri 模式：通过 IPC 调用 Rust 命令
-      const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_login', {
+      // Rust auth_login 内部已调用 get_profile 并保存用户信息到本地数据库
+      const response = await safeInvoke<{
+        user_id: number
+        access_token: string
+        refresh_token: string
+        expires_in: number
+      }>('auth_login', {
         email: username,
         password: encryptedPassword
       })
 
-      if (response?.data) {
-        const authResponse = response.data
+      if (response?.access_token) {
+        const authResponse: AuthResponse = {
+          userId: response.user_id,
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
+          expiresIn: response.expires_in
+        }
+        // 获取用户信息（仅调用一次，避免重复请求）
         const user = await this.getCurrentUser()
         this.triggerAuthChange(true, user)
-        return authResponse
+        return { authResponse, user }
       }
 
       return null
@@ -62,9 +80,10 @@ export class AuthService {
           refreshToken: data.data.refresh_token,
           expiresIn: data.data.expires_in
         }
+        // 获取用户信息（仅调用一次，避免重复请求）
         const user = await this.getCurrentUser()
         this.triggerAuthChange(true, user)
-        return authResponse
+        return { authResponse, user }
       }
       return null
     }
@@ -75,9 +94,9 @@ export class AuthService {
    * @param username 用户名
    * @param email 邮箱
    * @param password 密码
-   * @returns 认证响应或 null
+   * @returns 认证响应和用户信息，或 null
    */
-  async register(username: string, email: string, password: string): Promise<AuthResponse | null> {
+  async register(username: string, email: string, password: string): Promise<{ authResponse: AuthResponse; user: User | null } | null> {
     // 使用 RSA 加密密码
     const encryptedPassword = await encryptPassword(password)
     if (!encryptedPassword) {
@@ -87,17 +106,27 @@ export class AuthService {
 
     if (isTauri()) {
       // Tauri 模式：通过 IPC 调用 Rust 命令
-      const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_register', {
+      const response = await safeInvoke<{
+        user_id: number
+        access_token: string
+        refresh_token: string
+        expires_in: number
+      }>('auth_register', {
         email,
         password: encryptedPassword,
         display_name: username
       })
 
-      if (response?.data) {
-        const authResponse = response.data
+      if (response?.access_token) {
+        const authResponse: AuthResponse = {
+          userId: response.user_id,
+          accessToken: response.access_token,
+          refreshToken: response.refresh_token,
+          expiresIn: response.expires_in
+        }
         const user = await this.getCurrentUser()
         this.triggerAuthChange(true, user)
-        return authResponse
+        return { authResponse, user }
       }
 
       return null
@@ -113,7 +142,7 @@ export class AuthService {
         }
         const user = await this.getCurrentUser()
         this.triggerAuthChange(true, user)
-        return authResponse
+        return { authResponse, user }
       }
       return null
     }
@@ -142,25 +171,35 @@ export class AuthService {
    * GitHub OAuth 登录
    * @param clientId GitHub 客户端 ID
    * @param redirectUri 重定向 URI
-   * @returns 认证响应或 null
+   * @returns 认证响应和用户信息，或 null
    */
-  async githubLogin(clientId: string, redirectUri: string): Promise<AuthResponse | null> {
+  async githubLogin(clientId: string, redirectUri: string): Promise<{ authResponse: AuthResponse; user: User | null } | null> {
     // OAuth 登录目前仅支持 Tauri 模式（需要本地 HTTP 服务器接收回调）
     if (!isTauri()) {
       console.warn('[AuthService] GitHub OAuth 登录暂不支持 Web 模式')
       return null
     }
 
-    const response = await safeInvoke<ApiResponse<AuthResponse>>('auth_oauth_github', {
+    const response = await safeInvoke<{
+      user_id: number
+      access_token: string
+      refresh_token: string
+      expires_in: number
+    }>('auth_oauth_github', {
       clientId,
       redirectUri
     })
 
-    if (response?.data) {
-      const authResponse = response.data
+    if (response?.access_token) {
+      const authResponse: AuthResponse = {
+        userId: response.user_id,
+        accessToken: response.access_token,
+        refreshToken: response.refresh_token,
+        expiresIn: response.expires_in
+      }
       const user = await this.getCurrentUser()
       this.triggerAuthChange(true, user)
-      return authResponse
+      return { authResponse, user }
     }
 
     return null
@@ -172,13 +211,11 @@ export class AuthService {
    */
   async refreshToken(): Promise<boolean> {
     if (isTauri()) {
-      // Tauri 模式：通过 IPC 调用 Rust 命令
-      const response = await safeInvoke<ApiResponse<RefreshTokenResponse>>('auth_refresh_token')
-
-      if (response?.data) {
+      // Tauri 模式：Rust auth_refresh_token 返回 bool
+      const result = await safeInvoke<boolean>('auth_refresh_token')
+      if (result === true) {
         return true
       }
-
       // 刷新失败，触发登出
       this.triggerAuthChange(false, null)
       return false
@@ -206,8 +243,13 @@ export class AuthService {
    */
   async checkAuthStatus(): Promise<User | null> {
     if (isTauri()) {
-      const response = await safeInvoke<ApiResponse<User>>('auth_check_status')
-      return response?.data ?? null
+      // Tauri 模式：Rust auth_check_status 返回 bool（是否已认证）
+      const isAuthenticated = await safeInvoke<boolean>('auth_check_status')
+      if (isAuthenticated) {
+        // 已认证，获取用户资料
+        return this.getCurrentUser()
+      }
+      return null
     } else {
       try {
         const data = await webApi.checkStatus()
@@ -232,8 +274,24 @@ export class AuthService {
    */
   async getCurrentUser(): Promise<User | null> {
     if (isTauri()) {
-      const response = await safeInvoke<ApiResponse<User>>('auth_get_profile')
-      return response?.data ?? null
+      // Tauri 模式：Rust auth_get_profile 返回 UserProfile 直接 JSON
+      const response = await safeInvoke<{
+        id: number
+        email: string
+        display_name: string
+        avatar_url: string | null
+        provider: string
+      }>('auth_get_profile')
+      if (response) {
+        return {
+          id: String(response.id),
+          email: response.email,
+          displayName: response.display_name,
+          avatarUrl: response.avatar_url ?? undefined,
+          provider: (response.provider as User['provider']) || 'local'
+        }
+      }
+      return null
     } else {
       try {
         const data = await webApi.getProfile()
@@ -259,8 +317,8 @@ export class AuthService {
    */
   async getPublicKey(): Promise<string | null> {
     if (isTauri()) {
-      const response = await safeInvoke<ApiResponse<{ publicKey: string }>>('auth_get_public_key')
-      return response?.data?.publicKey ?? null
+      const response = await safeInvoke<ApiResponse<{ public_key: string }>>('auth_get_public_key')
+      return response?.data?.public_key ?? null
     } else {
       try {
         const data = await webApi.getPublicKey()

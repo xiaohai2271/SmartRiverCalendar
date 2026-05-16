@@ -71,12 +71,14 @@ describe('同步流程 E2E 测试', () => {
         provider: 'local'
       }
       mockLogin.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: mockUser
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -331,12 +333,14 @@ describe('同步流程 E2E 测试', () => {
 
       // 步骤 1: 登录
       mockLogin.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: mockUser
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -372,12 +376,14 @@ describe('同步流程 E2E 测试', () => {
 
       // 登录
       mockLogin.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: mockUser
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -407,12 +413,14 @@ describe('同步流程 E2E 测试', () => {
 
       // 登录
       mockLogin.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: mockUser
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()

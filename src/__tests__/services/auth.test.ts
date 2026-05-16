@@ -46,31 +46,24 @@ describe('AuthService', () => {
   })
 
   describe('login', () => {
-    it('应该调用 auth_login 命令并返回认证响应', async () => {
+    it('应该调用 auth_login 命令并返回认证响应和用户信息', async () => {
       // 模拟密码加密成功
       mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
 
-      // 登录响应 mock
+      // 登录响应 mock（Rust auth_login 直接返回 AuthResponse JSON，无外层包装）
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: {
-          userId: 1,
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-          expiresIn: 3600
-        }
+        user_id: 1,
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600
       })
-      // getCurrentUser 响应 mock
+      // getCurrentUser → auth_get_profile 响应 mock（Rust 直接返回 UserProfile JSON）
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: {
-          id: '1',
-          email: 'test@example.com',
-          displayName: '测试用户',
-          provider: 'local'
-        }
+        id: 1,
+        email: 'test@example.com',
+        display_name: '测试用户',
+        avatar_url: null,
+        provider: 'local'
       })
 
       const result = await authService.login('testuser', 'password')
@@ -81,7 +74,9 @@ describe('AuthService', () => {
         password: 'encrypted-password'
       })
       expect(result).not.toBeNull()
-      expect(result?.userId).toBe(1)
+      expect(result?.authResponse.userId).toBe(1)
+      expect(result?.user).not.toBeNull()
+      expect(result?.user?.email).toBe('test@example.com')
     })
 
     it('密码加密失败时返回 null', async () => {
@@ -104,31 +99,24 @@ describe('AuthService', () => {
   })
 
   describe('register', () => {
-    it('应该调用 auth_register 命令并返回认证响应', async () => {
+    it('应该调用 auth_register 命令并返回认证响应和用户信息', async () => {
       // 模拟密码加密成功
       mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
 
-      // 注册响应 mock
+      // 注册响应 mock（Rust auth_register 直接返回 AuthResponse JSON）
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: {
-          userId: 1,
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-          expiresIn: 3600
-        }
+        user_id: 1,
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600
       })
-      // getCurrentUser 响应 mock
+      // getCurrentUser → auth_get_profile 响应 mock
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: {
-          id: '1',
-          email: 'newuser@example.com',
-          displayName: '新用户',
-          provider: 'local'
-        }
+        id: 1,
+        email: 'newuser@example.com',
+        display_name: '新用户',
+        avatar_url: null,
+        provider: 'local'
       })
 
       const result = await authService.register('newuser', 'newuser@example.com', 'password')
@@ -140,7 +128,9 @@ describe('AuthService', () => {
         display_name: 'newuser'
       })
       expect(result).not.toBeNull()
-      expect(result?.userId).toBe(1)
+      expect(result?.authResponse.userId).toBe(1)
+      expect(result?.user).not.toBeNull()
+      expect(result?.user?.email).toBe('newuser@example.com')
     })
 
     it('密码加密失败时返回 null', async () => {
@@ -164,28 +154,21 @@ describe('AuthService', () => {
   })
 
   describe('githubLogin', () => {
-    it('应该调用 auth_github_login 命令并返回认证响应', async () => {
-      // GitHub 登录响应 mock
+    it('应该调用 auth_github_login 命令并返回认证响应和用户信息', async () => {
+      // GitHub 登录响应 mock（Rust auth_oauth_github 直接返回 AuthResponse JSON）
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: {
-          userId: 1,
-          accessToken: 'access-token',
-          refreshToken: 'refresh-token',
-          expiresIn: 3600
-        }
+        user_id: 1,
+        access_token: 'access-token',
+        refresh_token: 'refresh-token',
+        expires_in: 3600
       })
-      // getCurrentUser 响应 mock
+      // getCurrentUser → auth_get_profile 响应 mock
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: {
-          id: '1',
-          email: 'github@example.com',
-          displayName: 'GitHub 用户',
-          provider: 'github'
-        }
+        id: 1,
+        email: 'github@example.com',
+        display_name: 'GitHub 用户',
+        avatar_url: null,
+        provider: 'github'
       })
 
       const result = await authService.githubLogin('client-id', 'http://localhost/callback')
@@ -195,7 +178,9 @@ describe('AuthService', () => {
         redirectUri: 'http://localhost/callback'
       })
       expect(result).not.toBeNull()
-      expect(result?.userId).toBe(1)
+      expect(result?.authResponse.userId).toBe(1)
+      expect(result?.user).not.toBeNull()
+      expect(result?.user?.email).toBe('github@example.com')
     })
   })
 
@@ -207,31 +192,28 @@ describe('AuthService', () => {
   })
 
   describe('checkAuthStatus', () => {
-    it('应该调用 auth_check_status 命令', async () => {
-      const mockUser = {
-        id: '1',
-        email: 'test@example.com',
-        displayName: '测试用户',
-        provider: 'local'
-      }
+    it('应该调用 auth_check_status 命令并返回用户信息', async () => {
+      // auth_check_status 返回 true（已认证）
+      mockSafeInvoke.mockResolvedValueOnce(true)
+      // auth_get_profile 返回用户资料
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: mockUser
+        id: 1,
+        email: 'test@example.com',
+        display_name: '测试用户',
+        avatar_url: null,
+        provider: 'local'
       })
 
       const result = await authService.checkAuthStatus()
 
       expect(mockSafeInvoke).toHaveBeenCalledWith('auth_check_status')
-      expect(result).toEqual(mockUser)
+      expect(result).not.toBeNull()
+      expect(result?.email).toBe('test@example.com')
     })
 
-    it('没有用户时返回 null', async () => {
-      mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: null
-      })
+    it('未认证时返回 null', async () => {
+      // auth_check_status 返回 false（未认证）
+      mockSafeInvoke.mockResolvedValueOnce(false)
 
       const result = await authService.checkAuthStatus()
 
@@ -240,31 +222,26 @@ describe('AuthService', () => {
   })
 
   describe('getCurrentUser', () => {
-    it('应该调用 auth_get_profile 命令', async () => {
-      const mockUser = {
-        id: '1',
-        email: 'test@example.com',
-        displayName: '测试用户',
-        provider: 'local'
-      }
+    it('应该调用 auth_get_profile 命令并返回用户信息', async () => {
       mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: mockUser
+        id: 1,
+        email: 'test@example.com',
+        display_name: '测试用户',
+        avatar_url: null,
+        provider: 'local'
       })
 
       const result = await authService.getCurrentUser()
 
       expect(mockSafeInvoke).toHaveBeenCalledWith('auth_get_profile')
-      expect(result).toEqual(mockUser)
+      expect(result).not.toBeNull()
+      expect(result?.email).toBe('test@example.com')
+      expect(result?.displayName).toBe('测试用户')
+      expect(result?.id).toBe('1')
     })
 
     it('没有用户时返回 null', async () => {
-      mockSafeInvoke.mockResolvedValueOnce({
-        code: 0,
-        message: 'success',
-        data: null
-      })
+      mockSafeInvoke.mockResolvedValueOnce(null)
 
       const result = await authService.getCurrentUser()
 

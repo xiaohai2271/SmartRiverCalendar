@@ -57,13 +57,20 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function login(credentials: LoginRequest): Promise<boolean> {
     try {
-      const response = await authService.login(credentials.username, credentials.password)
-      if (response) {
-        // 登录响应不再包含用户信息，需调用 getCurrentUser 获取
-        const currentUser = await authService.getCurrentUser()
-        user.value = currentUser
-        isAuthenticated.value = true
-        return true
+      const result = await authService.login(credentials.username, credentials.password)
+      if (result) {
+        // authService.login() 已获取用户信息，直接使用
+        if (result.user) {
+          user.value = result.user
+          isAuthenticated.value = true
+          return true
+        } else {
+          // 获取用户信息失败，登录视为不完整，回滚认证状态
+          console.error('[AuthStore] 登录成功但获取用户信息失败，回滚认证状态')
+          user.value = null
+          isAuthenticated.value = false
+          return false
+        }
       }
       return false
     } catch (error) {
@@ -79,13 +86,19 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function register(data: RegisterRequest): Promise<boolean> {
     try {
-      const response = await authService.register(data.username, data.email, data.password)
-      if (response) {
-        // 注册响应不再包含用户信息，需调用 getCurrentUser 获取
-        const currentUser = await authService.getCurrentUser()
-        user.value = currentUser
-        isAuthenticated.value = true
-        return true
+      const result = await authService.register(data.username, data.email, data.password)
+      if (result) {
+        // authService.register() 已获取用户信息，直接使用
+        if (result.user) {
+          user.value = result.user
+          isAuthenticated.value = true
+          return true
+        } else {
+          console.error('[AuthStore] 注册成功但获取用户信息失败，回滚认证状态')
+          user.value = null
+          isAuthenticated.value = false
+          return false
+        }
       }
       return false
     } catch (error) {
@@ -102,13 +115,19 @@ export const useAuthStore = defineStore('auth', () => {
    */
   async function loginWithGithub(clientId: string, redirectUri: string): Promise<boolean> {
     try {
-      const response = await authService.githubLogin(clientId, redirectUri)
-      if (response) {
-        // OAuth 响应不再包含用户信息，需调用 getCurrentUser 获取
-        const currentUser = await authService.getCurrentUser()
-        user.value = currentUser
-        isAuthenticated.value = true
-        return true
+      const result = await authService.githubLogin(clientId, redirectUri)
+      if (result) {
+        // authService.githubLogin() 已获取用户信息，直接使用
+        if (result.user) {
+          user.value = result.user
+          isAuthenticated.value = true
+          return true
+        } else {
+          console.error('[AuthStore] GitHub 登录成功但获取用户信息失败，回滚认证状态')
+          user.value = null
+          isAuthenticated.value = false
+          return false
+        }
       }
       return false
     } catch (error) {

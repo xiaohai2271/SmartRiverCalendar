@@ -108,12 +108,14 @@ describe('auth Store', () => {
         provider: 'local' as const
       }
       mockLogin.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: mockUser
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -124,6 +126,27 @@ describe('auth Store', () => {
       expect(result).toBe(true)
       expect(store.isAuthenticated).toBe(true)
       expect(store.user).toEqual(mockUser)
+    })
+
+    it('登录成功但获取用户信息失败时回滚认证状态', async () => {
+      mockLogin.mockResolvedValueOnce({
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: null
+      })
+
+      const { useAuthStore } = await import('../stores/auth')
+      const store = useAuthStore()
+
+      const result = await store.login({ username: 'testuser', password: 'password' })
+
+      expect(result).toBe(false)
+      expect(store.isAuthenticated).toBe(false)
+      expect(store.user).toBeNull()
     })
 
     it('登录失败保持未登录状态', async () => {
@@ -149,12 +172,14 @@ describe('auth Store', () => {
         provider: 'local' as const
       }
       mockRegister.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: mockUser
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -181,12 +206,14 @@ describe('auth Store', () => {
         provider: 'github' as const
       }
       mockGithubLogin.mockResolvedValueOnce({
-        userId: 1,
-        accessToken: 'access-token',
-        refreshToken: 'refresh-token',
-        expiresIn: 3600
+        authResponse: {
+          userId: 1,
+          accessToken: 'access-token',
+          refreshToken: 'refresh-token',
+          expiresIn: 3600
+        },
+        user: mockUser
       })
-      mockGetCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()

@@ -86,7 +86,7 @@ impl HttpClient {
 
     /// GET 请求 (带认证)
     pub async fn get<T: serde::de::DeserializeOwned>(&self, path: &str) -> ApiResult<T> {
-        self.request_with_auth(|client, url| client.get(url), path).await
+        self.request_with_auth("GET", |client, url| client.get(url), path).await
     }
 
     /// POST 请求 (带认证)
@@ -95,7 +95,7 @@ impl HttpClient {
         path: &str,
         body: &B,
     ) -> ApiResult<T> {
-        self.request_with_auth_body(|client, url| client.post(url), path, body).await
+        self.request_with_auth_body("POST", |client, url| client.post(url), path, body).await
     }
 
     /// PUT 请求 (带认证)
@@ -104,12 +104,12 @@ impl HttpClient {
         path: &str,
         body: &B,
     ) -> ApiResult<T> {
-        self.request_with_auth_body(|client, url| client.put(url), path, body).await
+        self.request_with_auth_body("PUT", |client, url| client.put(url), path, body).await
     }
 
     /// DELETE 请求 (带认证)
     pub async fn delete<T: serde::de::DeserializeOwned>(&self, path: &str) -> ApiResult<T> {
-        self.request_with_auth(|client, url| client.delete(url), path).await
+        self.request_with_auth("DELETE", |client, url| client.delete(url), path).await
     }
 
     /// POST 请求 (不带认证，用于登录/注册)
@@ -119,6 +119,8 @@ impl HttpClient {
         body: &B,
     ) -> ApiResult<T> {
         let url = format!("{}{}", self.base_url, path);
+        log::debug!("[HTTP] POST {} (无认证)", url);
+        log::debug!("[HTTP] 请求参数: {}", serde_json::to_string(body).unwrap_or_else(|_| "<序列化失败>".to_string()));
         let response = self
             .client
             .post(&url)
@@ -126,12 +128,14 @@ impl HttpClient {
             .send()
             .await?;
 
+        log::debug!("[HTTP] 响应状态: {}", response.status());
         self.handle_response(response).await
     }
 
     /// 带认证的请求 (GET/DELETE)
     async fn request_with_auth<T: serde::de::DeserializeOwned, F>(
         &self,
+        method: &str,
         request_fn: F,
         path: &str,
     ) -> ApiResult<T>
@@ -141,22 +145,57 @@ impl HttpClient {
         let token = self.get_valid_token().await?;
 
         let url = format!("{}{}", self.base_url, path);
+        log::info!("[HTTP] {} {} (认证)", method, url);
+        // 调试日志：输出 token 前缀用于排查认证问题
+        log::info!("[HTTP] Token 前缀: {}...", &token.access_token[..token.access_token.len().min(20)]);
+        log::info!("[HTTP] Token 过期时间: {} (当前: {})", token.expires_at, chrono::Utc::now().timestamp_millis());
         let response = request_fn(&self.client, &url)
             .bearer_auth(&token.access_token)
             .send()
             .await?;
 
-        // 检查是否为 401
-        if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+        let status = response.status();
+        log::info!("[HTTP] 响应状态: {}", status);
+        // 非 2xx 时输出响应体用于排查
+        if !status.is_success() {
+            // 先消费 response 获取 body，需要重新构造
+            let status_code = status.as_u16();
+            let body_text = response.text().await.unwrap_or_else(|_| "<读取失败>".to_string());
+            log::error!("[HTTP] 请求失败: {} {} → 状态码: {}, 响应体: {}", method, url, status_code, body_text);
+            // 重新解析响应
+            if status_code == 401 {
+                log::info!("[HTTP] 收到 401，尝试刷新 Token");
+                let new_token = self.refresh_token_internal().await?;
+                log::info!("[HTTP] 使用新 Token 重试: {} {}", method, url);
+                let retry_response = request_fn(&self.client, &url)
+                    .bearer_auth(&new_token.access_token)
+                    .send()
+                    .await?;
+                log::info!("[HTTP] 重试响应状态: {}", retry_response.status());
+                return self.handle_response(retry_response).await;
+            }
+            // 构造错误返回
+            if status.is_client_error() {
+                return Err(ApiError::Other(format!("客户端错误 {}: {}", status_code, body_text)));
+            } else {
+                return Err(ApiError::ServerError(format!("服务器错误 {}: {}", status_code, body_text)));
+            }
+        }
+
+        // 检查是否为 401 (上面已处理，这里保留兼容)
+        if status == reqwest::StatusCode::UNAUTHORIZED {
+            log::debug!("[HTTP] 收到 401，尝试刷新 Token");
             // 尝试刷新 Token
             let new_token = self.refresh_token_internal().await?;
 
             // 使用新 Token 重试
+            log::debug!("[HTTP] 使用新 Token 重试: {} {}", method, url);
             let retry_response = request_fn(&self.client, &url)
                 .bearer_auth(&new_token.access_token)
                 .send()
                 .await?;
 
+            log::debug!("[HTTP] 重试响应状态: {}", retry_response.status());
             return self.handle_response(retry_response).await;
         }
 
@@ -166,6 +205,7 @@ impl HttpClient {
     /// 带认证和 Body 的请求 (POST/PUT)
     async fn request_with_auth_body<T: serde::de::DeserializeOwned, B: serde::Serialize, F>(
         &self,
+        method: &str,
         request_fn: F,
         path: &str,
         body: &B,
@@ -176,24 +216,31 @@ impl HttpClient {
         let token = self.get_valid_token().await?;
 
         let url = format!("{}{}", self.base_url, path);
+        log::debug!("[HTTP] {} {} (认证)", method, url);
+        log::debug!("[HTTP] 请求参数: {}", serde_json::to_string(body).unwrap_or_else(|_| "<序列化失败>".to_string()));
         let response = request_fn(&self.client, &url)
             .bearer_auth(&token.access_token)
             .json(body)
             .send()
             .await?;
 
+        log::debug!("[HTTP] 响应状态: {}", response.status());
+
         // 检查是否为 401
         if response.status() == reqwest::StatusCode::UNAUTHORIZED {
+            log::debug!("[HTTP] 收到 401，尝试刷新 Token");
             // 尝试刷新 Token
             let new_token = self.refresh_token_internal().await?;
 
             // 使用新 Token 重试
+            log::debug!("[HTTP] 使用新 Token 重试: {} {}", method, url);
             let retry_response = request_fn(&self.client, &url)
                 .bearer_auth(&new_token.access_token)
                 .json(body)
                 .send()
                 .await?;
 
+            log::debug!("[HTTP] 重试响应状态: {}", retry_response.status());
             return self.handle_response(retry_response).await;
         }
 
@@ -235,6 +282,7 @@ impl HttpClient {
             .ok_or(ApiError::AuthError("无 refresh_token".to_string()))?;
 
         let url = format!("{}{}", self.base_url, "/auth/refresh");
+        log::debug!("[HTTP] POST {} (刷新 Token)", url);
         let response = self
             .client
             .post(&url)
@@ -265,6 +313,9 @@ impl HttpClient {
     }
 
     /// 处理响应
+    ///
+    /// 后端统一响应格式: `{ "code": 0, "message": "success", "data": { ... } }`
+    /// 成功时提取 `data` 字段反序列化为目标类型
     async fn handle_response<T: serde::de::DeserializeOwned>(
         &self,
         response: reqwest::Response,
@@ -273,13 +324,38 @@ impl HttpClient {
 
         if status.is_success() {
             let body = response.text().await?;
-            let data: T = serde_json::from_str(&body)?;
-            Ok(data)
+            log::debug!("[HTTP] 响应体: {}", if body.len() > 500 { &body[..500] } else { &body });
+
+            // 先尝试解析为统一响应格式
+            let api_response: serde_json::Value = serde_json::from_str(&body)?;
+            let code = api_response.get("code").and_then(|v| v.as_i64()).unwrap_or(-1);
+
+            if code == 0 {
+                // 成功：提取 data 字段
+                if let Some(data) = api_response.get("data") {
+                    let result: T = serde_json::from_value(data.clone())?;
+                    Ok(result)
+                } else {
+                    // data 为 null，尝试直接反序列化整个响应体（兼容无包装格式）
+                    let result: T = serde_json::from_str(&body)?;
+                    Ok(result)
+                }
+            } else {
+                // 业务错误
+                let message = api_response.get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("未知错误")
+                    .to_string();
+                log::warn!("[HTTP] 业务错误 code={}, message={}", code, message);
+                Err(ApiError::Other(format!("业务错误 ({}): {}", code, message)))
+            }
         } else if status.is_client_error() {
             let body = response.text().await?;
+            log::debug!("[HTTP] 客户端错误 {}: {}", status, body);
             Err(ApiError::Other(format!("客户端错误 {}: {}", status, body)))
         } else {
             let body = response.text().await?;
+            log::debug!("[HTTP] 服务器错误 {}: {}", status, body);
             Err(ApiError::ServerError(format!("服务器错误 {}: {}", status, body)))
         }
     }
