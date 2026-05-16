@@ -1,7 +1,7 @@
 import type { IEventRepository } from '../types/event.repository'
 import type { CalendarEvent } from '@/types'
 import { WebApiClient } from './api-client'
-import { transformWebEvent, type ApiResponse, type WebEvent } from './transforms'
+import { transformWebEvent, type ApiResponse, type PageResponse, type WebEvent } from './transforms'
 import { RepositoryError, RepoErrorCodes } from '../errors'
 
 /** Web 事件 Repository 实现 */
@@ -11,7 +11,7 @@ export class WebEventRepository implements IEventRepository {
   constructor(private readonly apiClient: WebApiClient) {}
 
   async getAll(): Promise<CalendarEvent[]> {
-    const response = await this.apiClient.get<ApiResponse<WebEvent[]>>('/events')
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>('/events')
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
@@ -19,11 +19,11 @@ export class WebEventRepository implements IEventRepository {
         platform: this.platform,
       })
     }
-    return response.data.map(transformWebEvent)
+    return response.data.items.map(transformWebEvent)
   }
 
   async getByCalendarId(calendarId: number): Promise<CalendarEvent[]> {
-    const response = await this.apiClient.get<ApiResponse<WebEvent[]>>(`/events?calendar_id=${calendarId}`)
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(`/events?calendar_id=${calendarId}`)
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
@@ -31,11 +31,11 @@ export class WebEventRepository implements IEventRepository {
         platform: this.platform,
       })
     }
-    return response.data.map(transformWebEvent)
+    return response.data.items.map(transformWebEvent)
   }
 
   async getByTimeRange(startTime: number, endTime: number): Promise<CalendarEvent[]> {
-    const response = await this.apiClient.get<ApiResponse<WebEvent[]>>(`/events?start_time=${startTime}&end_time=${endTime}`)
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(`/events?start_time=${startTime}&end_time=${endTime}`)
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
@@ -43,7 +43,7 @@ export class WebEventRepository implements IEventRepository {
         platform: this.platform,
       })
     }
-    return response.data.map(transformWebEvent)
+    return response.data.items.map(transformWebEvent)
   }
 
   async create(params: {
@@ -105,13 +105,11 @@ export class WebEventRepository implements IEventRepository {
       start_time: params.startTime,
       end_time: params.endTime,
       all_day: params.allDay,
-      calendar_id: params.calendarId,
       timezone: params.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       color: params.color ?? null,
       reminder: params.reminder ?? null,
       repeat_rule: params.repeatRule ?? null,
       location: params.location ?? null,
-      external_id: params.externalId ?? null,
     })
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({

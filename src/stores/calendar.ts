@@ -1,23 +1,11 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
-import { usePlatform } from '@/platform/provider'
-
-// 默认日历 ID（前端生成的临时 ID，用于数据库为空时的默认日历）
-const DEFAULT_CALENDAR_ID = 'default'
+import { usePlatform, useCapabilities } from '@/platform/provider'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // State
-  const calendars = ref<Calendar[]>([
-    {
-      id: DEFAULT_CALENDAR_ID,
-      name: '我的日历',
-      color: '#4A90D9',
-      type: 'local',
-      visible: true,
-      syncEnabled: false
-    }
-  ])
+  const calendars = ref<Calendar[]>([])
 
   const events = ref<CalendarEvent[]>([])
   const currentView = ref<CalendarView>('month')
@@ -45,22 +33,26 @@ export const useCalendarStore = defineStore('calendar', () => {
         console.error('Failed to load default view setting:', e)
       }
 
-      // 1. 优先加载本地日历（快速操作）
+      // 1. 加载日历数据
       const loadedCalendars = await calendarRepo.getAll()
       if (loadedCalendars.length > 0) {
         calendars.value = loadedCalendars
       } else {
-        // 数据库为空，保存默认日历到数据库
-        const defaultCal = calendars.value[0]
-        const created = await calendarRepo.create({
-          name: defaultCal.name,
-          color: defaultCal.color,
-          type: defaultCal.type,
-          visible: defaultCal.visible,
-          syncEnabled: defaultCal.syncEnabled
-        })
-        calendars.value = [created]
-        console.log('Default calendar saved to database:', created.id)
+        // 仅本地优先平台（桌面端）在数据库为空时自动创建默认日历
+        // 远程优先平台（Web端）不自动创建，日历数据来源于服务端
+        const capabilities = useCapabilities()
+        if (capabilities.dataPriority === 'local-first') {
+          const created = await calendarRepo.create({
+            name: '我的日历',
+            color: '#4A90D9',
+            type: 'local',
+            visible: true,
+            syncEnabled: false
+          })
+          calendars.value = [created]
+          console.log('Default calendar saved to database:', created.id)
+        }
+        // Web端：服务端注册时已创建默认日历，保持空列表
       }
 
       // 2. 加载本地事件（快速操作）
@@ -152,18 +144,23 @@ export const useCalendarStore = defineStore('calendar', () => {
               }
               calendars.value.push(newCal)
 
-              try {
-                await calendarRepo.create({
-                  name: newCal.name,
-                  color: newCal.color,
-                  type: newCal.type,
-                  accountId: parseInt(account.id),
-                  visible: newCal.visible,
-                  syncEnabled: newCal.syncEnabled
-                })
-                console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库`)
-              } catch (dbError) {
-                console.error(`保存外部日历 ${cal.name} 失败:`, dbError)
+              // 仅本地优先平台（桌面端）将外部日历保存到本地数据库
+              // 远程优先平台（Web端）外部日历已存在于服务端，无需重复创建
+              const capabilities = useCapabilities()
+              if (capabilities.dataPriority === 'local-first') {
+                try {
+                  await calendarRepo.create({
+                    name: newCal.name,
+                    color: newCal.color,
+                    type: newCal.type,
+                    accountId: parseInt(account.id),
+                    visible: newCal.visible,
+                    syncEnabled: newCal.syncEnabled
+                  })
+                  console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库`)
+                } catch (dbError) {
+                  console.error(`保存外部日历 ${cal.name} 失败:`, dbError)
+                }
               }
             } else {
               calendars.value[existingIndex] = {
@@ -176,16 +173,20 @@ export const useCalendarStore = defineStore('calendar', () => {
                 readOnly: cal.readOnly,
               }
 
-              const calId = parseInt(calendars.value[existingIndex].id)
-              if (!isNaN(calId)) {
-                try {
-                  await calendarRepo.update({
-                    id: calId,
-                    visible: calendars.value[existingIndex].visible,
-                    syncEnabled: calendars.value[existingIndex].syncEnabled
-                  })
-                } catch (dbError) {
-                  console.error(`更新外部日历 ${cal.name} 到数据库失败:`, dbError)
+              // 仅本地优先平台更新本地数据库
+              const capabilities = useCapabilities()
+              if (capabilities.dataPriority === 'local-first') {
+                const calId = parseInt(calendars.value[existingIndex].id)
+                if (!isNaN(calId)) {
+                  try {
+                    await calendarRepo.update({
+                      id: calId,
+                      visible: calendars.value[existingIndex].visible,
+                      syncEnabled: calendars.value[existingIndex].syncEnabled
+                    })
+                  } catch (dbError) {
+                    console.error(`更新外部日历 ${cal.name} 到数据库失败:`, dbError)
+                  }
                 }
               }
             }
@@ -204,7 +205,8 @@ export const useCalendarStore = defineStore('calendar', () => {
     try {
       const { syncRepo, eventRepo } = usePlatform()
 
-      const externalCalendars = calendars.value.filter(c => c.type !== 'local')
+      // 仅同步真正的外部日历（exchange/caldav），online 日历的事件由 eventRepo 管理
+      const externalCalendars = calendars.value.filter(c => c.type === 'exchange' || c.type === 'caldav')
 
       for (const calendar of externalCalendars) {
         if (!calendar.accountId) continue
@@ -326,6 +328,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   // Actions
+  /**
+   * 获取有效的日历 ID
+   * 优先返回传入的 calendarId，其次返回本地日历，最后返回第一个可用日历
+   */
   function getValidCalendarId(calendarId: string | undefined): number {
     if (calendarId) {
       const parsed = parseInt(calendarId)
@@ -333,6 +339,8 @@ export const useCalendarStore = defineStore('calendar', () => {
         return parsed
       }
     }
+
+    // 从 calendarStore 获取第一个本地日历
     const localCalendar = calendars.value.find(c => c.type === 'local')
     if (localCalendar) {
       const parsed = parseInt(localCalendar.id)
@@ -340,6 +348,17 @@ export const useCalendarStore = defineStore('calendar', () => {
         return parsed
       }
     }
+
+    // 兜底：返回第一个日历（不限类型）
+    const firstCalendar = calendars.value[0]
+    if (firstCalendar) {
+      const parsed = parseInt(firstCalendar.id)
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed
+      }
+    }
+
+    // 最终兜底（不应发生）
     console.warn('[CalendarStore] 无法获取有效的日历 ID，使用默认值 1')
     return 1
   }
@@ -394,7 +413,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     const { eventRepo, syncRepo } = usePlatform()
     const targetCalendar = calendars.value.find(c => c.id === event.calendarId)
 
-    if (targetCalendar && targetCalendar.type !== 'local') {
+    if (targetCalendar && (targetCalendar.type === 'exchange' || targetCalendar.type === 'caldav')) {
       if (targetCalendar.readOnly) {
         console.error('创建事件失败：该日历为只读模式，不支持写入事件')
         return
@@ -482,7 +501,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       const event = events.value[index]
       const calendar = calendars.value.find(c => c.id === event.calendarId)
 
-      if (calendar && calendar.type !== 'local') {
+      if (calendar && (calendar.type === 'exchange' || calendar.type === 'caldav')) {
         // 外部日历事件
         try {
           const result = await syncRepo.updateExternalEvent({
@@ -565,8 +584,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
     const calendar = calendars.value.find(c => c.id === event.calendarId)
 
-    if (calendar && calendar.type !== 'local') {
-      // 外部日历事件
+    if (calendar && (calendar.type === 'exchange' || calendar.type === 'caldav')) {
       try {
         const result = await syncRepo.deleteExternalEvent({
           accountId: calendar.accountId || '',
@@ -666,6 +684,33 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   }, { deep: true })
 
+  /**
+   * 从数据库重新加载数据
+   * 同步完成后调用，将远端变更刷新到前端 Store
+   */
+  async function reloadFromDatabase(): Promise<void> {
+    try {
+      const { calendarRepo, eventRepo } = usePlatform()
+
+      // 重新加载日历
+      const loadedCalendars = await calendarRepo.getAll()
+      if (loadedCalendars.length > 0) {
+        calendars.value = loadedCalendars
+      }
+
+      // 重新加载事件
+      const loadedEvents = await eventRepo.getAll()
+      events.value = loadedEvents
+
+      console.log('[CalendarStore] 数据已从数据库重新加载:', {
+        calendars: calendars.value.length,
+        events: events.value.length,
+      })
+    } catch (error) {
+      console.error('[CalendarStore] 重新加载数据失败:', error)
+    }
+  }
+
   return {
     calendars,
     events,
@@ -674,6 +719,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     selectedDate,
     isInitialized,
     initialize,
+    reloadFromDatabase,
     addCalendar,
     updateCalendar,
     deleteCalendar,
@@ -691,6 +737,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     visibleCalendars,
     visibleEvents,
     currentDateRange,
-    eventsForCurrentView
+    eventsForCurrentView,
+    getValidCalendarId
   }
 })

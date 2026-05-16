@@ -10,6 +10,7 @@
             <div class="cal-name">{{ cal.name }}</div>
             <div class="cal-type">
               <span v-if="cal.type === 'local'">本地</span>
+              <span v-else-if="cal.type === 'online'">在线</span>
               <span v-else class="external-type">{{ cal.type }}</span>
               <span v-if="cal.readOnly" class="readonly-badge">只读</span>
               <span v-if="cal.lastSync" class="sync-time">最后同步: {{ formatSyncTime(cal.lastSync) }}</span>
@@ -20,7 +21,7 @@
           </div>
           <div class="cal-actions">
             <input type="checkbox" :checked="cal.visible" @change="toggleCalendar(cal.id)" />
-            <button v-if="cal.type !== 'local'" class="delete-btn" @click="confirmDeleteAccount(cal.id, cal.name)" aria-label="删除账号">
+            <button v-if="cal.type === 'exchange' || cal.type === 'caldav'" class="delete-btn" @click="confirmDeleteAccount(cal.id, cal.name)" aria-label="删除账号">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3 6 5 6 21 6"></polyline>
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>

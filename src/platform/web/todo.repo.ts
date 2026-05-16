@@ -1,7 +1,7 @@
 import type { ITodoRepository } from '../types/todo.repository'
 import type { Todo } from '@/types'
 import { WebApiClient } from './api-client'
-import { transformWebTodo, type ApiResponse, type WebTodo } from './transforms'
+import { transformWebTodo, type ApiResponse, type PageResponse, type WebTodo } from './transforms'
 import { RepositoryError, RepoErrorCodes } from '../errors'
 
 /** Web 待办 Repository 实现 */
@@ -11,7 +11,7 @@ export class WebTodoRepository implements ITodoRepository {
   constructor(private readonly apiClient: WebApiClient) {}
 
   async getAll(): Promise<Todo[]> {
-    const response = await this.apiClient.get<ApiResponse<WebTodo[]>>('/todos')
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebTodo>>>('/todos')
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
@@ -19,11 +19,11 @@ export class WebTodoRepository implements ITodoRepository {
         platform: this.platform,
       })
     }
-    return response.data.map(transformWebTodo)
+    return response.data.items.map(transformWebTodo)
   }
 
   async getByCalendarId(calendarId: number): Promise<Todo[]> {
-    const response = await this.apiClient.get<ApiResponse<WebTodo[]>>(`/todos?calendar_id=${calendarId}`)
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebTodo>>>(`/todos?calendar_id=${calendarId}`)
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
@@ -31,7 +31,7 @@ export class WebTodoRepository implements ITodoRepository {
         platform: this.platform,
       })
     }
-    return response.data.map(transformWebTodo)
+    return response.data.items.map(transformWebTodo)
   }
 
   async create(params: {
@@ -75,7 +75,6 @@ export class WebTodoRepository implements ITodoRepository {
       due_date: params.dueDate,
       completed: params.completed,
       priority: params.priority,
-      calendar_id: params.calendarId,
     })
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({

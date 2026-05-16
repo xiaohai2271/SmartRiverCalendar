@@ -11,28 +11,36 @@ export interface ApiResponse<T> {
   data: T | null
 }
 
+/** Web API 分页响应格式 */
+export interface PageResponse<T> {
+  items: T[]
+  total: number | string
+  page: number
+  page_size: number
+}
+
 /** Web API 日历原始数据 */
 export interface WebCalendar {
-  id: number
+  id: number | string
   name: string
   color: string
   type: string
-  account_id: number | null
+  account_id: number | string | null
   visible: boolean
   sync_enabled: boolean
 }
 
 /** Web API 事件原始数据 */
 export interface WebEvent {
-  id: number
+  id: number | string
   title: string
   description: string | null
-  start_time: number
-  end_time: number
+  start_time: number | string
+  end_time: number | string
   all_day: boolean
-  calendar_id: number
+  calendar_id: number | string
   color: string | null
-  reminder: number | null
+  reminder: number | string | null
   repeat_rule: string | null
   location: string | null
   external_id: string | null
@@ -40,18 +48,20 @@ export interface WebEvent {
 
 /** Web API 待办原始数据 */
 export interface WebTodo {
-  id: number
+  id: number | string
   title: string
   description: string | null
-  due_date: number | null
+  due_date: number | string | null
   completed: boolean
   priority: string
-  calendar_id: number
+  calendar_id: number | string
+  created_at: number | string
+  updated_at: number | string
 }
 
 /** Web API 账号原始数据 */
 export interface WebAccount {
-  id: number
+  id: number | string
   type: string
   server_url: string
   username: string
@@ -62,7 +72,7 @@ export interface WebAccount {
 
 /** Web API 用户资料原始数据 */
 export interface WebUserProfile {
-  id: number
+  id: number | string
   email: string
   display_name: string
   avatar_url: string | null
@@ -97,12 +107,12 @@ export function transformWebEvent(raw: WebEvent): CalendarEvent {
     id: String(raw.id),
     title: raw.title,
     description: raw.description ?? undefined,
-    startTime: raw.start_time,
-    endTime: raw.end_time,
+    startTime: Number(raw.start_time),
+    endTime: Number(raw.end_time),
     allDay: raw.all_day,
     calendarId: String(raw.calendar_id),
     color: raw.color ?? undefined,
-    reminder: raw.reminder ?? undefined,
+    reminder: raw.reminder != null ? Number(raw.reminder) : undefined,
     repeatRule,
     location: raw.location ?? undefined,
     externalId: raw.external_id ?? undefined,
@@ -117,12 +127,12 @@ export function transformWebTodo(raw: WebTodo): Todo {
     id: String(raw.id),
     title: raw.title,
     description: raw.description ?? undefined,
-    dueDate: raw.due_date ?? undefined,
+    dueDate: raw.due_date != null ? Number(raw.due_date) : undefined,
     completed: raw.completed,
     priority: raw.priority as Todo['priority'],
     calendarId: String(raw.calendar_id),
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: Number(raw.created_at),
+    updatedAt: Number(raw.updated_at),
   }
 }
 
