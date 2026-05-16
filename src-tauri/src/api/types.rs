@@ -1,7 +1,183 @@
 // API 类型定义模块
 // 定义所有 API DTO 类型，包括认证、同步、日历、事件、待办等
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+// ================================================================
+// 自定义反序列化辅助
+// ================================================================
+
+/// 兼容字符串和数字类型的 i64 反序列化
+/// Spring Boot 后端 Long 字段可能返回 "1778915785088" (字符串) 或 1778915785088 (数字)
+fn deserialize_string_or_number_i64<'de, D>(deserializer: D) -> Result<i64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct StringOrNumberVisitor;
+
+    impl<'de> Visitor<'de> for StringOrNumberVisitor {
+        type Value = i64;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("数字或数字字符串")
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<i64, E> {
+            Ok(v)
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<i64, E> {
+            Ok(v as i64)
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<i64, E> {
+            v.parse().map_err(|_| de::Error::invalid_value(de::Unexpected::Str(v), &self))
+        }
+    }
+
+    deserializer.deserialize_any(StringOrNumberVisitor)
+}
+
+/// 兼容字符串和数字类型的 Option<i64> 反序列化
+/// 后端 Long 字段可能返回字符串 "123" 或数字 123，也可能为 null
+fn deserialize_string_or_number_option_i64<'de, D>(deserializer: D) -> Result<Option<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct OptionStringOrNumberVisitor;
+
+    impl<'de> Visitor<'de> for OptionStringOrNumberVisitor {
+        type Value = Option<i64>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("数字、数字字符串或 null")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Option<i64>, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Option<i64>, E> {
+            Ok(None)
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Option<i64>, E> {
+            Ok(Some(v))
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Option<i64>, E> {
+            Ok(Some(v as i64))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Option<i64>, E> {
+            if v.is_empty() {
+                Ok(None)
+            } else {
+                v.parse().map(Some).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(v), &self))
+            }
+        }
+    }
+
+    deserializer.deserialize_option(OptionStringOrNumberVisitor)
+}
+
+/// 兼容字符串和数字类型的 Vec<i64> 反序列化
+/// 后端 List<Long> 字段可能返回 ["1", "2"] 或 [1, 2]
+fn deserialize_vec_string_or_number_i64<'de, D>(deserializer: D) -> Result<Vec<i64>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, SeqAccess, Visitor};
+    use std::fmt;
+
+    struct VecStringOrNumberVisitor;
+
+    impl<'de> Visitor<'de> for VecStringOrNumberVisitor {
+        type Value = Vec<i64>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("数字或数字字符串数组")
+        }
+
+        fn visit_seq<A: SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<i64>, A::Error> {
+            let mut result = Vec::with_capacity(seq.size_hint().unwrap_or(0));
+            while let Some(value) = seq.next_element::<serde_json::Value>()? {
+                match value {
+                    serde_json::Value::Number(n) => {
+                        result.push(n.as_i64().ok_or_else(|| {
+                            de::Error::custom("数字超出 i64 范围")
+                        })?);
+                    }
+                    serde_json::Value::String(s) => {
+                        result.push(s.parse().map_err(|_| {
+                            de::Error::custom(format!("无法将 '{}' 解析为 i64", s))
+                        })?);
+                    }
+                    other => {
+                        return Err(de::Error::custom(format!(
+                            "期望数字或字符串，得到 {:?}", other
+                        )));
+                    }
+                }
+            }
+            Ok(result)
+        }
+    }
+
+    deserializer.deserialize_seq(VecStringOrNumberVisitor)
+}
+
+/// 兼容字符串和数字类型的 Option<i32> 反序列化
+/// 后端 Integer 字段可能返回字符串 "15" 或数字 15，也可能为 null
+fn deserialize_string_or_number_option_i32<'de, D>(deserializer: D) -> Result<Option<i32>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct OptionI32StringOrNumberVisitor;
+
+    impl<'de> Visitor<'de> for OptionI32StringOrNumberVisitor {
+        type Value = Option<i32>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("数字、数字字符串或 null")
+        }
+
+        fn visit_none<E: de::Error>(self) -> Result<Option<i32>, E> {
+            Ok(None)
+        }
+
+        fn visit_unit<E: de::Error>(self) -> Result<Option<i32>, E> {
+            Ok(None)
+        }
+
+        fn visit_i64<E: de::Error>(self, v: i64) -> Result<Option<i32>, E> {
+            Ok(Some(v as i32))
+        }
+
+        fn visit_u64<E: de::Error>(self, v: u64) -> Result<Option<i32>, E> {
+            Ok(Some(v as i32))
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Option<i32>, E> {
+            if v.is_empty() {
+                Ok(None)
+            } else {
+                v.parse().map(Some).map_err(|_| de::Error::invalid_value(de::Unexpected::Str(v), &self))
+            }
+        }
+    }
+
+    deserializer.deserialize_option(OptionI32StringOrNumberVisitor)
+}
 
 // ================================================================
 // 认证相关 DTO
@@ -30,33 +206,38 @@ pub struct RegisterRequest {
 /// 认证响应（登录/注册/OAuth 成功后返回）
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthResponse {
-    /// 用户 ID
+    /// 用户 ID，兼容后端返回字符串 "1" 或数字 1
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub user_id: i64,
     /// 访问令牌
     pub access_token: String,
     /// 刷新令牌
     pub refresh_token: String,
-    /// 过期时间（秒）
+    /// 过期时间（秒），兼容后端返回字符串 "7200" 或数字 7200
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub expires_in: i64,
 }
 
 /// 刷新 Token 响应
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RefreshTokenResponse {
-    /// 用户 ID
+    /// 用户 ID，兼容后端返回字符串 "1" 或数字 1
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub user_id: i64,
     /// 新的访问令牌
     pub access_token: String,
     /// 新的刷新令牌
     pub refresh_token: String,
-    /// 过期时间（秒）
+    /// 过期时间（秒），兼容后端返回字符串 "7200" 或数字 7200
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub expires_in: i64,
 }
 
 /// 用户资料
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserProfile {
-    /// 用户 ID
+    /// 用户 ID，兼容后端返回字符串 "1" 或数字 1
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub id: i64,
     /// 用户邮箱
     pub email: String,
@@ -76,6 +257,7 @@ pub struct UserProfile {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SyncUploadRequest {
     /// 上次同步时间戳（毫秒），首次为 None
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64")]
     pub last_sync_at: Option<i64>,
     /// 批量变更
     pub changes: BatchChanges,
@@ -89,6 +271,7 @@ pub struct SyncDownloadResponse {
     /// 同步令牌（用于增量同步）
     pub sync_token: String,
     /// 服务端当前时间戳（毫秒）
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub server_time: i64,
 }
 
@@ -124,6 +307,7 @@ pub struct EntityChanges<T> {
     /// 更新的实体列表
     pub updated: Vec<T>,
     /// 删除的实体 ID 列表
+    #[serde(deserialize_with = "deserialize_vec_string_or_number_i64")]
     pub deleted: Vec<i64>,
 }
 
@@ -141,6 +325,7 @@ impl<T> Default for EntityChanges<T> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalendarSyncItem {
     /// 日历 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub id: i64,
     /// 日历名称
     pub name: String,
@@ -149,12 +334,14 @@ pub struct CalendarSyncItem {
     /// 日历类型
     pub r#type: String,
     /// 关联账户 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64")]
     pub account_id: Option<i64>,
     /// 是否可见
     pub visible: bool,
     /// 是否启用同步
     pub sync_enabled: bool,
     /// 更新时间戳（毫秒）
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
 }
 
@@ -162,28 +349,34 @@ pub struct CalendarSyncItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventSyncItem {
     /// 事件 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub id: i64,
     /// 事件标题
     pub title: String,
     /// 事件描述
     pub description: Option<String>,
     /// 开始时间戳（毫秒）
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub start_time: i64,
     /// 结束时间戳（毫秒）
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub end_time: i64,
     /// 是否全天事件
     pub all_day: bool,
     /// 所属日历 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub calendar_id: i64,
     /// 时区
     pub timezone: String,
     /// 颜色
     pub color: Option<String>,
     /// 提醒时间（分钟）
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i32", default)]
     pub reminder: Option<i32>,
     /// 位置
     pub location: Option<String>,
     /// 更新时间戳（毫秒）
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
 }
 
@@ -191,20 +384,24 @@ pub struct EventSyncItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoSyncItem {
     /// 待办 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub id: i64,
     /// 待办标题
     pub title: String,
     /// 待办描述
     pub description: Option<String>,
     /// 截止日期时间戳（毫秒）
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64")]
     pub due_date: Option<i64>,
     /// 是否完成
     pub completed: bool,
     /// 优先级 (low/medium/high)
     pub priority: String,
     /// 所属日历 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub calendar_id: i64,
     /// 更新时间戳（毫秒）
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
 }
 
@@ -217,6 +414,7 @@ pub struct TodoSyncItem {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalendarDTO {
     /// 日历 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub id: i64,
     /// 日历名称
     pub name: String,
@@ -225,12 +423,15 @@ pub struct CalendarDTO {
     /// 日历描述
     pub description: Option<String>,
     /// 用户 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub user_id: i64,
     /// 是否默认日历
     pub is_default: bool,
     /// 创建时间 (Unix 时间戳，毫秒)
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub created_at: i64,
     /// 更新时间 (Unix 时间戳，毫秒)
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
 }
 
@@ -243,8 +444,10 @@ pub struct CalendarDTO {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventDTO {
     /// 事件 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub id: i64,
     /// 日历 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub calendar_id: i64,
     /// 事件标题
     pub title: String,
@@ -259,14 +462,18 @@ pub struct EventDTO {
     /// 位置
     pub location: Option<String>,
     /// 提醒时间 (分钟)
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64", default)]
     pub reminder_minutes: Option<i64>,
     /// 重复规则 (RRULE 格式)
     pub recurrence_rule: Option<String>,
     /// 用户 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub user_id: i64,
     /// 创建时间 (Unix 时间戳，毫秒)
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub created_at: i64,
     /// 更新时间 (Unix 时间戳，毫秒)
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
 }
 
@@ -279,8 +486,10 @@ pub struct EventDTO {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TodoDTO {
     /// 待办 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub id: i64,
     /// 日历 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub calendar_id: i64,
     /// 待办标题
     pub title: String,
@@ -291,14 +500,19 @@ pub struct TodoDTO {
     /// 完成状态
     pub is_completed: bool,
     /// 完成时间 (Unix 时间戳，毫秒)
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64", default)]
     pub completed_at: Option<i64>,
     /// 优先级 (0: 低, 1: 中, 2: 高)
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub priority: i64,
     /// 用户 ID
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub user_id: i64,
     /// 创建时间 (Unix 时间戳，毫秒)
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub created_at: i64,
     /// 更新时间 (Unix 时间戳，毫秒)
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
 }
 
@@ -323,12 +537,16 @@ pub struct PaginatedResponse<T> {
     /// 数据列表
     pub items: Vec<T>,
     /// 总条数
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub total: i64,
     /// 当前页码
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub page: i64,
     /// 每页条数
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub page_size: i64,
     /// 总页数
+    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub total_pages: i64,
 }
 

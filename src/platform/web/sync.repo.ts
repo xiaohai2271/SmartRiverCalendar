@@ -14,7 +14,8 @@ export class WebSyncRepository implements ISyncRepository {
   constructor(private readonly apiClient: WebApiClient) {}
 
   async connectExchange(serverUrl: string | null, username: string, password: string): Promise<ConnectResult> {
-    const response = await this.apiClient.post<ApiResponse<ConnectResult>>('/sync/connect-exchange', {
+    const response = await this.apiClient.post<ApiResponse<ConnectResult>>('/accounts/connect', {
+      type: 'exchange',
       server_url: serverUrl,
       username,
       password,
@@ -26,7 +27,8 @@ export class WebSyncRepository implements ISyncRepository {
   }
 
   async connectCalDAV(serverUrl: string, username: string, password: string): Promise<ConnectResult> {
-    const response = await this.apiClient.post<ApiResponse<ConnectResult>>('/sync/connect-caldav', {
+    const response = await this.apiClient.post<ApiResponse<ConnectResult>>('/accounts/connect', {
+      type: 'caldav',
       server_url: serverUrl,
       username,
       password,
@@ -38,7 +40,7 @@ export class WebSyncRepository implements ISyncRepository {
   }
 
   async getAllAccounts(): Promise<ExternalAccount[]> {
-    const response = await this.apiClient.get<ApiResponse<WebAccount[]>>('/sync/accounts')
+    const response = await this.apiClient.get<ApiResponse<WebAccount[]>>('/accounts')
     if (response.code !== 0 || !response.data) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
@@ -50,7 +52,7 @@ export class WebSyncRepository implements ISyncRepository {
   }
 
   async deleteAccount(accountId: string): Promise<void> {
-    const response = await this.apiClient.delete<ApiResponse<null>>(`/sync/accounts/${accountId}`)
+    const response = await this.apiClient.delete<ApiResponse<null>>(`/accounts/${accountId}`)
     if (response.code !== 0) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
@@ -168,20 +170,21 @@ export class WebSyncRepository implements ISyncRepository {
   }
 
   async triggerCloudSync(): Promise<boolean> {
-    const response = await this.apiClient.post<ApiResponse<{ success: boolean }>>('/sync/trigger')
-    return response?.data?.success ?? false
+    const response = await this.apiClient.post<ApiResponse<{ sync_id: string; status: string }>>('/sync/now')
+    return response?.code === 0
   }
 
   async getSyncStatus(): Promise<{ status: string; lastSyncAt: number | null; pendingChanges: number }> {
     try {
+      // API 返回 SyncStatusDTO[]，取第一条
       const response = await this.apiClient.get<
-        ApiResponse<{ status: string; last_sync_at: number | null; pending_changes: number }>
+        ApiResponse<Array<{ account_id: number; calendar_id: number; status: string; last_sync_at: number | null; sync_token: string | null }>>
       >('/sync/status')
-      if (response.code === 0 && response.data) {
+      if (response.code === 0 && response.data && response.data.length > 0) {
         return {
-          status: response.data.status,
-          lastSyncAt: response.data.last_sync_at,
-          pendingChanges: response.data.pending_changes,
+          status: response.data[0].status,
+          lastSyncAt: response.data[0].last_sync_at,
+          pendingChanges: 0,
         }
       }
       return { status: 'idle', lastSyncAt: null, pendingChanges: 0 }

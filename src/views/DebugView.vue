@@ -22,6 +22,16 @@
       <div class="section-header">
         <h3>日志导出</h3>
         <div class="log-controls">
+          <div class="log-level-control">
+            <label>日志级别</label>
+            <select v-model="logLevel" @change="handleLogLevelChange" class="log-source-select">
+              <option value="error">Error</option>
+              <option value="warn">Warn</option>
+              <option value="info">Info</option>
+              <option value="debug">Debug</option>
+              <option value="trace">Trace</option>
+            </select>
+          </div>
           <select v-model="logSource" @change="refreshLogs" class="log-source-select">
             <option value="all">全部日志</option>
             <option value="frontend">前端日志</option>
@@ -166,6 +176,49 @@
       </div>
     </div>
 
+    <!-- API 配置 -->
+    <div v-if="activeTab === 'api'" class="debug-section">
+      <div class="section-header">
+        <h3>API 配置</h3>
+        <span :class="['mode-badge', apiConfig.mode]">
+          {{ apiConfig.mode === 'mock' ? 'Mock 模式' : 'Real 模式' }}
+        </span>
+      </div>
+      <div class="api-config-content">
+        <div class="setting-item">
+          <label>API 模式</label>
+          <select v-model="apiConfig.mode" class="api-mode-select">
+            <option value="mock">Mock（模拟数据）</option>
+            <option value="real">Real（真实后端）</option>
+          </select>
+        </div>
+        <div v-if="apiConfig.mode === 'real'" class="setting-item">
+          <label>API 地址</label>
+          <input
+            v-model="apiConfig.baseUrl"
+            type="text"
+            class="api-url-input"
+            placeholder="https://api.example.com/api/v1"
+          />
+        </div>
+        <div class="api-config-actions">
+          <button
+            class="action-btn"
+            @click="handleSwitchApiConfig"
+            :disabled="switchingApi"
+          >
+            {{ switchingApi ? '切换中...' : '应用配置' }}
+          </button>
+        </div>
+        <div v-if="apiConfigMessage" :class="['config-message', apiConfigMessageType]">
+          {{ apiConfigMessage }}
+        </div>
+        <div class="config-warning">
+          ⚠️ 切换 API 模式会清除当前登录状态和 Token，需要重新登录
+        </div>
+      </div>
+    </div>
+
     <!-- 存储信息对话框 -->
     <div v-if="showStorageDialog" class="dialog-overlay" @click.self="showStorageDialog = false">
       <div class="dialog">
@@ -189,7 +242,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { isTauri, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs } from '../utils/tauri'
+import { isTauri, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs, getApiConfig, switchApiConfig, getLogLevel, setLogLevel } from '../utils/tauri'
 import { startLogCapture, stopLogCapture } from '../utils/logger'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
@@ -201,7 +254,8 @@ const tabs = [
   { id: 'logs', name: '日志' },
   { id: 'schema', name: '表结构' },
   { id: 'data', name: '数据' },
-  { id: 'devtools', name: '开发工具' }
+  { id: 'devtools', name: '开发工具' },
+  { id: 'api', name: 'API 配置' }
 ]
 
 const activeTab = ref('logs')
@@ -216,6 +270,7 @@ interface LogEntry {
 const logs = ref<LogEntry[]>([])
 const exporting = ref(false)
 const logSource = ref<'all' | 'frontend' | 'backend'>('all')
+const logLevel = ref('info')
 
 // 数据库结构相关
 interface ColumnInfo {
@@ -256,6 +311,63 @@ const platform = ref('')
 // 存储信息
 const showStorageDialog = ref(false)
 const storageInfo = ref<Record<string, number>>({})
+
+// API 配置相关
+const apiConfig = reactive({
+  mode: 'mock',
+  baseUrl: 'http://localhost:3000/api',
+})
+const switchingApi = ref(false)
+const apiConfigMessage = ref('')
+const apiConfigMessageType = ref<'success' | 'error'>('success')
+
+// 加载 API 配置
+async function loadApiConfig() {
+  if (!isTauri()) return
+  try {
+    const config = await getApiConfig()
+    if (config) {
+      apiConfig.mode = config.mode
+      apiConfig.baseUrl = config.baseUrl
+    }
+  } catch (error) {
+    console.error('获取 API 配置失败:', error)
+  }
+}
+
+// 切换 API 配置
+async function handleSwitchApiConfig() {
+  // 确认对话框
+  const confirmed = confirm(
+    `确定要切换到 ${apiConfig.mode === 'mock' ? 'Mock' : 'Real'} 模式吗？\n\n` +
+    '切换后会：\n' +
+    '• 清除当前登录状态\n' +
+    '• 清除缓存的 Token\n' +
+    '• 需要重新登录\n\n' +
+    (apiConfig.mode === 'real' ? `API 地址: ${apiConfig.baseUrl}\n\n` : '') +
+    '是否继续？'
+  )
+  if (!confirmed) return
+
+  switchingApi.value = true
+  apiConfigMessage.value = ''
+
+  try {
+    const result = await switchApiConfig(apiConfig.mode, apiConfig.baseUrl)
+    if (result?.success) {
+      apiConfigMessage.value = `已切换到 ${result.mode === 'mock' ? 'Mock' : 'Real'} 模式`
+      apiConfigMessageType.value = 'success'
+    } else {
+      apiConfigMessage.value = '切换失败'
+      apiConfigMessageType.value = 'error'
+    }
+  } catch (error) {
+    apiConfigMessage.value = `切换失败: ${error instanceof Error ? error.message : String(error)}`
+    apiConfigMessageType.value = 'error'
+  } finally {
+    switchingApi.value = false
+  }
+}
 
 // 返回设置页面
 function goBack() {
@@ -360,6 +472,17 @@ async function clearLogs() {
   }
   
   logs.value = []
+}
+
+// 处理日志级别变更
+async function handleLogLevelChange() {
+  if (!isTauri()) return
+  try {
+    await setLogLevel(logLevel.value)
+    console.log(`[DebugView] 日志级别已切换为: ${logLevel.value}`)
+  } catch (error) {
+    console.error('设置日志级别失败:', error)
+  }
 }
 
 // ==================== 数据库结构功能 ====================
@@ -585,15 +708,28 @@ onMounted(async () => {
   // 启用前端日志捕获
   startLogCapture()
   console.log('[DebugView] 调试页面已打开')
-  
+
   // 刷新日志
   refreshLogs()
-  
+
   // 加载表结构
   await loadSchema()
-  
+
   // 获取平台信息
   platform.value = navigator.platform
+
+  // 加载 API 配置
+  await loadApiConfig()
+
+  // 加载日志级别
+  if (isTauri()) {
+    try {
+      const level = await getLogLevel()
+      if (level) logLevel.value = level
+    } catch {
+      // 忽略
+    }
+  }
 })
 
 onUnmounted(() => {
@@ -783,6 +919,18 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.log-level-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-level-control label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .log-source-select {
@@ -1073,5 +1221,75 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   font-size: 13px;
   margin-bottom: 16px;
+}
+
+/* API 配置 */
+.api-config-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mode-badge {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.mode-badge.mock {
+  background: #f59e0b;
+  color: white;
+}
+
+.mode-badge.real {
+  background: #22c55e;
+  color: white;
+}
+
+.api-mode-select,
+.api-url-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.api-url-input {
+  flex: 1;
+  min-width: 300px;
+}
+
+.api-config-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.config-message {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.config-message.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.config-message.error {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.config-warning {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  border-left: 3px solid #f59e0b;
 }
 </style>

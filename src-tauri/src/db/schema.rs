@@ -4,7 +4,7 @@
 use crate::db::errors::DatabaseError;
 use rusqlite::Connection;
 
-/// 创建所有数据库表
+/// 创建所有数据库表（不含迁移列的索引）
 ///
 /// 包括：
 /// - calendars: 日历表
@@ -13,7 +13,9 @@ use rusqlite::Connection;
 /// - accounts: 外部账户表
 /// - sync_state: 同步状态表
 ///
-/// 以及相关索引
+/// 注意：user_id/deleted_at 相关索引不在此处创建，
+/// 需要在 init_database() 的迁移之后创建，
+/// 因为已有数据库可能还没有这些列
 pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
     // 启用外键约束
     conn.execute_batch("PRAGMA foreign_keys = ON;")?;
@@ -103,7 +105,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
             FOREIGN KEY (calendar_id) REFERENCES calendars(id) ON DELETE CASCADE
         );
 
-        -- 索引
+        -- 索引（不依赖迁移列的索引）
         CREATE INDEX IF NOT EXISTS idx_events_calendar_id ON events(calendar_id);
         CREATE INDEX IF NOT EXISTS idx_events_start_time ON events(start_time);
         CREATE INDEX IF NOT EXISTS idx_events_external_id ON events(external_id);
@@ -159,7 +161,19 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
         CREATE INDEX IF NOT EXISTS idx_sync_log_user_id ON sync_log(user_id);
         CREATE INDEX IF NOT EXISTS idx_sync_log_entity ON sync_log(entity_type, entity_id);
         CREATE INDEX IF NOT EXISTS idx_sync_log_synced ON sync_log(synced);
+        "#,
+    )?;
 
+    Ok(())
+}
+
+/// 创建依赖迁移列的索引
+///
+/// 这些索引依赖 user_id/deleted_at 列，
+/// 必须在 ALTER TABLE 迁移之后调用
+fn create_migration_indexes(conn: &Connection) -> Result<(), DatabaseError> {
+    conn.execute_batch(
+        r#"
         -- 日历、事件、待办的 user_id 和 deleted_at 索引
         CREATE INDEX IF NOT EXISTS idx_calendars_user_id ON calendars(user_id);
         CREATE INDEX IF NOT EXISTS idx_events_user_id ON events(user_id);
@@ -174,11 +188,18 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
 
 /// 初始化数据库
 ///
-/// 创建所有必要的表结构和索引，并执行数据库迁移
+/// 执行顺序：
+/// 1. 创建表结构（CREATE TABLE IF NOT EXISTS）
+/// 2. 执行列迁移（ALTER TABLE ADD COLUMN）
+/// 3. 创建依赖迁移列的索引
+///
+/// 这个顺序确保已有数据库能正确迁移，
+/// 因为索引引用的列必须先存在
 pub fn init_database(conn: &Connection) -> Result<(), DatabaseError> {
+    // 1. 创建表结构（新库创建，旧库跳过）
     create_tables(conn)?;
 
-    // 数据库迁移：为已有数据库添加 description 列
+    // 2. 数据库迁移：为已有数据库添加 description 列
     // 忽略"列已存在"错误
     let _ = conn.execute(
         "ALTER TABLE app_settings ADD COLUMN description TEXT NOT NULL DEFAULT ''",
@@ -200,6 +221,9 @@ pub fn init_database(conn: &Connection) -> Result<(), DatabaseError> {
     for sql in &migrations {
         let _ = conn.execute(sql, []);
     }
+
+    // 3. 创建依赖迁移列的索引（必须在迁移之后）
+    create_migration_indexes(conn)?;
 
     Ok(())
 }
@@ -253,7 +277,7 @@ mod tests {
     #[test]
     fn test_indexes_exist() {
         let conn = Connection::open_in_memory().unwrap();
-        create_tables(&conn).unwrap();
+        init_database(&conn).unwrap();
 
         // 验证所有索引都存在
         let indexes: Vec<String> = conn

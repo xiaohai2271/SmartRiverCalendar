@@ -7,6 +7,7 @@ use crate::api::{BatchChanges, CalendarApi, CalendarSyncItem, EntityChanges, Eve
 use crate::db::connection::DatabaseConnection;
 use crate::db::errors::DatabaseResult;
 use crate::sync_engine::tracker::ChangeTracker;
+use crate::db::repositories::sync_log::SyncLogEntry;
 
 /// 同步结果
 #[derive(Debug, Clone)]
@@ -102,6 +103,153 @@ impl<'a> SyncExecutor<'a> {
     pub fn new(db: &'a DatabaseConnection, api: Arc<dyn CalendarApi>) -> Self {
         let tracker = ChangeTracker::new(db);
         Self { db, api, tracker }
+    }
+
+    /// 获取指定用户的未同步变更列表
+    ///
+    /// 从 sync_log 表查询未同步的本地变更记录。
+    /// 此方法为同步方法，可在持有 MutexGuard 时调用。
+    ///
+    /// # 参数
+    /// - `user_id`: 用户 ID
+    pub fn get_unsynced_changes(&self, user_id: i64) -> DatabaseResult<Vec<SyncLogEntry>> {
+        self.tracker.get_unsynced_by_user(user_id)
+    }
+
+    /// 根据未同步变更构建上传请求
+    ///
+    /// 将 sync_log 中的变更记录转换为 BatchChanges 格式，
+    /// 按实体类型（calendar/event/todo）和操作类型（create/update/delete）分组。
+    ///
+    /// # 参数
+    /// - `local_changes`: 未同步的变更列表
+    /// - `last_sync_at`: 上次同步时间戳（毫秒），首次为 None
+    pub fn build_upload_request(
+        &self,
+        local_changes: &[SyncLogEntry],
+        last_sync_at: Option<i64>,
+    ) -> SyncUploadRequest {
+        let mut calendar_created: Vec<CalendarSyncItem> = vec![];
+        let mut calendar_updated: Vec<CalendarSyncItem> = vec![];
+        let mut calendar_deleted: Vec<i64> = vec![];
+        let mut event_created: Vec<EventSyncItem> = vec![];
+        let mut event_updated: Vec<EventSyncItem> = vec![];
+        let mut event_deleted: Vec<i64> = vec![];
+        let mut todo_created: Vec<TodoSyncItem> = vec![];
+        let mut todo_updated: Vec<TodoSyncItem> = vec![];
+        let mut todo_deleted: Vec<i64> = vec![];
+
+        for entry in local_changes {
+            let payload: serde_json::Value =
+                serde_json::from_str(&entry.payload).unwrap_or(serde_json::Value::Null);
+
+            match entry.entity_type.as_str() {
+                "calendar" => {
+                    let item = CalendarSyncItem {
+                        id: json_i64(&payload, "id").unwrap_or(0),
+                        name: json_str(&payload, "name").unwrap_or("").to_string(),
+                        color: json_str(&payload, "color").unwrap_or("#000000").to_string(),
+                        r#type: json_str(&payload, "type").unwrap_or("local").to_string(),
+                        account_id: json_i64(&payload, "account_id"),
+                        visible: json_bool(&payload, "visible").unwrap_or(true),
+                        sync_enabled: json_bool(&payload, "sync_enabled").unwrap_or(false),
+                        updated_at: entry.created_at,
+                    };
+                    match entry.action.as_str() {
+                        "create" => calendar_created.push(item),
+                        "update" => calendar_updated.push(item),
+                        "delete" => calendar_deleted.push(item.id),
+                        _ => {}
+                    }
+                }
+                "event" => {
+                    let item = EventSyncItem {
+                        id: json_i64(&payload, "id").unwrap_or(0),
+                        title: json_str(&payload, "title").unwrap_or("").to_string(),
+                        description: json_str(&payload, "description").map(|s| s.to_string()),
+                        start_time: json_i64(&payload, "start_time").unwrap_or(0),
+                        end_time: json_i64(&payload, "end_time").unwrap_or(0),
+                        all_day: json_bool(&payload, "all_day").unwrap_or(false),
+                        calendar_id: json_i64(&payload, "calendar_id").unwrap_or(0),
+                        timezone: json_str(&payload, "timezone")
+                            .unwrap_or("Asia/Shanghai")
+                            .to_string(),
+                        color: json_str(&payload, "color").map(|s| s.to_string()),
+                        reminder: json_i64(&payload, "reminder").map(|v| v as i32),
+                        location: json_str(&payload, "location").map(|s| s.to_string()),
+                        updated_at: entry.created_at,
+                    };
+                    match entry.action.as_str() {
+                        "create" => event_created.push(item),
+                        "update" => event_updated.push(item),
+                        "delete" => event_deleted.push(item.id),
+                        _ => {}
+                    }
+                }
+                "todo" => {
+                    let item = TodoSyncItem {
+                        id: json_i64(&payload, "id").unwrap_or(0),
+                        title: json_str(&payload, "title").unwrap_or("").to_string(),
+                        description: json_str(&payload, "description").map(|s| s.to_string()),
+                        due_date: json_i64(&payload, "due_date"),
+                        completed: json_bool(&payload, "completed").unwrap_or(false),
+                        priority: json_str(&payload, "priority")
+                            .unwrap_or("medium")
+                            .to_string(),
+                        calendar_id: json_i64(&payload, "calendar_id").unwrap_or(0),
+                        updated_at: entry.created_at,
+                    };
+                    match entry.action.as_str() {
+                        "create" => todo_created.push(item),
+                        "update" => todo_updated.push(item),
+                        "delete" => todo_deleted.push(item.id),
+                        _ => {}
+                    }
+                }
+                _ => {
+                    log::warn!("未知实体类型: {}", entry.entity_type);
+                }
+            }
+        }
+
+        let batch_changes = BatchChanges {
+            calendars: EntityChanges {
+                created: calendar_created,
+                updated: calendar_updated,
+                deleted: calendar_deleted,
+            },
+            events: EntityChanges {
+                created: event_created,
+                updated: event_updated,
+                deleted: event_deleted,
+            },
+            todos: EntityChanges {
+                created: todo_created,
+                updated: todo_updated,
+                deleted: todo_deleted,
+            },
+        };
+
+        SyncUploadRequest {
+            last_sync_at,
+            changes: batch_changes,
+        }
+    }
+
+    /// 批量标记变更为已同步
+    ///
+    /// # 参数
+    /// - `ids`: sync_log 记录 ID 列表
+    pub fn mark_synced_batch(&self, ids: &[i64]) -> DatabaseResult<usize> {
+        self.tracker.mark_synced_batch(ids)
+    }
+
+    /// 清理指定用户已同步的日志
+    ///
+    /// # 参数
+    /// - `user_id`: 用户 ID
+    pub fn cleanup_synced(&self, user_id: i64) -> DatabaseResult<usize> {
+        self.tracker.cleanup_synced(user_id)
     }
 
     /// 执行批量同步
@@ -354,7 +502,7 @@ impl<'a> SyncExecutor<'a> {
     ///
     /// # 返回
     /// 冲突数量
-    fn apply_server_changes(&self, changes: &BatchChanges) -> DatabaseResult<usize> {
+    pub fn apply_server_changes(&self, changes: &BatchChanges) -> DatabaseResult<usize> {
         let total = changes.calendars.created.len()
             + changes.calendars.updated.len()
             + changes.calendars.deleted.len()

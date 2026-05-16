@@ -19,7 +19,7 @@ mod log_buffer;
 mod clock_hook;
 
 use db::connection::DatabaseConnection;
-use db::schema::create_tables;
+use db::schema;
 
 /// 初始化数据库连接
 fn init_database() -> Result<Mutex<DatabaseConnection>, Box<dyn std::error::Error>> {
@@ -41,8 +41,8 @@ fn init_database() -> Result<Mutex<DatabaseConnection>, Box<dyn std::error::Erro
     // 连接数据库
     let db = DatabaseConnection::connect(&db_path_str)?;
     
-    // 创建表结构
-    db.execute(|conn| create_tables(conn).map_err(|e| {
+    // 初始化数据库（创建表结构 + 执行迁移）
+    db.execute(|conn| schema::init_database(conn).map_err(|e| {
         rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
             e.to_string(),
@@ -70,10 +70,14 @@ pub fn run() {
 
     let app_state = Mutex::new(commands::AppState::default());
 
-    // 创建 API 客户端
-    let api_config = api::ApiConfig::from_env();
-    let api_client: std::sync::Arc<dyn api::CalendarApi> = api::create_api_client(&api_config);
+    // 创建 API 客户端（优先从数据库读取配置，回退到环境变量）
+    let api_config = {
+        let db_conn = db.lock().unwrap();
+        let conn = db_conn.get_connection();
+        api::ApiConfig::from_settings(&conn)
+    };
     log::info!("API 客户端初始化完成，模式: {:?}", api_config.mode);
+    let api_client: std::sync::Arc<dyn api::CalendarApi> = std::sync::Arc::new(api::ProxyApiClient::new(api_config));
 
     // 时钟点击检测管理器（仅 Windows）
     #[cfg(target_os = "windows")]
@@ -380,6 +384,12 @@ pub fn run() {
             commands::debug_open_devtools,
             commands::debug_get_logs,
             commands::debug_clear_logs,
+            // API 配置命令
+            commands::get_api_config,
+            commands::switch_api_config,
+            // 日志级别命令
+            commands::get_log_level,
+            commands::set_log_level,
             // 应用设置命令
             commands::get_setting,
             commands::set_setting,

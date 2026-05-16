@@ -8,6 +8,7 @@ pub mod http_client;
 pub mod types;
 pub mod mock;
 pub mod client;
+pub mod proxy;
 
 // 重导出关键类型
 pub use config::{ApiConfig, ApiMode};
@@ -21,6 +22,7 @@ pub use types::{
 pub use http_client::HttpClient;
 pub use mock::MockApiClient;
 pub use client::RealApiClient;
+pub use proxy::ProxyApiClient;
 
 use std::sync::Arc;
 

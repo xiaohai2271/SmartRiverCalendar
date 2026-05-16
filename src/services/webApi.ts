@@ -131,14 +131,18 @@ export const webApi = {
 
   // 刷新令牌
   async refreshToken() {
-    return apiFetch<{ code: number; data: { access_token: string; expires_in: number } | null }>('/auth/refresh', {
+    const data = await apiFetch<{ code: number; data: { access_token: string; refresh_token: string; expires_in: number } | null }>('/auth/refresh', {
       method: 'POST',
       body: JSON.stringify({ refresh_token: refreshTokenValue })
     })
+    if (data.code === 0 && data.data) {
+      storeTokens(data.data.access_token, data.data.refresh_token)
+    }
+    return data
   },
 
-  // 检查认证状态
+  // 检查认证状态（使用 /user/profile 代替不存在的 /auth/check-status）
   async checkStatus() {
-    return apiFetch<{ code: number; data: { id: number; email: string; display_name: string } | null }>('/auth/check-status')
+    return apiFetch<{ code: number; data: { id: number; email: string; display_name: string } | null }>('/user/profile')
   }
 }

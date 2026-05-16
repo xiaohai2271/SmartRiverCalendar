@@ -58,6 +58,7 @@ export class WebEventRepository implements IEventRepository {
     repeatRule?: string
     location?: string
     externalId?: string
+    timezone?: string
   }): Promise<CalendarEvent> {
     const response = await this.apiClient.post<ApiResponse<WebEvent>>('/events', {
       title: params.title,
@@ -66,6 +67,7 @@ export class WebEventRepository implements IEventRepository {
       end_time: params.endTime,
       all_day: params.allDay,
       calendar_id: params.calendarId,
+      timezone: params.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       color: params.color ?? null,
       reminder: params.reminder ?? null,
       repeat_rule: params.repeatRule ?? null,
@@ -95,6 +97,7 @@ export class WebEventRepository implements IEventRepository {
     repeatRule?: string
     location?: string
     externalId?: string
+    timezone?: string
   }): Promise<CalendarEvent> {
     const response = await this.apiClient.put<ApiResponse<WebEvent>>(`/events/${params.id}`, {
       title: params.title,
@@ -103,6 +106,7 @@ export class WebEventRepository implements IEventRepository {
       end_time: params.endTime,
       all_day: params.allDay,
       calendar_id: params.calendarId,
+      timezone: params.timezone ?? Intl.DateTimeFormat().resolvedOptions().timeZone,
       color: params.color ?? null,
       reminder: params.reminder ?? null,
       repeat_rule: params.repeatRule ?? null,

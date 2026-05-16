@@ -59,6 +59,8 @@
 //! }
 //! ```
 
+#![allow(dead_code)]
+
 use tauri::AppHandle;
 use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
@@ -221,7 +223,7 @@ pub async fn download_and_install_update(update: Update) -> Result<(), String> {
 /// - 有更新：打印版本号并自动下载安装，Windows 上等待 installer 自动重启
 /// - 无更新：打印提示信息
 /// - 失败：打印错误信息
-pub async fn handle_update_result(app_handle: AppHandle, result: UpdateCheckResult) {
+pub async fn handle_update_result(_app_handle: AppHandle, result: UpdateCheckResult) {
     match result {
         UpdateCheckResult::UpdateAvailable(update) => {
             log::info!("有新版本可用: {}", update.version);

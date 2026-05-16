@@ -68,7 +68,8 @@ export class WebAuthRepository implements IAuthRepository {
 
   async checkAuthStatus(): Promise<boolean> {
     try {
-      const data = await this.apiClient.get<ApiResponse<{ id: number }>>('/auth/check-status')
+      // 使用 /user/profile 判断认证状态，/auth/check-status 端点不存在
+      const data = await this.apiClient.get<ApiResponse<WebUserProfile>>('/user/profile')
       return data.code === 0 && data.data !== null
     } catch {
       return false

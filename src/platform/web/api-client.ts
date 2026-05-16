@@ -40,9 +40,9 @@ async function doRefreshToken(): Promise<string> {
   })
   const data = await resp.json()
   if (data.code !== 0 || !data.data) throw new Error('刷新令牌失败')
-  accessToken = data.data.access_token
-  localStorage.setItem('access_token', accessToken!)
-  return accessToken!
+  // 同时保存新的 access_token 和 refresh_token
+  storeTokens(data.data.access_token, data.data.refresh_token)
+  return data.data.access_token
 }
 
 /** 通用 API 请求函数（含自动刷新令牌） */

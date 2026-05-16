@@ -7,7 +7,7 @@
 
 #![allow(dead_code)]
 
-use log::{info, error, warn};
+use log::{info, error};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use quick_xml::events::Event;
 use quick_xml::Reader;
@@ -994,7 +994,7 @@ impl CalDavClient {
         reader.config_mut().trim_text(true);
 
         let mut events = Vec::new();
-        let mut in_response = false;
+        let mut _in_response = false;
         let mut in_href = false;
         let mut in_calendar_data = false;
         let mut current_href = String::new();
@@ -1005,7 +1005,7 @@ impl CalDavClient {
                 Ok(Event::Start(ref e)) => {
                     match e.local_name().as_ref() {
                         b"response" => {
-                            in_response = true;
+                             _in_response = true;
                             current_href.clear();
                             current_ical.clear();
                         }
@@ -1061,7 +1061,7 @@ impl CalDavClient {
                             current_ical.clear();
                         }
                         b"response" => {
-                            in_response = false;
+                             _in_response = false;
                         }
                         _ => {}
                     }
@@ -1669,11 +1669,11 @@ impl CalDavClient {
         let mut lines: Vec<String> = original.lines().map(|s| s.to_string()).collect();
         
         // 需要更新的字段
-        let mut update_summary = true;
-        let mut update_description = event.description.is_some();
-        let mut update_dtstart = true;
-        let mut update_dtend = true;
-        let mut update_location = event.location.is_some();
+        let update_summary = true;
+        let update_description = event.description.is_some();
+        let update_dtstart = true;
+        let update_dtend = true;
+        let update_location = event.location.is_some();
         
         // 时间格式转换
         let start_dt = Utc.timestamp_opt(event.start_time, 0).single()

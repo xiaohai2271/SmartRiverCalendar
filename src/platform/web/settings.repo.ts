@@ -11,46 +11,82 @@ export class WebSettingsRepository implements ISettingsRepository {
   constructor(private readonly apiClient: WebApiClient) {}
 
   async loadAppSettings(): Promise<AppSettings> {
-    const response = await this.apiClient.get<ApiResponse<Record<string, unknown>>>('/settings/app')
+    // API: GET /settings?prefix=app.
+    const response = await this.apiClient.get<ApiResponse<Array<{ key: string; value: string; description?: string }>>>('/settings?prefix=app.')
     if (response.code !== 0 || !response.data) {
-      // 远端无设置时返回默认值
       return this.getDefaultAppSettings()
     }
-    return { ...this.getDefaultAppSettings(), ...response.data } as AppSettings
+    // 将 key-value 列表转换为 AppSettings 对象
+    const settingsMap: Record<string, unknown> = {}
+    for (const item of response.data) {
+      // 去除 "app." 前缀作为属性名
+      const key = item.key.replace(/^app\./, '')
+      try {
+        settingsMap[key] = JSON.parse(item.value)
+      } catch {
+        settingsMap[key] = item.value
+      }
+    }
+    return { ...this.getDefaultAppSettings(), ...settingsMap } as AppSettings
   }
 
   async saveAppSettings(settings: AppSettings): Promise<void> {
-    const response = await this.apiClient.post<ApiResponse<null>>('/settings/app', settings)
-    if (response.code !== 0) {
-      throw new RepositoryError({
-        code: RepoErrorCodes.NETWORK_ERROR,
-        message: response.message || '无法保存应用设置',
-        platform: this.platform,
+    // API: PUT /settings/{key} 逐个保存设置项
+    const entries = Object.entries(settings)
+    for (const [key, value] of entries) {
+      const apiKey = `app.${key}`
+      const response = await this.apiClient.put<ApiResponse<null>>(`/settings/${encodeURIComponent(apiKey)}`, {
+        value: JSON.stringify(value),
       })
+      if (response.code !== 0) {
+        throw new RepositoryError({
+          code: RepoErrorCodes.NETWORK_ERROR,
+          message: response.message || `无法保存设置项 ${key}`,
+          platform: this.platform,
+        })
+      }
     }
   }
 
   async loadPopupSettings(): Promise<PopupSettings> {
-    const response = await this.apiClient.get<ApiResponse<Record<string, unknown>>>('/settings/popup')
+    // API: GET /settings?prefix=popup.
+    const response = await this.apiClient.get<ApiResponse<Array<{ key: string; value: string; description?: string }>>>('/settings?prefix=popup.')
     if (response.code !== 0 || !response.data) {
       return this.getDefaultPopupSettings()
     }
-    return { ...this.getDefaultPopupSettings(), ...response.data } as PopupSettings
+    // 将 key-value 列表转换为 PopupSettings 对象
+    const settingsMap: Record<string, unknown> = {}
+    for (const item of response.data) {
+      const key = item.key.replace(/^popup\./, '')
+      try {
+        settingsMap[key] = JSON.parse(item.value)
+      } catch {
+        settingsMap[key] = item.value
+      }
+    }
+    return { ...this.getDefaultPopupSettings(), ...settingsMap } as PopupSettings
   }
 
   async savePopupSettings(settings: PopupSettings): Promise<void> {
-    const response = await this.apiClient.post<ApiResponse<null>>('/settings/popup', settings)
-    if (response.code !== 0) {
-      throw new RepositoryError({
-        code: RepoErrorCodes.NETWORK_ERROR,
-        message: response.message || '无法保存弹出面板设置',
-        platform: this.platform,
+    // API: PUT /settings/{key} 逐个保存设置项
+    const entries = Object.entries(settings)
+    for (const [key, value] of entries) {
+      const apiKey = `popup.${key}`
+      const response = await this.apiClient.put<ApiResponse<null>>(`/settings/${encodeURIComponent(apiKey)}`, {
+        value: JSON.stringify(value),
       })
+      if (response.code !== 0) {
+        throw new RepositoryError({
+          code: RepoErrorCodes.NETWORK_ERROR,
+          message: response.message || `无法保存弹出面板设置项 ${key}`,
+          platform: this.platform,
+        })
+      }
     }
   }
 
   async getUserHolidays(): Promise<UserHolidayEntry[]> {
-    const response = await this.apiClient.get<ApiResponse<UserHolidayEntry[]>>('/settings/holidays')
+    const response = await this.apiClient.get<ApiResponse<UserHolidayEntry[]>>('/holidays')
     if (response.code !== 0 || !response.data) {
       return []
     }
@@ -63,7 +99,7 @@ export class WebSettingsRepository implements ISettingsRepository {
     category: 'holiday' | 'makeup',
     source?: 'custom' | 'api'
   ): Promise<void> {
-    const response = await this.apiClient.post<ApiResponse<null>>('/settings/holidays', {
+    const response = await this.apiClient.post<ApiResponse<null>>('/holidays', {
       date,
       name,
       category,
@@ -79,11 +115,15 @@ export class WebSettingsRepository implements ISettingsRepository {
   }
 
   async removeUserHoliday(date: string, category: 'holiday' | 'makeup'): Promise<boolean> {
-    const response = await this.apiClient.delete<ApiResponse<boolean>>(`/settings/holidays/${date}/${category}`)
+    // API: DELETE /holidays 请求体包含 { date, category }
+    const response = await this.apiClient.delete<ApiResponse<null>>('/holidays', {
+      date,
+      category,
+    })
     if (response.code !== 0) {
       return false
     }
-    return response.data ?? true
+    return true
   }
 
   // Web 端无需 localStorage 迁移

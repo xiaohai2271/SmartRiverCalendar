@@ -122,30 +122,35 @@ impl CalendarApi for RealApiClient {
 
     /// 获取用户资料
     ///
-    /// API 路径: GET /auth/profile
+    /// API 路径: GET /user/profile
     async fn get_profile(&self) -> ApiResult<UserProfile> {
-        self.http_client.get("/auth/profile").await
+        self.http_client.get("/user/profile").await
     }
 
     // ================================================================
     // 数据同步
     // ================================================================
 
-    /// 上传本地变更
+    /// 批量同步：上传本地变更并下载远程变更
     ///
-    /// API 路径: POST /sync/upload
+    /// API 路径: POST /batch/sync
     async fn sync_upload(&self, request: SyncUploadRequest) -> ApiResult<SyncDownloadResponse> {
-        self.http_client.post("/sync/upload", &request).await
+        self.http_client.post("/batch/sync", &request).await
     }
 
-    /// 下载远程变更
+    /// 批量同步：仅下载远程变更（不上传本地变更）
     ///
-    /// API 路径: POST /sync/download
+    /// API 路径: POST /batch/sync（changes 为空）
     async fn sync_download(&self, last_sync_at: Option<i64>) -> ApiResult<SyncDownloadResponse> {
         let request = serde_json::json!({
             "last_sync_at": last_sync_at,
+            "changes": {
+                "calendars": { "created": [], "updated": [], "deleted": [] },
+                "events": { "created": [], "updated": [], "deleted": [] },
+                "todos": { "created": [], "updated": [], "deleted": [] }
+            }
         });
-        self.http_client.post("/sync/download", &request).await
+        self.http_client.post("/batch/sync", &request).await
     }
 
     // ================================================================
