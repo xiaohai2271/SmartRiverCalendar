@@ -194,7 +194,7 @@ reloadFromDatabase() → 刷新 Store
     │
     ├─ type='local'              → 写本地 SQLite（所有端一致）
     │
-    ├─ type='online' + 在线       → 写远端 API → 成功后缓存到本地
+    ├─ type='online' + 在线       → 写本地 SQLite + 记录 sync_log + 触发即时推送
     │
     ├─ type='online' + 离线
     │   ├─ hasOfflineMode=true   → 写本地 SQLite + 记录 sync_log
@@ -208,7 +208,7 @@ reloadFromDatabase() → 刷新 Store
 | 条件组合 | 操作 | 适用端 |
 |----------|------|--------|
 | type='local' | 写本地 SQLite | 所有端 |
-| type='online' + 在线 | 写远端 API → 成功后缓存到本地 | 所有端 |
+| type='online' + 在线 | 写本地 SQLite + 记录 sync_log + 触发即时推送 | 所有端 |
 | type='online' + 离线 + hasOfflineMode | 写本地 + 记录 sync_log | Windows / 移动端 |
 | type='online' + 离线 + !hasOfflineMode | 提示用户网络不可用 | Web 端 |
 | type='exchange/caldav' | 走现有 syncRepo 逻辑 | 所有端 |
@@ -364,14 +364,32 @@ async function addEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updated
     return
   }
 
-  // 在线日历 + 在线：写远端 + 缓存本地
+  // 在线日历 + 在线：写本地 SQLite + 触发即时同步推送到远端
+  //
+  // 写入策略说明：
+  // 采用"先写本地，再同步推送"模式，而非"直接调远端 API"模式。
+  // 原因：
+  // 1. 保持 local-first 原则——本地 SQLite 始终是权威数据源
+  // 2. 统一写入路径——无论在线/离线，事件都先写本地，降低分支复杂度
+  // 3. 离线降级无缝——在线时写本地+推送，离线时写本地+记录 sync_log，
+  //    两种路径的本地写入逻辑完全一致，仅在推送环节有差异
+  // 4. Rust 后端处理推送——由 triggerImmediateSync() 触发 Rust 端读取
+  //    sync_log 并推送，前端不需要关心远端 API 细节
   if (targetCalendar.type === 'online' && navigator.onLine) {
     const created = await eventRepo.create({
       ...event,
       calendarId: getValidCalendarId(event.calendarId),
     })
     events.value.push(created)
-    // 远端写入由 Rust 后端同步命令处理
+
+    // 记录到 sync_log 并触发即时推送（Rust 后端异步执行）
+    await syncRepo.recordPendingChange({
+      action: 'create',
+      entityType: 'event',
+      entityId: created.id,
+      payload: JSON.stringify(created),
+    })
+    await syncRepo.pushPendingChanges()
     return
   }
 
