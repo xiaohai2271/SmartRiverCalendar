@@ -88,8 +88,11 @@ export const useAuthStore = defineStore('auth', () => {
           user.value = currentUser
           isAuthenticated.value = true
 
-          // 登录成功后同步服务端日历到本地
-          await syncCalendarsFromServer()
+          // 【变更】登录成功后，日历身份切换（local → online）
+          // 替代原有的 syncCalendarsFromServer()
+          const { useCalendarStore } = await import('./calendar')
+          const calendarStore = useCalendarStore()
+          await calendarStore.loginTransition()
 
           return true
         } else {
@@ -125,8 +128,11 @@ export const useAuthStore = defineStore('auth', () => {
           user.value = currentUser
           isAuthenticated.value = true
 
-          // 注册成功后同步服务端日历到本地
-          await syncCalendarsFromServer()
+          // 【变更】注册成功后，日历身份切换（local → online）
+          // 替代原有的 syncCalendarsFromServer()
+          const { useCalendarStore } = await import('./calendar')
+          const calendarStore = useCalendarStore()
+          await calendarStore.loginTransition()
 
           return true
         } else {
@@ -182,6 +188,15 @@ export const useAuthStore = defineStore('auth', () => {
    * 用户登出
    */
   async function logout(): Promise<void> {
+    // 【新增】退出前日历身份切换（online → local）
+    try {
+      const { useCalendarStore } = await import('./calendar')
+      const calendarStore = useCalendarStore()
+      await calendarStore.logoutTransition()
+    } catch (error) {
+      console.warn('[AuthStore] 退出前日历切换失败:', error)
+    }
+
     try {
       const { authRepo } = usePlatform()
       await authRepo.logout()

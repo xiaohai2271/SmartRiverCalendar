@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
 import { usePlatform, useCapabilities } from '@/platform/provider'
+import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // State
@@ -416,14 +417,18 @@ export const useCalendarStore = defineStore('calendar', () => {
 
   async function addEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) {
     const { eventRepo, syncRepo } = usePlatform()
+    const capabilities = useCapabilities()
     const targetCalendar = calendars.value.find(c => c.id === event.calendarId)
 
-    if (targetCalendar && (targetCalendar.type === 'exchange' || targetCalendar.type === 'caldav')) {
+    if (!targetCalendar) return
+
+    // ── 外部日历（Exchange/CalDAV）：保持现有逻辑不变 ──
+    if (targetCalendar.type === 'exchange' || targetCalendar.type === 'caldav') {
+      // 外部日历只读检查
       if (targetCalendar.readOnly) {
         console.error('创建事件失败：该日历为只读模式，不支持写入事件')
         return
       }
-      // 外部日历：通过 syncRepo 调用
       try {
         const result = await syncRepo.createExternalEvent({
           accountId: targetCalendar.accountId || '',
@@ -479,8 +484,11 @@ export const useCalendarStore = defineStore('calendar', () => {
       } catch (error) {
         console.error('创建外部事件失败:', error)
       }
-    } else {
-      // 本地日历：保存到数据库
+      return
+    }
+
+    // ── 本地日历：直接写本地 SQLite（所有端一致） ──
+    if (targetCalendar.type === 'local') {
       const created = await eventRepo.create({
         title: event.title,
         description: event.description,
@@ -496,18 +504,93 @@ export const useCalendarStore = defineStore('calendar', () => {
       })
       events.value.push(created)
       console.log('Event created:', created.id)
+      return
     }
+
+    // ── 在线日历 + 在线：写本地 SQLite + 记录 sync_log + 触发即时推送 ──
+    //
+    // 写入策略说明：
+    // 采用"先写本地，再同步推送"模式，而非"直接调远端 API"模式。
+    // 原因：
+    // 1. 保持 local-first 原则——本地 SQLite 始终是权威数据源
+    // 2. 统一写入路径——无论在线/离线，事件都先写本地，降低分支复杂度
+    // 3. 离线降级无缝——在线时写本地+推送，离线时写本地+记录 sync_log，
+    //    两种路径的本地写入逻辑完全一致，仅在推送环节有差异
+    // 4. Rust 后端处理推送——由 pushPendingChanges() 触发 Rust 端读取
+    //    sync_log 并推送，前端不需要关心远端 API 细节
+    if (targetCalendar.type === 'online' && navigator.onLine) {
+      const created = await eventRepo.create({
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        allDay: event.allDay,
+        calendarId: getValidCalendarId(event.calendarId),
+        color: event.color,
+        reminder: event.reminder,
+        repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
+        location: event.location,
+        externalId: event.externalId
+      })
+      events.value.push(created)
+
+      // 记录到 sync_log 并触发即时推送（Rust 后端异步执行）
+      await syncRepo.recordPendingChange({
+        action: 'create',
+        entityType: 'event',
+        entityId: created.id,
+        payload: JSON.stringify(created),
+      })
+      await syncRepo.pushPendingChanges()
+      console.log('Event created (online):', created.id)
+      return
+    }
+
+    // ── 在线日历 + 离线 + 支持离线模式（桌面端/移动端）：写本地 + 记录 sync_log ──
+    if (targetCalendar.type === 'online' && !navigator.onLine && capabilities.hasOfflineMode) {
+      const created = await eventRepo.create({
+        title: event.title,
+        description: event.description,
+        startTime: event.startTime,
+        endTime: event.endTime,
+        allDay: event.allDay,
+        calendarId: getValidCalendarId(event.calendarId),
+        color: event.color,
+        reminder: event.reminder,
+        repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
+        location: event.location,
+        externalId: event.externalId
+      })
+      events.value.push(created)
+      // 记录到 sync_log，待联网后自动推送
+      await syncRepo.recordPendingChange({
+        action: 'create',
+        entityType: 'event',
+        entityId: created.id,
+        payload: JSON.stringify(created),
+      })
+      console.log('Event created (offline, pending sync):', created.id)
+      return
+    }
+
+    // ── 在线日历 + 离线 + 不支持离线模式（Web端）：提示网络不可用 ──
+    throw new RepositoryError({
+      code: RepoErrorCodes.NETWORK_ERROR,
+      message: '网络不可用，无法创建事件',
+      platform: 'web',
+    })
   }
 
   async function updateEvent(id: string, updates: Partial<CalendarEvent>) {
     const { eventRepo, syncRepo } = usePlatform()
+    const capabilities = useCapabilities()
     const index = events.value.findIndex(e => e.id === id)
     if (index !== -1) {
       const event = events.value[index]
       const calendar = calendars.value.find(c => c.id === event.calendarId)
 
+      // ── 外部日历（Exchange/CalDAV）：保持现有逻辑不变 ──
       if (calendar && (calendar.type === 'exchange' || calendar.type === 'caldav')) {
-        // 外部日历事件
         try {
           const result = await syncRepo.updateExternalEvent({
             accountId: calendar.accountId || '',
@@ -557,8 +640,11 @@ export const useCalendarStore = defineStore('calendar', () => {
         } catch (error) {
           console.error('调用更新外部事件失败:', error)
         }
-      } else {
-        // 本地日历事件
+        return
+      }
+
+      // ── 本地日历：直接更新本地 SQLite ──
+      if (calendar && calendar.type === 'local') {
         const eventId = parseInt(id)
         if (!isNaN(eventId)) {
           const updated = await eventRepo.update({
@@ -578,17 +664,91 @@ export const useCalendarStore = defineStore('calendar', () => {
           events.value[index] = updated
           console.log('Event updated:', id)
         }
+        return
       }
+
+      // ── 在线日历 + 在线：更新本地 SQLite + 记录 sync_log + 触发即时推送 ──
+      if (calendar && calendar.type === 'online' && navigator.onLine) {
+        const eventId = parseInt(id)
+        if (!isNaN(eventId)) {
+          const updated = await eventRepo.update({
+            id: eventId,
+            title: updates.title ?? event.title,
+            description: updates.description ?? event.description,
+            startTime: updates.startTime ?? event.startTime,
+            endTime: updates.endTime ?? event.endTime,
+            allDay: updates.allDay ?? event.allDay,
+            calendarId: parseInt(updates.calendarId ?? event.calendarId) || 1,
+            color: updates.color ?? event.color,
+            reminder: updates.reminder ?? event.reminder,
+            repeatRule: updates.repeatRule ? JSON.stringify(updates.repeatRule) : (event.repeatRule ? JSON.stringify(event.repeatRule) : undefined),
+            location: updates.location ?? event.location,
+            externalId: updates.externalId ?? event.externalId
+          })
+          events.value[index] = updated
+
+          // 记录到 sync_log 并触发即时推送
+          await syncRepo.recordPendingChange({
+            action: 'update',
+            entityType: 'event',
+            entityId: id,
+            payload: JSON.stringify(updated),
+          })
+          await syncRepo.pushPendingChanges()
+          console.log('Event updated (online):', id)
+        }
+        return
+      }
+
+      // ── 在线日历 + 离线 + 支持离线模式：更新本地 + 记录 sync_log ──
+      if (calendar && calendar.type === 'online' && !navigator.onLine && capabilities.hasOfflineMode) {
+        const eventId = parseInt(id)
+        if (!isNaN(eventId)) {
+          const updated = await eventRepo.update({
+            id: eventId,
+            title: updates.title ?? event.title,
+            description: updates.description ?? event.description,
+            startTime: updates.startTime ?? event.startTime,
+            endTime: updates.endTime ?? event.endTime,
+            allDay: updates.allDay ?? event.allDay,
+            calendarId: parseInt(updates.calendarId ?? event.calendarId) || 1,
+            color: updates.color ?? event.color,
+            reminder: updates.reminder ?? event.reminder,
+            repeatRule: updates.repeatRule ? JSON.stringify(updates.repeatRule) : (event.repeatRule ? JSON.stringify(event.repeatRule) : undefined),
+            location: updates.location ?? event.location,
+            externalId: updates.externalId ?? event.externalId
+          })
+          events.value[index] = updated
+          // 记录到 sync_log，待联网后自动推送
+          await syncRepo.recordPendingChange({
+            action: 'update',
+            entityType: 'event',
+            entityId: id,
+            payload: JSON.stringify(updated),
+          })
+          console.log('Event updated (offline, pending sync):', id)
+        }
+        return
+      }
+
+      // ── 在线日历 + 离线 + 不支持离线模式（Web端） ──
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: '网络不可用，无法更新事件',
+        platform: 'web',
+      })
     }
   }
 
   async function deleteEvent(id: string) {
     const { eventRepo, syncRepo } = usePlatform()
+    const capabilities = useCapabilities()
     const event = events.value.find(e => e.id === id)
     if (!event) return
 
     const calendar = calendars.value.find(c => c.id === event.calendarId)
 
+    // ── 外部日历（Exchange/CalDAV）：保持现有逻辑不变 ──
     if (calendar && (calendar.type === 'exchange' || calendar.type === 'caldav')) {
       try {
         const result = await syncRepo.deleteExternalEvent({
@@ -616,15 +776,66 @@ export const useCalendarStore = defineStore('calendar', () => {
       } catch (error) {
         console.error('调用删除外部事件失败:', error)
       }
-    } else {
-      // 本地日历事件
+      return
+    }
+
+    // ── 本地日历：直接从本地 SQLite 删除 ──
+    if (calendar && calendar.type === 'local') {
       const eventId = parseInt(id)
       if (!isNaN(eventId)) {
         await eventRepo.delete(eventId)
       }
       events.value = events.value.filter(e => e.id !== id)
       console.log('Event deleted:', id)
+      return
     }
+
+    // ── 在线日历 + 在线：删除本地 + 记录 sync_log + 触发即时推送 ──
+    if (calendar && calendar.type === 'online' && navigator.onLine) {
+      const eventId = parseInt(id)
+      if (!isNaN(eventId)) {
+        await eventRepo.delete(eventId)
+      }
+      events.value = events.value.filter(e => e.id !== id)
+
+      // 记录到 sync_log 并触发即时推送
+      await syncRepo.recordPendingChange({
+        action: 'delete',
+        entityType: 'event',
+        entityId: id,
+        payload: JSON.stringify({ id, calendarId: event.calendarId }),
+      })
+      await syncRepo.pushPendingChanges()
+      console.log('Event deleted (online):', id)
+      return
+    }
+
+    // ── 在线日历 + 离线 + 支持离线模式：删除本地 + 记录 sync_log ──
+    // 注意：离线删除时，事件仍从本地 SQLite 删除（保证离线可用性），
+    // 但 sync_log 记录了删除操作，联网后会推送删除到远端
+    if (calendar && calendar.type === 'online' && !navigator.onLine && capabilities.hasOfflineMode) {
+      const eventId = parseInt(id)
+      if (!isNaN(eventId)) {
+        await eventRepo.delete(eventId)
+      }
+      events.value = events.value.filter(e => e.id !== id)
+      // 记录到 sync_log，待联网后自动推送删除操作
+      await syncRepo.recordPendingChange({
+        action: 'delete',
+        entityType: 'event',
+        entityId: id,
+        payload: JSON.stringify({ id, calendarId: event.calendarId }),
+      })
+      console.log('Event deleted (offline, pending sync):', id)
+      return
+    }
+
+    // ── 在线日历 + 离线 + 不支持离线模式（Web端） ──
+    throw new RepositoryError({
+      code: RepoErrorCodes.NETWORK_ERROR,
+      message: '网络不可用，无法删除事件',
+      platform: 'web',
+    })
   }
 
   function setView(view: CalendarView) {
@@ -716,6 +927,80 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   }
 
+  /**
+   * 登录后日历身份切换
+   *
+   * 流程：触发双向同步 → 切换日历 type → 刷新数据
+   *
+   * 多端通用性说明：
+   * - 桌面端：全量双向同步后切换，网络稳定，耗时短
+   * - 移动端：增量同步后切换，网络不稳定时可能较长，需显示进度
+   * - Web端：直接返回（Web端日历天然在线，dataPriority='remote-first'）
+   *
+   * @throws RepositoryError 同步或切换失败时抛出
+   */
+  async function loginTransition(): Promise<void> {
+    const { calendarRepo, syncRepo } = usePlatform()
+    const capabilities = useCapabilities()
+
+    // 仅 local-first 平台需要切换（桌面端 + 移动端）
+    if (capabilities.dataPriority !== 'local-first') return
+
+    // 1. 触发双向同步（Rust 后端执行：上传本地新数据 + 下拉远端新数据 + 去重）
+    await syncRepo.triggerCloudSync()
+
+    // 2. 将主日历的 type 从 'local' 切换为 'online'
+    const mainCalendar = calendars.value.find(c => c.type === 'local')
+    if (mainCalendar) {
+      await calendarRepo.updateType({
+        id: parseInt(mainCalendar.id),
+        type: 'online',
+        syncEnabled: true,
+      })
+    }
+
+    // 3. 重新加载数据（同步后远端事件已写入 SQLite，type 已更新）
+    await reloadFromDatabase()
+  }
+
+  /**
+   * 退出前日历身份切换
+   *
+   * 流程：最终同步 → 切换日历 type → 刷新数据
+   *
+   * 多端通用性说明：
+   * - 桌面端：完整同步后切换，确保本地数据完整
+   * - 移动端：同桌面端，退出前必须同步以保证离线后数据可用
+   * - Web端：直接返回（Web端无本地数据需保留）
+   */
+  async function logoutTransition(): Promise<void> {
+    const { calendarRepo, syncRepo } = usePlatform()
+    const capabilities = useCapabilities()
+
+    if (capabilities.dataPriority !== 'local-first') return
+
+    // 1. 退出前最终同步（确保远端最新数据已保存到本地）
+    try {
+      await syncRepo.triggerCloudSync()
+    } catch (error) {
+      // 同步失败不阻塞退出，但记录警告
+      console.warn('[CalendarStore] 退出前同步失败，本地数据可能不是最新:', error)
+    }
+
+    // 2. 将主日历的 type 从 'online' 切换回 'local'
+    const mainCalendar = calendars.value.find(c => c.type === 'online')
+    if (mainCalendar) {
+      await calendarRepo.updateType({
+        id: parseInt(mainCalendar.id),
+        type: 'local',
+        syncEnabled: false,
+      })
+    }
+
+    // 3. 重新加载数据
+    await reloadFromDatabase()
+  }
+
   return {
     calendars,
     events,
@@ -731,6 +1016,8 @@ export const useCalendarStore = defineStore('calendar', () => {
     addEvent,
     updateEvent,
     deleteEvent,
+    loginTransition,
+    logoutTransition,
     setView,
     navigateToDate,
     goToToday,
