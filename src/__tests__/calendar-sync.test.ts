@@ -7,6 +7,8 @@ vi.mock('@/platform/provider', () => ({
     syncRepo: {
       syncCalendarsFromServer: vi.fn().mockResolvedValue(true),
       triggerCloudSync: vi.fn().mockResolvedValue(true),
+      recordPendingChange: vi.fn().mockResolvedValue(undefined),
+      pushPendingChanges: vi.fn().mockResolvedValue({ pushed: 0, failed: 0 }),
     },
     calendarRepo: {
       getAll: vi.fn().mockResolvedValue([
@@ -14,6 +16,7 @@ vi.mock('@/platform/provider', () => ({
         { id: '2', name: '在线日历', color: '#FF5733', type: 'online', visible: true, syncEnabled: true },
       ]),
       create: vi.fn().mockResolvedValue({ id: '1', name: '本地日历', color: '#4A90D9', type: 'local', visible: true, syncEnabled: false }),
+      updateType: vi.fn().mockResolvedValue({ id: '1', name: '本地日历', color: '#4A90D9', type: 'online', visible: true, syncEnabled: true }),
     },
     eventRepo: {
       getAll: vi.fn().mockResolvedValue([]),
@@ -23,6 +26,22 @@ vi.mock('@/platform/provider', () => ({
       getCurrentUser: vi.fn().mockResolvedValue({ id: 1, email: 'test@example.com', displayName: '测试用户' }),
       getPublicKey: vi.fn().mockResolvedValue('mock-public-key'),
     },
+  }),
+  useCapabilities: () => ({
+    dataPriority: 'local-first',
+    hasOfflineMode: true,
+    hasLocalDatabase: true,
+    hasSystemTray: false,
+    hasReminderPopup: false,
+    hasSystemNotification: true,
+    hasSnoozeReminder: false,
+    hasAutoStart: false,
+    hasClockHook: false,
+    hasMultiWindow: false,
+    hasAutoUpdate: false,
+    hasMinimizeToTray: false,
+    hasProxySettings: false,
+    hasOAuthCallback: false,
   }),
 }))
 

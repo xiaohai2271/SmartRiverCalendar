@@ -22,6 +22,9 @@ describe('PlatformCapabilities', () => {
       hasMinimizeToTray: true,
       hasProxySettings: true,
       hasOAuthCallback: true,
+      hasBackgroundSync: true,
+      hasIncrementalSync: false,
+      hasClientConflictResolution: true,
     }
     expect(caps.hasLocalDatabase).toBe(true)
     expect(caps.dataPriority).toBe('local-first')
@@ -47,6 +50,9 @@ describe('PlatformCapabilities', () => {
       hasMinimizeToTray: false,
       hasProxySettings: false,
       hasOAuthCallback: false,
+      hasBackgroundSync: false,
+      hasIncrementalSync: false,
+      hasClientConflictResolution: false,
     }
     expect(caps.hasLocalDatabase).toBe(false)
     expect(caps.hasSystemNotification).toBe(true)
