@@ -245,4 +245,26 @@ export class TauriSyncRepository implements ISyncRepository {
       console.info('[TauriSyncRepository] 自动同步已停止')
     }
   }
+
+  async recordPendingChange(params: {
+    action: 'create' | 'update' | 'delete'
+    entityType: 'event' | 'todo' | 'calendar'
+    entityId: string
+    payload: string
+  }): Promise<void> {
+    await safeInvoke('sync_record_pending', {
+      action: params.action,
+      entityType: params.entityType,
+      entityId: params.entityId,
+      payload: params.payload,
+    })
+  }
+
+  async pushPendingChanges(): Promise<{ pushed: number; failed: number }> {
+    const result = await safeInvoke<{ pushed: number; failed: number }>('sync_push_pending')
+    if (result === null) {
+      return { pushed: 0, failed: 0 }
+    }
+    return result
+  }
 }

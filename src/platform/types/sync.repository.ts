@@ -98,4 +98,33 @@ export interface ISyncRepository {
 
   /** 停止自动同步 */
   stopAutoSync(): void
+
+  /**
+   * 记录待同步的本地变更
+   *
+   * 当日历 type='online' 但网络不可用时，事件仍写入本地 SQLite，
+   * 同时通过此方法记录到 sync_log 表，待网络恢复后推送。
+   *
+   * 仅 local-first 平台需要实现（桌面端 + 移动端）。
+   * Web 端无需实现（无本地数据库）。
+   */
+  recordPendingChange(params: {
+    action: 'create' | 'update' | 'delete'
+    entityType: 'event' | 'todo' | 'calendar'
+    entityId: string
+    payload: string
+  }): Promise<void>
+
+  /**
+   * 推送所有待同步的本地变更到远端
+   *
+   * 读取 sync_log 表中 synced=0 的记录，逐条推送到远端 API。
+   * 推送成功后标记 synced=1，并回填 externalId。
+   *
+   * 触发时机：
+   * - 网络恢复时（cloudSyncService 监听 online 事件）
+   * - 应用回到前台时（移动端 resume）
+   * - 自动同步定时器触发时
+   */
+  pushPendingChanges(): Promise<{ pushed: number; failed: number }>
 }

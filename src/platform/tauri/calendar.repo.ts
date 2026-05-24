@@ -80,4 +80,24 @@ export class TauriCalendarRepository implements ICalendarRepository {
       })
     }
   }
+
+  async updateType(params: {
+    id: number
+    type: 'local' | 'online'
+    syncEnabled: boolean
+  }): Promise<Calendar> {
+    const raw = await safeInvoke<RawCalendar>('update_calendar_type', {
+      id: params.id,
+      calType: params.type,
+      syncEnabled: params.syncEnabled,
+    })
+    if (raw === null) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
+        message: '无法更新日历类型',
+        platform: this.platform,
+      })
+    }
+    return transformCalendar(raw)
+  }
 }

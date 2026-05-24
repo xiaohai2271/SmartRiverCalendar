@@ -216,4 +216,17 @@ export class WebSyncRepository implements ISyncRepository {
       console.info('[WebSyncRepository] 自动同步已停止')
     }
   }
+
+  async recordPendingChange(): Promise<void> {
+    throw new RepositoryError({
+      code: RepoErrorCodes.UNSUPPORTED_OPERATION,
+      message: 'Web 端不支持离线同步日志',
+      platform: this.platform,
+    })
+  }
+
+  async pushPendingChanges(): Promise<{ pushed: number; failed: number }> {
+    // Web 端无需推送，所有操作直接走 API
+    return { pushed: 0, failed: 0 }
+  }
 }

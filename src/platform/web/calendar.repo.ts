@@ -81,4 +81,23 @@ export class WebCalendarRepository implements ICalendarRepository {
       })
     }
   }
+
+  async updateType(params: {
+    id: number
+    type: 'local' | 'online'
+    syncEnabled: boolean
+  }): Promise<Calendar> {
+    const response = await this.apiClient.put<ApiResponse<WebCalendar>>(`/calendars/${params.id}`, {
+      type: params.type,
+      sync_enabled: params.syncEnabled,
+    })
+    if (response.code !== 0 || !response.data) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: response.message || '无法更新日历类型',
+        platform: this.platform,
+      })
+    }
+    return transformWebCalendar(response.data)
+  }
 }
