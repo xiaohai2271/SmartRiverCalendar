@@ -43,6 +43,7 @@ export interface RawTodo {
   completed: boolean
   priority: string
   calendar_id: number
+  external_id: string | null  // 外部系统 ID
   created_at: number
   updated_at: number
 }
@@ -112,6 +113,7 @@ export function transformTodo(raw: RawTodo): Todo {
     completed: raw.completed,
     priority: raw.priority as Todo['priority'],
     calendarId: String(raw.calendar_id),
+    externalId: raw.external_id ?? undefined,
     createdAt: raw.created_at,
     updatedAt: raw.updated_at,
   }

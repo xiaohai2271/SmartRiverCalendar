@@ -55,6 +55,7 @@ export interface WebTodo {
   completed: boolean
   priority: string
   calendar_id: number | string
+  external_id: string | null  // 外部系统 ID
   created_at: number | string
   updated_at: number | string
 }
@@ -131,6 +132,7 @@ export function transformWebTodo(raw: WebTodo): Todo {
     completed: raw.completed,
     priority: raw.priority as Todo['priority'],
     calendarId: String(raw.calendar_id),
+    externalId: raw.external_id ?? undefined,
     createdAt: Number(raw.created_at),
     updatedAt: Number(raw.updated_at),
   }
