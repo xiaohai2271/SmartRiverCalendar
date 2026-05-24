@@ -416,6 +416,10 @@ pub fn run() {
             commands::cloud_sync_get_status,
             // 日历同步命令
             commands::sync_calendars_from_server,
+            // 日历账户身份切换命令
+            commands::update_calendar_type,
+            commands::sync_record_pending,
+            commands::sync_push_pending,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

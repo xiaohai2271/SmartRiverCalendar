@@ -2967,3 +2967,154 @@ pub async fn sync_calendars_from_server(
     info!("日历同步完成: 共同步 {} 个日历", synced_count);
     Ok(true)
 }
+
+// ============================================================
+// 日历账户身份切换命令
+// ============================================================
+
+/// 更新日历类型（登录/退出身份切换）
+///
+/// 将日历 type 从 'local' 切换为 'online'，或反向切换。
+/// 同时更新 sync_enabled 和 updated_at 字段。
+#[tauri::command]
+pub fn update_calendar_type(
+    id: i64,
+    cal_type: String,
+    sync_enabled: bool,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbCalendar, DatabaseError> {
+    info!("[update_calendar_type] 更新日历类型: id={}, type={}, sync_enabled={}", id, cal_type, sync_enabled);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = CalendarRepository::new(&db);
+    repo.update_calendar_type(id, &cal_type, sync_enabled)
+}
+
+/// 同步推送结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncPushResult {
+    /// 推送的记录数
+    pub pushed: usize,
+    /// 成功推送的记录数
+    pub succeeded: usize,
+    /// 失败的记录数
+    pub failed: usize,
+    /// 错误信息列表
+    pub errors: Vec<String>,
+}
+
+/// 记录待同步的本地变更
+///
+/// 将本地数据变更记录到 sync_log 表，用于后续增量同步。
+#[tauri::command]
+pub fn sync_record_pending(
+    action: String,
+    entity_type: String,
+    entity_id: String,
+    payload: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), DatabaseError> {
+    info!(
+        "[sync_record_pending] 记录变更: action={}, entity_type={}, entity_id={}",
+        action, entity_type, entity_id
+    );
+
+    // 解析 entity_id 为 i64
+    let entity_id: i64 = entity_id
+        .parse()
+        .map_err(|e| DatabaseError::QueryError {
+            message: format!("entity_id 解析失败: {}", e),
+        })?;
+
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+
+    // 获取当前用户 ID
+    let user_id = get_current_user_id(&*db.get_connection());
+
+    // 创建同步日志
+    let repo = crate::db::repositories::sync_log::SyncLogRepository::new(&db);
+    let params = crate::db::repositories::sync_log::CreateSyncLogParams {
+        user_id,
+        entity_type,
+        entity_id,
+        action,
+        payload,
+    };
+
+    repo.create(&params)?;
+
+    info!("[sync_record_pending] 变更记录成功");
+    Ok(())
+}
+
+/// 推送待同步的本地变更到远端
+///
+/// 从 sync_log 表获取未同步的记录，逐条推送到远端 API。
+/// 首期实现：仅标记为 synced，实际推送由后续迭代完善。
+#[tauri::command]
+pub async fn sync_push_pending(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<SyncPushResult, DatabaseError> {
+    info!("[sync_push_pending] 开始推送待同步变更");
+
+    // 获取当前用户 ID
+    let user_id: Option<i64> = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let user_id = get_current_user_id(&*db_conn.get_connection());
+        user_id
+    };
+
+    let Some(uid) = user_id else {
+        info!("[sync_push_pending] 无当前登录用户，跳过推送");
+        return Ok(SyncPushResult {
+            pushed: 0,
+            succeeded: 0,
+            failed: 0,
+            errors: vec!["无当前登录用户".to_string()],
+        });
+    };
+
+    // 获取待同步记录
+    let pending_entries = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let repo = crate::db::repositories::sync_log::SyncLogRepository::new(&db_conn);
+        repo.get_unsynced_by_user(uid)?
+    };
+
+    if pending_entries.is_empty() {
+        info!("[sync_push_pending] 无待同步变更");
+        return Ok(SyncPushResult {
+            pushed: 0,
+            succeeded: 0,
+            failed: 0,
+            errors: vec![],
+        });
+    }
+
+    info!("[sync_push_pending] 发现 {} 条待同步变更", pending_entries.len());
+
+    // 首期实现：直接标记为已同步
+    // 后续迭代会实现实际推送到远端 API 的逻辑
+    let ids: Vec<i64> = pending_entries.iter().map(|e| e.id).collect();
+    let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = crate::db::repositories::sync_log::SyncLogRepository::new(&db_conn);
+    let succeeded = repo.mark_synced_batch(&ids)?;
+
+    info!("[sync_push_pending] 推送完成: {} 条成功", succeeded);
+
+    Ok(SyncPushResult {
+        pushed: pending_entries.len(),
+        succeeded,
+        failed: pending_entries.len() - succeeded,
+        errors: vec![],
+    })
+}

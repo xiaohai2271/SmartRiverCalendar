@@ -410,6 +410,72 @@ impl<'a> CalendarRepository<'a> {
             Ok(calendars)
         })
     }
+
+    /// 更新日历类型（登录/退出身份切换）
+    ///
+    /// 将日历 type 从 'local' 切换为 'online'，或反向切换。
+    /// 同时更新 sync_enabled 和 updated_at 字段。
+    ///
+    /// # 参数
+    /// - `id`: 日历 ID
+    /// - `cal_type`: 新的日历类型（'local' 或 'online'）
+    /// - `sync_enabled`: 是否启用同步
+    ///
+    /// # 返回
+    /// 成功返回更新后的日历实体，失败返回 NotFound 错误
+    pub fn update_calendar_type(
+        &self,
+        id: i64,
+        cal_type: &str,
+        sync_enabled: bool,
+    ) -> DatabaseResult<Calendar> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        // 先获取现有日历
+        let existing = self.get_by_id(id)?;
+
+        let result = self.db.execute_in_transaction(|tx| {
+            tx.execute(
+                r#"
+                UPDATE calendars
+                SET type = ?1, sync_enabled = ?2, updated_at = ?3
+                WHERE id = ?4
+                "#,
+                params![
+                    cal_type,
+                    sync_enabled as i64,
+                    now,
+                    id
+                ],
+            )?;
+
+            let changes = tx.changes();
+
+            if changes == 0 {
+                return Err(rusqlite::Error::QueryReturnedNoRows);
+            }
+
+            Ok(Calendar {
+                id,
+                name: existing.name,
+                color: existing.color,
+                type_: cal_type.to_string(),
+                account_id: existing.account_id,
+                visible: existing.visible,
+                sync_enabled,
+                user_id: existing.user_id,
+                deleted_at: existing.deleted_at,
+                timezone: existing.timezone,
+                created_at: existing.created_at,
+                updated_at: now,
+            })
+        });
+
+        result.map_err(|_| DatabaseError::NotFound {
+            entity: "Calendar".to_string(),
+            id,
+        })
+    }
 }
 
 // ============================================================
