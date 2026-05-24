@@ -45,4 +45,29 @@ export interface PlatformCapabilities {
   // ─── 认证 ───
   /** 是否支持 OAuth 本地回调（需要本地 HTTP 服务器） */
   hasOAuthCallback: boolean
+
+  // ─── 同步策略能力 ───
+
+  /**
+   * 是否支持后台同步
+   * - 桌面端：true（应用可在后台持续运行同步）
+   * - 移动端：false（OS 限制后台活动，如 Doze 模式，同步仅在活跃期执行）
+   * - Web端：false（标签页不可靠）
+   */
+  hasBackgroundSync: boolean
+
+  /**
+   * 是否需要增量同步
+   * - 桌面端：false（首期全量同步，网络稳定可接受）
+   * - 移动端：true（减少流量消耗，缩短同步窗口）
+   * - Web端：false（数据天然在线，不适用）
+   */
+  hasIncrementalSync: boolean
+
+  /**
+   * 是否需要客户端冲突解决
+   * - 桌面端/移动端：true（本地数据可能与服务端冲突）
+   * - Web端：false（服务端处理冲突）
+   */
+  hasClientConflictResolution: boolean
 }

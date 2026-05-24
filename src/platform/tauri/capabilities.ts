@@ -20,4 +20,7 @@ export const tauriCapabilities: PlatformCapabilities = {
   hasMinimizeToTray: true,
   hasProxySettings: true,
   hasOAuthCallback: true,
+  hasBackgroundSync: true,
+  hasIncrementalSync: false, // 首期全量同步
+  hasClientConflictResolution: true,
 }
