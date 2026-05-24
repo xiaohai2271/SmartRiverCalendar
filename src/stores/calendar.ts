@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
 import { usePlatform, useCapabilities } from '@/platform/provider'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
+import { cloudSyncService } from '../services/cloudSync'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // State
@@ -507,17 +508,17 @@ export const useCalendarStore = defineStore('calendar', () => {
       return
     }
 
-    // ── 在线日历 + 在线：写本地 SQLite + 记录 sync_log + 触发即时推送 ──
+    // ── 在线日历 + 在线：写本地 SQLite + 触发云同步 ──
     //
     // 写入策略说明：
     // 采用"先写本地，再同步推送"模式，而非"直接调远端 API"模式。
     // 原因：
     // 1. 保持 local-first 原则——本地 SQLite 始终是权威数据源
     // 2. 统一写入路径——无论在线/离线，事件都先写本地，降低分支复杂度
-    // 3. 离线降级无缝——在线时写本地+推送，离线时写本地+记录 sync_log，
-    //    两种路径的本地写入逻辑完全一致，仅在推送环节有差异
-    // 4. Rust 后端处理推送——由 pushPendingChanges() 触发 Rust 端读取
-    //    sync_log 并推送，前端不需要关心远端 API 细节
+    // 3. 离线降级无缝——在线时写本地+即时同步，离线时写本地+记录 sync_log，
+    //    两种路径的本地写入逻辑完全一致，仅在同步时机有差异
+    // 4. Rust 后端自动追踪——CRUD 操作由 Rust 端自动记录 sync_log，
+    //    前端只需触发 cloudSyncService.triggerSync() 即可推送
     if (targetCalendar.type === 'online' && navigator.onLine) {
       const created = await eventRepo.create({
         title: event.title,
@@ -534,19 +535,13 @@ export const useCalendarStore = defineStore('calendar', () => {
       })
       events.value.push(created)
 
-      // 记录到 sync_log 并触发即时推送（Rust 后端异步执行）
-      await syncRepo.recordPendingChange({
-        action: 'create',
-        entityType: 'event',
-        entityId: created.id,
-        payload: JSON.stringify(created),
-      })
-      await syncRepo.pushPendingChanges()
+      // Rust 后端 create_event 已自动记录 sync_log，此处直接触发云同步
+      await cloudSyncService.triggerSync()
       console.log('Event created (online):', created.id)
       return
     }
 
-    // ── 在线日历 + 离线 + 支持离线模式（桌面端/移动端）：写本地 + 记录 sync_log ──
+    // ── 在线日历 + 离线 + 支持离线模式：写本地 + Rust 自动追踪 sync_log ──
     if (targetCalendar.type === 'online' && !navigator.onLine && capabilities.hasOfflineMode) {
       const created = await eventRepo.create({
         title: event.title,
@@ -562,13 +557,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         externalId: event.externalId
       })
       events.value.push(created)
-      // 记录到 sync_log，待联网后自动推送
-      await syncRepo.recordPendingChange({
-        action: 'create',
-        entityType: 'event',
-        entityId: created.id,
-        payload: JSON.stringify(created),
-      })
+      // Rust 后端 create_event 已自动记录 sync_log，联网后由自动同步推送
       console.log('Event created (offline, pending sync):', created.id)
       return
     }
@@ -667,7 +656,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         return
       }
 
-      // ── 在线日历 + 在线：更新本地 SQLite + 记录 sync_log + 触发即时推送 ──
+      // ── 在线日历 + 在线：更新本地 SQLite + 触发云同步 ──
       if (calendar && calendar.type === 'online' && navigator.onLine) {
         const eventId = parseInt(id)
         if (!isNaN(eventId)) {
@@ -687,20 +676,14 @@ export const useCalendarStore = defineStore('calendar', () => {
           })
           events.value[index] = updated
 
-          // 记录到 sync_log 并触发即时推送
-          await syncRepo.recordPendingChange({
-            action: 'update',
-            entityType: 'event',
-            entityId: id,
-            payload: JSON.stringify(updated),
-          })
-          await syncRepo.pushPendingChanges()
+          // Rust 后端 update_event 已自动记录 sync_log，此处直接触发云同步
+          await cloudSyncService.triggerSync()
           console.log('Event updated (online):', id)
         }
         return
       }
 
-      // ── 在线日历 + 离线 + 支持离线模式：更新本地 + 记录 sync_log ──
+      // ── 在线日历 + 离线 + 支持离线模式：更新本地 + Rust 自动追踪 sync_log ──
       if (calendar && calendar.type === 'online' && !navigator.onLine && capabilities.hasOfflineMode) {
         const eventId = parseInt(id)
         if (!isNaN(eventId)) {
@@ -719,13 +702,7 @@ export const useCalendarStore = defineStore('calendar', () => {
             externalId: updates.externalId ?? event.externalId
           })
           events.value[index] = updated
-          // 记录到 sync_log，待联网后自动推送
-          await syncRepo.recordPendingChange({
-            action: 'update',
-            entityType: 'event',
-            entityId: id,
-            payload: JSON.stringify(updated),
-          })
+          // Rust 后端 update_event 已自动记录 sync_log，联网后由自动同步推送
           console.log('Event updated (offline, pending sync):', id)
         }
         return
@@ -790,7 +767,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       return
     }
 
-    // ── 在线日历 + 在线：删除本地 + 记录 sync_log + 触发即时推送 ──
+      // ── 在线日历 + 在线：删除本地 + 触发云同步 ──
     if (calendar && calendar.type === 'online' && navigator.onLine) {
       const eventId = parseInt(id)
       if (!isNaN(eventId)) {
@@ -798,19 +775,13 @@ export const useCalendarStore = defineStore('calendar', () => {
       }
       events.value = events.value.filter(e => e.id !== id)
 
-      // 记录到 sync_log 并触发即时推送
-      await syncRepo.recordPendingChange({
-        action: 'delete',
-        entityType: 'event',
-        entityId: id,
-        payload: JSON.stringify({ id, calendarId: event.calendarId }),
-      })
-      await syncRepo.pushPendingChanges()
+      // Rust 后端 delete_event 已自动记录 sync_log，此处直接触发云同步
+      await cloudSyncService.triggerSync()
       console.log('Event deleted (online):', id)
       return
     }
 
-    // ── 在线日历 + 离线 + 支持离线模式：删除本地 + 记录 sync_log ──
+    // ── 在线日历 + 离线 + 支持离线模式：删除本地 + Rust 自动追踪 sync_log ──
     // 注意：离线删除时，事件仍从本地 SQLite 删除（保证离线可用性），
     // 但 sync_log 记录了删除操作，联网后会推送删除到远端
     if (calendar && calendar.type === 'online' && !navigator.onLine && capabilities.hasOfflineMode) {
@@ -819,13 +790,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         await eventRepo.delete(eventId)
       }
       events.value = events.value.filter(e => e.id !== id)
-      // 记录到 sync_log，待联网后自动推送删除操作
-      await syncRepo.recordPendingChange({
-        action: 'delete',
-        entityType: 'event',
-        entityId: id,
-        payload: JSON.stringify({ id, calendarId: event.calendarId }),
-      })
+      // Rust 后端 delete_event 已自动记录 sync_log，联网后由自动同步推送
       console.log('Event deleted (offline, pending sync):', id)
       return
     }

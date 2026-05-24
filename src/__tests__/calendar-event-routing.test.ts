@@ -90,6 +90,12 @@ vi.mock('@/services/rsa', () => ({
   clearCachedPublicKey: vi.fn(),
 }))
 
+vi.mock('@/services/cloudSync', () => ({
+  cloudSyncService: {
+    triggerSync: mockTriggerCloudSync,
+  },
+}))
+
 describe('事件操作分流', () => {
   let originalOnLine: boolean | undefined
 
@@ -148,7 +154,7 @@ describe('事件操作分流', () => {
       expect(mockCreateExternalEvent).not.toHaveBeenCalled()
     })
 
-    it('online 日历在线时应写本地+记录sync_log+推送', async () => {
+    it('online 日历在线时应写本地+触发云同步', async () => {
       Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
 
       mockCalendarGetAll.mockResolvedValue([
@@ -172,18 +178,16 @@ describe('事件操作分流', () => {
         allDay: false,
       })
 
-      // 验证三步都执行
+      // 验证写本地 + 触发云同步
       expect(mockEventCreate).toHaveBeenCalled()
-      expect(mockRecordPendingChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'create',
-          entityType: 'event',
-        })
-      )
-      expect(mockPushPendingChanges).toHaveBeenCalled()
+      // Rust 后端自动记录 sync_log，前端不再调用 recordPendingChange
+      expect(mockRecordPendingChange).not.toHaveBeenCalled()
+      expect(mockPushPendingChanges).not.toHaveBeenCalled()
+      // 在线路径应触发 cloudSyncService.triggerSync()
+      expect(mockTriggerCloudSync).toHaveBeenCalled()
     })
 
-    it('online 日历离线+hasOfflineMode 应写本地+记录sync_log', async () => {
+    it('online 日历离线+hasOfflineMode 应写本地（Rust 自动追踪 sync_log）', async () => {
       Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
       capabilitiesMock.hasOfflineMode = true
 
@@ -208,16 +212,14 @@ describe('事件操作分流', () => {
         allDay: false,
       })
 
-      // 验证写本地+记录 sync_log
+      // 验证写本地，Rust 后端自动追踪 sync_log
       expect(mockEventCreate).toHaveBeenCalled()
-      expect(mockRecordPendingChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'create',
-          entityType: 'event',
-        })
-      )
-      // 不应推送（离线模式）
+      // 前端不再调用 recordPendingChange（Rust 端已自动记录）
+      expect(mockRecordPendingChange).not.toHaveBeenCalled()
+      // 离线不应推送
       expect(mockPushPendingChanges).not.toHaveBeenCalled()
+      // 离线不应触发云同步
+      expect(mockTriggerCloudSync).not.toHaveBeenCalled()
     })
 
     it('online 日历离线+!hasOfflineMode 应抛出错误', async () => {
@@ -348,7 +350,7 @@ describe('事件操作分流', () => {
       expect(mockPushPendingChanges).not.toHaveBeenCalled()
     })
 
-    it('online 日历在线更新应写本地+记录sync_log+推送', async () => {
+    it('online 日历在线更新应写本地+触发云同步', async () => {
       Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
 
       const now = Date.now()
@@ -371,16 +373,14 @@ describe('事件操作分流', () => {
       await store.updateEvent('101', { title: '更新后事件' })
 
       expect(mockEventUpdate).toHaveBeenCalled()
-      expect(mockRecordPendingChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'update',
-          entityType: 'event',
-        })
-      )
-      expect(mockPushPendingChanges).toHaveBeenCalled()
+      // Rust 后端自动记录 sync_log，前端不再调用 recordPendingChange
+      expect(mockRecordPendingChange).not.toHaveBeenCalled()
+      expect(mockPushPendingChanges).not.toHaveBeenCalled()
+      // 在线路径应触发 cloudSyncService.triggerSync()
+      expect(mockTriggerCloudSync).toHaveBeenCalled()
     })
 
-    it('online 日历离线+hasOfflineMode 更新应写本地+记录sync_log', async () => {
+    it('online 日历离线+hasOfflineMode 更新应写本地（Rust 自动追踪 sync_log）', async () => {
       Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
       capabilitiesMock.hasOfflineMode = true
 
@@ -404,14 +404,12 @@ describe('事件操作分流', () => {
       await store.updateEvent('101', { title: '更新后事件' })
 
       expect(mockEventUpdate).toHaveBeenCalled()
-      expect(mockRecordPendingChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'update',
-          entityType: 'event',
-        })
-      )
+      // 前端不再调用 recordPendingChange（Rust 端已自动记录）
+      expect(mockRecordPendingChange).not.toHaveBeenCalled()
       // 离线不应推送
       expect(mockPushPendingChanges).not.toHaveBeenCalled()
+      // 离线不应触发云同步
+      expect(mockTriggerCloudSync).not.toHaveBeenCalled()
     })
 
     it('online 日历离线+!hasOfflineMode 更新应抛出错误', async () => {
@@ -493,7 +491,7 @@ describe('事件操作分流', () => {
       expect(mockPushPendingChanges).not.toHaveBeenCalled()
     })
 
-    it('online 日历在线删除应删本地+记录sync_log+推送', async () => {
+    it('online 日历在线删除应删本地+触发云同步', async () => {
       Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
 
       const now = Date.now()
@@ -512,16 +510,14 @@ describe('事件操作分流', () => {
       await store.deleteEvent('101')
 
       expect(mockEventDelete).toHaveBeenCalled()
-      expect(mockRecordPendingChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'delete',
-          entityType: 'event',
-        })
-      )
-      expect(mockPushPendingChanges).toHaveBeenCalled()
+      // Rust 后端自动记录 sync_log，前端不再调用 recordPendingChange
+      expect(mockRecordPendingChange).not.toHaveBeenCalled()
+      expect(mockPushPendingChanges).not.toHaveBeenCalled()
+      // 在线路径应触发 cloudSyncService.triggerSync()
+      expect(mockTriggerCloudSync).toHaveBeenCalled()
     })
 
-    it('online 日历离线+hasOfflineMode 删除应删本地+记录sync_log', async () => {
+    it('online 日历离线+hasOfflineMode 删除应删本地（Rust 自动追踪 sync_log）', async () => {
       Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
       capabilitiesMock.hasOfflineMode = true
 
@@ -541,14 +537,12 @@ describe('事件操作分流', () => {
       await store.deleteEvent('101')
 
       expect(mockEventDelete).toHaveBeenCalled()
-      expect(mockRecordPendingChange).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'delete',
-          entityType: 'event',
-        })
-      )
+      // 前端不再调用 recordPendingChange（Rust 端已自动记录）
+      expect(mockRecordPendingChange).not.toHaveBeenCalled()
       // 离线不应推送
       expect(mockPushPendingChanges).not.toHaveBeenCalled()
+      // 离线不应触发云同步
+      expect(mockTriggerCloudSync).not.toHaveBeenCalled()
     })
 
     it('online 日历离线+!hasOfflineMode 删除应抛出错误', async () => {
