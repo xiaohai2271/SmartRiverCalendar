@@ -128,6 +128,11 @@ impl<'a> CalendarRepository<'a> {
             .unwrap_or_else(|| "Asia/Shanghai".to_string());
 
         self.db.execute_in_transaction(|tx| {
+            let account_id = if req.type_ == "online" {
+                None
+            } else {
+                req.account_id
+            };
             tx.execute(
                 r#"
                 INSERT INTO calendars (name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
@@ -137,7 +142,7 @@ impl<'a> CalendarRepository<'a> {
                     req.name,
                     req.color,
                     req.type_,
-                    req.account_id,
+                    account_id,
                     req.visible as i64,
                     req.sync_enabled as i64,
                     req.user_id,
@@ -154,7 +159,7 @@ impl<'a> CalendarRepository<'a> {
                 name: req.name.clone(),
                 color: req.color.clone(),
                 type_: req.type_.clone(),
-                account_id: req.account_id,
+                account_id,
                 visible: req.visible,
                 sync_enabled: req.sync_enabled,
                 user_id: req.user_id,
@@ -165,6 +170,7 @@ impl<'a> CalendarRepository<'a> {
             })
         })
     }
+
 
     /// 使用指定 ID 插入日历（用于服务端同步，跳过 AUTOINCREMENT）
     ///
@@ -185,17 +191,28 @@ impl<'a> CalendarRepository<'a> {
             .unwrap_or_else(|| "Asia/Shanghai".to_string());
 
         self.db.execute_in_transaction(|tx| {
+            let account_id = if req.type_ == "online" {
+                None
+            } else {
+                req.account_id
+            };
             tx.execute(
                 r#"
-                INSERT OR IGNORE INTO calendars (id, name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
+                INSERT INTO calendars (id, name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                ON CONFLICT(id) DO UPDATE SET
+                    name=excluded.name, color=excluded.color, type=excluded.type,
+                    account_id=excluded.account_id, visible=excluded.visible,
+                    sync_enabled=excluded.sync_enabled, user_id=excluded.user_id,
+                    timezone=excluded.timezone, updated_at=excluded.updated_at,
+                    deleted_at=NULL
                 "#,
                 params![
                     id,
                     req.name,
                     req.color,
                     req.type_,
-                    req.account_id,
+                    account_id,
                     req.visible as i64,
                     req.sync_enabled as i64,
                     req.user_id,

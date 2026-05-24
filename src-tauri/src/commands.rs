@@ -1929,7 +1929,7 @@ pub async fn cloud_sync_trigger(
         let executor = crate::sync_engine::sync::SyncExecutor::new(&db_conn, (*api_client).clone());
 
         // 应用远端变更
-        let apply_result = executor.apply_server_changes(&download_response.server_changes);
+        let apply_result = executor.apply_server_changes(user_id, &download_response.server_changes);
 
         // 标记本地变更为已同步
         if !local_changes.is_empty() {
@@ -2947,7 +2947,7 @@ pub async fn sync_calendars_from_server(
             account_id: server_cal.account_id,
             visible: server_cal.visible,
             sync_enabled: server_cal.sync_enabled,
-            user_id: Some(server_cal.user_id),
+            user_id: server_cal.user_id,
             timezone: None,
         };
 

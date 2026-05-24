@@ -124,7 +124,10 @@ export const useCalendarStore = defineStore('calendar', () => {
 
           for (const cal of calList) {
             const calendarId = `ext_${account.id}_${cal.id}`
-            const existingIndex = calendars.value.findIndex(c => c.id === calendarId)
+            const existingIndex = calendars.value.findIndex(c => 
+              c.id === calendarId ||
+              (c.accountId === String(account.id) && c.type === account.type)
+            )
 
             if (existingIndex === -1) {
               const newCal: Calendar = {
@@ -149,7 +152,7 @@ export const useCalendarStore = defineStore('calendar', () => {
               const capabilities = useCapabilities()
               if (capabilities.dataPriority === 'local-first') {
                 try {
-                  await calendarRepo.create({
+                  const created = await calendarRepo.create({
                     name: newCal.name,
                     color: newCal.color,
                     type: newCal.type,
@@ -157,7 +160,9 @@ export const useCalendarStore = defineStore('calendar', () => {
                     visible: newCal.visible,
                     syncEnabled: newCal.syncEnabled
                   })
-                  console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库`)
+                  // 同步回填生成的真实自增整数 ID 给前端内存日历对象，确保后续事件外键正确
+                  newCal.id = String(created.id)
+                  console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库，回填 ID: ${created.id}`)
                 } catch (dbError) {
                   console.error(`保存外部日历 ${cal.name} 失败:`, dbError)
                 }

@@ -83,8 +83,7 @@ where
             }
         }
     }
-
-    deserializer.deserialize_option(OptionStringOrNumberVisitor)
+    deserializer.deserialize_any(OptionStringOrNumberVisitor)
 }
 
 /// 兼容字符串和数字类型的 Vec<i64> 反序列化
@@ -175,8 +174,7 @@ where
             }
         }
     }
-
-    deserializer.deserialize_option(OptionI32StringOrNumberVisitor)
+    deserializer.deserialize_any(OptionI32StringOrNumberVisitor)
 }
 
 // ================================================================
@@ -435,8 +433,8 @@ pub struct CalendarDTO {
     /// 日历描述
     pub description: Option<String>,
     /// 用户 ID
-    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
-    pub user_id: i64,
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64", default)]
+    pub user_id: Option<i64>,
     /// 是否默认日历
     #[serde(default)]
     pub is_default: bool,
@@ -488,8 +486,8 @@ pub struct EventDTO {
     /// 重复规则 (RRULE 格式)
     pub recurrence_rule: Option<String>,
     /// 用户 ID
-    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
-    pub user_id: i64,
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64", default)]
+    pub user_id: Option<i64>,
     /// 创建时间 (Unix 时间戳，毫秒)
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub created_at: i64,
@@ -527,8 +525,8 @@ pub struct TodoDTO {
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub priority: i64,
     /// 用户 ID
-    #[serde(deserialize_with = "deserialize_string_or_number_i64")]
-    pub user_id: i64,
+    #[serde(deserialize_with = "deserialize_string_or_number_option_i64", default)]
+    pub user_id: Option<i64>,
     /// 创建时间 (Unix 时间戳，毫秒)
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub created_at: i64,
@@ -766,7 +764,7 @@ mod tests {
             visible: true,
             sync_enabled: false,
             description: Some("工作相关事件".to_string()),
-            user_id: 1,
+            user_id: Some(1),
             is_default: true,
             created_at: 1700000000000,
             updated_at: 1700000000000,
@@ -790,7 +788,7 @@ mod tests {
             location: Some("会议室 A".to_string()),
             reminder_minutes: Some(15),
             recurrence_rule: None,
-            user_id: 1,
+            user_id: Some(1),
             created_at: 1700000000000,
             updated_at: 1700000000000,
         };
@@ -811,7 +809,7 @@ mod tests {
             is_completed: false,
             completed_at: None,
             priority: 2,
-            user_id: 1,
+            user_id: Some(1),
             created_at: 1700000000000,
             updated_at: 1700000000000,
         };

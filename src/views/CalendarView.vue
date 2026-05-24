@@ -160,7 +160,7 @@
                       @click="eventFormData.calendarId = cal.id"
                     >
                       <span class="calendar-color" :style="{ background: cal.color }"></span>
-                      <span>{{ cal.name }}</span>
+                      <span>{{ cal.type === 'local' ? cal.name : `${cal.name} (${cal.type === 'online' ? '在线' : (cal.type === 'exchange' ? 'Exchange' : 'CalDAV')})` }}</span>
                     </button>
                   </template>
                 </div>

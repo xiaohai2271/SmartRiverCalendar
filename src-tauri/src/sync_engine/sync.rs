@@ -413,7 +413,7 @@ impl<'a> SyncExecutor<'a> {
         );
 
         // 4. 应用远端变更到本地
-        let apply_result = self.apply_server_changes(&download_response.server_changes);
+        let apply_result = self.apply_server_changes(user_id, &download_response.server_changes);
 
         // 5. 标记本地变更为已同步
         let local_ids: Vec<i64> = local_changes.iter().map(|c| c.id).collect();
@@ -456,8 +456,8 @@ impl<'a> SyncExecutor<'a> {
     ///
     /// # 返回
     /// 同步结果
-    pub async fn pull_only(&self, last_sync_at: Option<i64>) -> SyncResult {
-        log::info!("开始拉取远端变更: last_sync_at={:?}", last_sync_at);
+    pub async fn pull_only(&self, user_id: i64, last_sync_at: Option<i64>) -> SyncResult {
+        log::info!("开始拉取远端变更: user_id={}, last_sync_at={:?}", user_id, last_sync_at);
 
         let download_response = match self.api.sync_download(last_sync_at).await {
             Ok(response) => response,
@@ -477,7 +477,7 @@ impl<'a> SyncExecutor<'a> {
             + download_response.server_changes.todos.updated.len()
             + download_response.server_changes.todos.deleted.len();
 
-        let apply_result = self.apply_server_changes(&download_response.server_changes);
+        let apply_result = self.apply_server_changes(user_id, &download_response.server_changes);
 
         let mut result = SyncResult::ok(download_response.server_time, download_response.sync_token);
         result.downloaded = downloaded_count;
@@ -502,7 +502,7 @@ impl<'a> SyncExecutor<'a> {
     ///
     /// # 返回
     /// 冲突数量
-    pub fn apply_server_changes(&self, changes: &BatchChanges) -> DatabaseResult<usize> {
+    pub fn apply_server_changes(&self, user_id: i64, changes: &BatchChanges) -> DatabaseResult<usize> {
         let total = changes.calendars.created.len()
             + changes.calendars.updated.len()
             + changes.calendars.deleted.len()
@@ -522,12 +522,12 @@ impl<'a> SyncExecutor<'a> {
         self.db.execute_in_transaction(|tx| {
             // 应用日历变更
             for item in &changes.calendars.created {
-                if let Err(e) = self.apply_calendar_create(tx, item) {
+                if let Err(e) = self.apply_calendar_create(tx, Some(user_id), item) {
                     log::error!("应用日历创建变更失败: id={}, error={}", item.id, e);
                 }
             }
             for item in &changes.calendars.updated {
-                match self.apply_calendar_update(tx, item) {
+                match self.apply_calendar_update(tx, Some(user_id), item) {
                     Ok(has_conflict) => {
                         if has_conflict {
                             conflict_count += 1;
@@ -546,7 +546,7 @@ impl<'a> SyncExecutor<'a> {
 
             // 应用事件变更
             for item in &changes.events.created {
-                if let Err(e) = self.apply_event_create(tx, item) {
+                if let Err(e) = self.apply_event_create(tx, Some(user_id), item) {
                     log::error!("应用事件创建变更失败: id={}, error={}", item.id, e);
                 }
             }
@@ -570,7 +570,7 @@ impl<'a> SyncExecutor<'a> {
 
             // 应用待办变更
             for item in &changes.todos.created {
-                if let Err(e) = self.apply_todo_create(tx, item) {
+                if let Err(e) = self.apply_todo_create(tx, Some(user_id), item) {
                     log::error!("应用待办创建变更失败: id={}, error={}", item.id, e);
                 }
             }
@@ -602,16 +602,23 @@ impl<'a> SyncExecutor<'a> {
     fn apply_event_create(
         &self,
         tx: &rusqlite::Transaction,
+        user_id: Option<i64>,
         item: &EventSyncItem,
     ) -> DatabaseResult<bool> {
         let now = chrono::Utc::now().timestamp_millis();
         tx.execute(
-            "INSERT OR IGNORE INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, location, timezone, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, location, user_id, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+             ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, description=excluded.description, start_time=excluded.start_time,
+                end_time=excluded.end_time, all_day=excluded.all_day, calendar_id=excluded.calendar_id,
+                color=excluded.color, reminder=excluded.reminder, location=excluded.location,
+                user_id=excluded.user_id, timezone=excluded.timezone, updated_at=excluded.updated_at,
+                deleted_at=NULL",
             rusqlite::params![
                 item.id, item.title, item.description, item.start_time, item.end_time,
                 item.all_day, item.calendar_id, item.color, item.reminder, item.location,
-                item.timezone, now, item.updated_at,
+                user_id, item.timezone, now, item.updated_at,
             ],
         )?;
         Ok(false)
@@ -654,14 +661,19 @@ impl<'a> SyncExecutor<'a> {
     fn apply_todo_create(
         &self,
         tx: &rusqlite::Transaction,
+        user_id: Option<i64>,
         item: &TodoSyncItem,
     ) -> DatabaseResult<bool> {
         let now = chrono::Utc::now().timestamp_millis();
-        let user_id: Option<i64> = None;
         let timezone = "Asia/Shanghai";
         tx.execute(
-            "INSERT OR IGNORE INTO todos (id, title, description, due_date, completed, priority, calendar_id, user_id, timezone, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO todos (id, title, description, due_date, completed, priority, calendar_id, user_id, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET
+                title=excluded.title, description=excluded.description, due_date=excluded.due_date,
+                completed=excluded.completed, priority=excluded.priority, calendar_id=excluded.calendar_id,
+                user_id=excluded.user_id, timezone=excluded.timezone, updated_at=excluded.updated_at,
+                deleted_at=NULL",
             rusqlite::params![
                 item.id, item.title, item.description, item.due_date, item.completed,
                 item.priority, item.calendar_id, user_id, timezone, now, item.updated_at,
@@ -706,16 +718,30 @@ impl<'a> SyncExecutor<'a> {
     fn apply_calendar_create(
         &self,
         tx: &rusqlite::Transaction,
+        user_id: Option<i64>,
         item: &CalendarSyncItem,
     ) -> DatabaseResult<bool> {
         let now = chrono::Utc::now().timestamp_millis();
-        let user_id: Option<i64> = None;
         let timezone = "Asia/Shanghai";
+
+        // 在线日历/本地默认日历不应存入外部 accounts 外键，防止因找不到账号引发外键约束失效
+        let db_account_id = if item.r#type == "local" || item.r#type == "online" {
+            None
+        } else {
+            item.account_id
+        };
+
         tx.execute(
-            "INSERT OR IGNORE INTO calendars (id, name, color, type, visible, sync_enabled, user_id, timezone, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO calendars (id, name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             ON CONFLICT(id) DO UPDATE SET
+                name=excluded.name, color=excluded.color, type=excluded.type,
+                account_id=excluded.account_id, visible=excluded.visible,
+                sync_enabled=excluded.sync_enabled, user_id=excluded.user_id,
+                timezone=excluded.timezone, updated_at=excluded.updated_at,
+                deleted_at=NULL",
             rusqlite::params![
-                item.id, item.name, item.color, item.r#type, item.visible, item.sync_enabled,
+                item.id, item.name, item.color, item.r#type, db_account_id, item.visible, item.sync_enabled,
                 user_id, timezone, now, item.updated_at,
             ],
         )?;
@@ -726,15 +752,23 @@ impl<'a> SyncExecutor<'a> {
     fn apply_calendar_update(
         &self,
         tx: &rusqlite::Transaction,
+        user_id: Option<i64>,
         item: &CalendarSyncItem,
     ) -> DatabaseResult<bool> {
         let has_conflict = Self::check_conflict_by_updated_at(tx, "calendars", item.id, item.updated_at)?;
         let now = chrono::Utc::now().timestamp_millis();
-        let user_id: Option<i64> = None;
+
+        // 在线日历/本地默认日历不应存入外部 accounts 外键，防止因找不到账号引发外键约束失效
+        let db_account_id = if item.r#type == "local" || item.r#type == "online" {
+            None
+        } else {
+            item.account_id
+        };
+
         tx.execute(
-            "UPDATE calendars SET name=?1, color=?2, type=?3, visible=?4, sync_enabled=?5, user_id=?6, updated_at=?7 WHERE id=?8",
+            "UPDATE calendars SET name=?1, color=?2, type=?3, account_id=?4, visible=?5, sync_enabled=?6, user_id=?7, updated_at=?8 WHERE id=?9",
             rusqlite::params![
-                item.name, item.color, item.r#type, item.visible, item.sync_enabled,
+                item.name, item.color, item.r#type, db_account_id, item.visible, item.sync_enabled,
                 user_id, now, item.id,
             ],
         )?;
@@ -900,7 +934,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&changes);
+        let result = executor.apply_server_changes(1, &changes);
         assert!(result.is_ok());
 
         let count: i64 = db
@@ -954,7 +988,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&changes);
+        let result = executor.apply_server_changes(1, &changes);
         assert!(result.is_ok());
 
         let title: String = db
@@ -995,7 +1029,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&changes);
+        let result = executor.apply_server_changes(1, &changes);
         assert!(result.is_ok());
 
         let deleted_at: Option<i64> = db
@@ -1034,7 +1068,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&changes);
+        let result = executor.apply_server_changes(1, &changes);
         assert!(result.is_ok());
 
         let name: String = db
@@ -1074,7 +1108,7 @@ mod tests {
             },
         };
 
-        let result = executor.apply_server_changes(&changes);
+        let result = executor.apply_server_changes(1, &changes);
         assert!(result.is_ok());
 
         let title: String = db
@@ -1129,7 +1163,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let conflicts = executor.apply_server_changes(&changes).unwrap();
+        let conflicts = executor.apply_server_changes(1, &changes).unwrap();
         assert_eq!(conflicts, 1);
     }
 
@@ -1175,7 +1209,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let conflicts = executor.apply_server_changes(&changes).unwrap();
+        let conflicts = executor.apply_server_changes(1, &changes).unwrap();
         assert_eq!(conflicts, 0);
     }
 
@@ -1192,7 +1226,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&changes);
+        let result = executor.apply_server_changes(1, &changes);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 0);
     }
@@ -1265,7 +1299,7 @@ mod tests {
             todos: EntityChanges { created: vec![], updated: vec![], deleted: vec![] },
         };
 
-        let result = executor.apply_server_changes(&changes);
+        let result = executor.apply_server_changes(1, &changes);
         assert!(result.is_ok());
 
         let count: i64 = db
@@ -1295,3 +1329,4 @@ mod tests {
         assert_eq!(json_bool(&data, "not_exist"), None);
     }
 }
+
