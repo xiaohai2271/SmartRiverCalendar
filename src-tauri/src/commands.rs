@@ -1042,6 +1042,7 @@ pub fn create_todo(
         completed,
         priority,
         calendar_id,
+        external_id: None,
         user_id: None,
         timezone: None,
     };
@@ -1083,6 +1084,7 @@ pub fn update_todo(
         completed,
         priority,
         calendar_id,
+        external_id: None,
     };
     let updated = repo.update(&input)?;
 
@@ -3052,10 +3054,11 @@ pub fn sync_record_pending(
 
 /// 推送待同步的本地变更到远端
 ///
-/// 从 sync_log 表获取未同步的记录，逐条推送到远端 API。
-/// 首期实现：仅标记为 synced，实际推送由后续迭代完善。
+/// 从 sync_log 表获取未同步的记录，调用远端 API 上传变更并拉取远端变更。
+/// 复用 SyncExecutor 的核心同步逻辑，与 cloud_sync_trigger 一致。
 #[tauri::command]
 pub async fn sync_push_pending(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
     db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<SyncPushResult, DatabaseError> {
     info!("[sync_push_pending] 开始推送待同步变更");
@@ -3079,42 +3082,114 @@ pub async fn sync_push_pending(
         });
     };
 
-    // 获取待同步记录
-    let pending_entries = {
+    // 获取最后同步时间
+    let last_sync_at: Option<i64> = {
         let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
             message: "数据库连接锁获取失败".to_string(),
         })?;
-        let repo = crate::db::repositories::sync_log::SyncLogRepository::new(&db_conn);
-        repo.get_unsynced_by_user(uid)?
+        let conn = db_conn.get_connection();
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'last_cloud_sync_at' LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|v| v.parse().ok())
     };
 
-    if pending_entries.is_empty() {
-        info!("[sync_push_pending] 无待同步变更");
-        return Ok(SyncPushResult {
-            pushed: 0,
-            succeeded: 0,
-            failed: 0,
-            errors: vec![],
+    // 步骤 1：从 sync_log 获取未同步的本地变更（同步块，不跨 await）
+    let (local_ids, upload_request) = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let executor = crate::sync_engine::sync::SyncExecutor::new(&db_conn, (*api_client).clone());
+
+        let local_changes = executor.get_unsynced_changes(uid)?;
+
+        if local_changes.is_empty() {
+            info!("[sync_push_pending] 无待同步变更");
+            return Ok(SyncPushResult {
+                pushed: 0,
+                succeeded: 0,
+                failed: 0,
+                errors: vec![],
+            });
+        }
+
+        info!("[sync_push_pending] 发现 {} 条待同步变更", local_changes.len());
+
+        let upload_request = executor.build_upload_request(local_changes.as_slice(), last_sync_at);
+        let local_ids: Vec<i64> = local_changes.iter().map(|c| c.id).collect();
+
+        (local_ids, upload_request)
+    };
+
+    let pushed_count = local_ids.len();
+
+    // 步骤 2：调用 API 上传变更并拉取远端变更（async，不持有锁）
+    let download_response = match api_client.sync_upload(upload_request).await {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!("[sync_push_pending] 上传变更失败: {}", e);
+            return Ok(SyncPushResult {
+                pushed: pushed_count,
+                succeeded: 0,
+                failed: pushed_count,
+                errors: vec![format!("上传变更失败: {}", e)],
+            });
+        }
+    };
+
+    // 步骤 3：应用远端变更 + 标记已同步（同步块）
+    let succeeded = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let executor = crate::sync_engine::sync::SyncExecutor::new(&db_conn, (*api_client).clone());
+
+        // 应用远端变更
+        if let Err(e) = executor.apply_server_changes(uid, &download_response.server_changes) {
+            log::error!("[sync_push_pending] 应用远端变更失败: {}", e);
+        }
+
+        // 标记本地变更为已同步
+        let succeeded = executor.mark_synced_batch(&local_ids).unwrap_or(0);
+
+        // 清理已同步的日志
+        if let Err(e) = executor.cleanup_synced(uid) {
+            log::warn!("[sync_push_pending] 清理已同步日志失败: {}", e);
+        }
+
+        // 更新同步时间
+        let _ = db_conn.execute(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_cloud_sync_at', ?1)",
+                [download_response.server_time.to_string()],
+            )
         });
-    }
 
-    info!("[sync_push_pending] 发现 {} 条待同步变更", pending_entries.len());
+        // 更新同步令牌
+        if !download_response.sync_token.is_empty() {
+            let _ = db_conn.execute(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('cloud_sync_token', ?1)",
+                    [download_response.sync_token.clone()],
+                )
+            });
+        }
 
-    // 首期实现：直接标记为已同步
-    // 后续迭代会实现实际推送到远端 API 的逻辑
-    let ids: Vec<i64> = pending_entries.iter().map(|e| e.id).collect();
-    let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
-        message: "数据库连接锁获取失败".to_string(),
-    })?;
-    let repo = crate::db::repositories::sync_log::SyncLogRepository::new(&db_conn);
-    let succeeded = repo.mark_synced_batch(&ids)?;
+        succeeded
+    };
 
-    info!("[sync_push_pending] 推送完成: {} 条成功", succeeded);
+    info!(
+        "[sync_push_pending] 推送完成: 推送={}, 成功={}",
+        pushed_count, succeeded
+    );
 
     Ok(SyncPushResult {
-        pushed: pending_entries.len(),
+        pushed: pushed_count,
         succeeded,
-        failed: pending_entries.len() - succeeded,
+        failed: pushed_count - succeeded,
         errors: vec![],
     })
 }

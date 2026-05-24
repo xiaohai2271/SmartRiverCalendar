@@ -178,6 +178,7 @@ impl<'a> SyncExecutor<'a> {
                         reminder: json_i64(&payload, "reminder").map(|v| v as i32),
                         location: json_str(&payload, "location").map(|s| s.to_string()),
                         updated_at: entry.created_at,
+                        client_id: Some(json_i64(&payload, "id").unwrap_or(0).to_string()),
                     };
                     match entry.action.as_str() {
                         "create" => event_created.push(item),
@@ -198,6 +199,7 @@ impl<'a> SyncExecutor<'a> {
                             .to_string(),
                         calendar_id: json_i64(&payload, "calendar_id").unwrap_or(0),
                         updated_at: entry.created_at,
+                        client_id: Some(json_i64(&payload, "id").unwrap_or(0).to_string()),
                     };
                     match entry.action.as_str() {
                         "create" => todo_created.push(item),
@@ -330,6 +332,7 @@ impl<'a> SyncExecutor<'a> {
                         reminder: json_i64(&payload, "reminder").map(|v| v as i32),
                         location: json_str(&payload, "location").map(|s| s.to_string()),
                         updated_at: entry.created_at,
+                        client_id: Some(json_i64(&payload, "id").unwrap_or(0).to_string()),
                     };
                     match entry.action.as_str() {
                         "create" => event_created.push(item),
@@ -350,6 +353,7 @@ impl<'a> SyncExecutor<'a> {
                             .to_string(),
                         calendar_id: json_i64(&payload, "calendar_id").unwrap_or(0),
                         updated_at: entry.created_at,
+                        client_id: Some(json_i64(&payload, "id").unwrap_or(0).to_string()),
                     };
                     match entry.action.as_str() {
                         "create" => todo_created.push(item),
@@ -599,6 +603,11 @@ impl<'a> SyncExecutor<'a> {
     }
 
     /// 应用事件创建变更
+    ///
+    /// 去重逻辑与 apply_todo_create 相同：
+    /// 1. client_id 匹配 → 更新 + 设置 external_id
+    /// 2. external_id 匹配 → 更新
+    /// 3. 都无匹配 → INSERT ON CONFLICT(id)
     fn apply_event_create(
         &self,
         tx: &rusqlite::Transaction,
@@ -606,19 +615,77 @@ impl<'a> SyncExecutor<'a> {
         item: &EventSyncItem,
     ) -> DatabaseResult<bool> {
         let now = chrono::Utc::now().timestamp_millis();
+        let server_id_str = item.id.to_string();
+
+        // 步骤 1: 通过 client_id 匹配本地记录
+        if let Some(ref client_id) = item.client_id {
+            let local_id: Option<i64> = tx.query_row(
+                "SELECT id FROM events WHERE id = ?1 AND deleted_at IS NULL",
+                rusqlite::params![client_id.parse::<i64>().unwrap_or(0)],
+                |row| row.get(0),
+            ).ok();
+
+            if let Some(local_id) = local_id {
+                // 找到本地记录 → 更新并设置 external_id
+                log::info!(
+                    "事件去重: 通过 client_id={} 匹配到本地记录 id={}, 设置 external_id={}",
+                    client_id, local_id, server_id_str
+                );
+                tx.execute(
+                    "UPDATE events SET title=?1, description=?2, start_time=?3, end_time=?4, all_day=?5, 
+                        calendar_id=?6, color=?7, reminder=?8, location=?9, external_id=?10,
+                        user_id=?11, timezone=?12, updated_at=?13, deleted_at=NULL 
+                     WHERE id=?14",
+                    rusqlite::params![
+                        item.title, item.description, item.start_time, item.end_time,
+                        item.all_day, item.calendar_id, item.color, item.reminder, item.location,
+                        server_id_str, user_id, item.timezone, item.updated_at, local_id,
+                    ],
+                )?;
+                return Ok(false);
+            }
+        }
+
+        // 步骤 2: 通过 external_id 匹配
+        let existing_by_external: Option<i64> = tx.query_row(
+            "SELECT id FROM events WHERE external_id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![server_id_str],
+            |row| row.get(0),
+        ).ok();
+
+        if let Some(local_id) = existing_by_external {
+            log::info!(
+                "事件去重: 通过 external_id={} 匹配到本地记录 id={}",
+                server_id_str, local_id
+            );
+            tx.execute(
+                "UPDATE events SET title=?1, description=?2, start_time=?3, end_time=?4, all_day=?5, 
+                    calendar_id=?6, color=?7, reminder=?8, location=?9,
+                    user_id=?10, timezone=?11, updated_at=?12, deleted_at=NULL 
+                 WHERE id=?13",
+                rusqlite::params![
+                    item.title, item.description, item.start_time, item.end_time,
+                    item.all_day, item.calendar_id, item.color, item.reminder, item.location,
+                    user_id, item.timezone, item.updated_at, local_id,
+                ],
+            )?;
+            return Ok(false);
+        }
+
+        // 步骤 3: 无匹配，插入新记录
         tx.execute(
-            "INSERT INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, location, user_id, timezone, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+            "INSERT INTO events (id, title, description, start_time, end_time, all_day, calendar_id, color, reminder, location, external_id, user_id, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title, description=excluded.description, start_time=excluded.start_time,
                 end_time=excluded.end_time, all_day=excluded.all_day, calendar_id=excluded.calendar_id,
                 color=excluded.color, reminder=excluded.reminder, location=excluded.location,
-                user_id=excluded.user_id, timezone=excluded.timezone, updated_at=excluded.updated_at,
+                external_id=excluded.external_id, user_id=excluded.user_id, timezone=excluded.timezone, updated_at=excluded.updated_at,
                 deleted_at=NULL",
             rusqlite::params![
                 item.id, item.title, item.description, item.start_time, item.end_time,
                 item.all_day, item.calendar_id, item.color, item.reminder, item.location,
-                user_id, item.timezone, now, item.updated_at,
+                server_id_str, user_id, item.timezone, now, item.updated_at,
             ],
         )?;
         Ok(false)
@@ -658,6 +725,12 @@ impl<'a> SyncExecutor<'a> {
     }
 
     /// 应用待办创建变更
+    ///
+    /// 去重逻辑：
+    /// 1. 如果 client_id 非空，查找本地 id = client_id 的记录
+    /// 2. 找到 → 更新该记录，设置 external_id = 远端 id
+    /// 3. 未找到 → 尝试通过 external_id 匹配
+    /// 4. 都没匹配 → 插入新记录
     fn apply_todo_create(
         &self,
         tx: &rusqlite::Transaction,
@@ -666,17 +739,74 @@ impl<'a> SyncExecutor<'a> {
     ) -> DatabaseResult<bool> {
         let now = chrono::Utc::now().timestamp_millis();
         let timezone = "Asia/Shanghai";
+        let server_id_str = item.id.to_string();
+
+        // 步骤 1: 尝试通过 client_id 匹配本地记录
+        if let Some(ref client_id) = item.client_id {
+            // 查找本地 id = client_id 的记录
+            let local_id: Option<i64> = tx.query_row(
+                "SELECT id FROM todos WHERE id = ?1 AND deleted_at IS NULL",
+                rusqlite::params![client_id.parse::<i64>().unwrap_or(0)],
+                |row| row.get(0),
+            ).ok();
+
+            if let Some(local_id) = local_id {
+                // 找到本地记录 → 更新并设置 external_id
+                log::info!(
+                    "待办去重: 通过 client_id={} 匹配到本地记录 id={}, 设置 external_id={}",
+                    client_id, local_id, server_id_str
+                );
+                tx.execute(
+                    "UPDATE todos SET title=?1, description=?2, due_date=?3, completed=?4, priority=?5, 
+                        calendar_id=?6, external_id=?7, user_id=?8, timezone=?9, updated_at=?10, deleted_at=NULL 
+                     WHERE id=?11",
+                    rusqlite::params![
+                        item.title, item.description, item.due_date, item.completed,
+                        item.priority, item.calendar_id, server_id_str, user_id, timezone,
+                        item.updated_at, local_id,
+                    ],
+                )?;
+                return Ok(false);
+            }
+        }
+
+        // 步骤 2: 尝试通过 external_id 匹配
+        let existing_by_external: Option<i64> = tx.query_row(
+            "SELECT id FROM todos WHERE external_id = ?1 AND deleted_at IS NULL",
+            rusqlite::params![server_id_str],
+            |row| row.get(0),
+        ).ok();
+
+        if let Some(local_id) = existing_by_external {
+            log::info!(
+                "待办去重: 通过 external_id={} 匹配到本地记录 id={}",
+                server_id_str, local_id
+            );
+            tx.execute(
+                "UPDATE todos SET title=?1, description=?2, due_date=?3, completed=?4, priority=?5, 
+                    calendar_id=?6, user_id=?7, timezone=?8, updated_at=?9, deleted_at=NULL 
+                 WHERE id=?10",
+                rusqlite::params![
+                    item.title, item.description, item.due_date, item.completed,
+                    item.priority, item.calendar_id, user_id, timezone,
+                    item.updated_at, local_id,
+                ],
+            )?;
+            return Ok(false);
+        }
+
+        // 步骤 3: 无匹配，插入新记录
         tx.execute(
-            "INSERT INTO todos (id, title, description, due_date, completed, priority, calendar_id, user_id, timezone, created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+            "INSERT INTO todos (id, title, description, due_date, completed, priority, calendar_id, external_id, user_id, timezone, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 title=excluded.title, description=excluded.description, due_date=excluded.due_date,
                 completed=excluded.completed, priority=excluded.priority, calendar_id=excluded.calendar_id,
-                user_id=excluded.user_id, timezone=excluded.timezone, updated_at=excluded.updated_at,
+                external_id=excluded.external_id, user_id=excluded.user_id, timezone=excluded.timezone, updated_at=excluded.updated_at,
                 deleted_at=NULL",
             rusqlite::params![
                 item.id, item.title, item.description, item.due_date, item.completed,
-                item.priority, item.calendar_id, user_id, timezone, now, item.updated_at,
+                item.priority, item.calendar_id, server_id_str, user_id, timezone, now, item.updated_at,
             ],
         )?;
         Ok(false)
@@ -927,6 +1057,7 @@ mod tests {
                     reminder: None,
                     location: None,
                     updated_at: 1700000000000,
+                    client_id: None,
                 }],
                 updated: vec![],
                 deleted: vec![],
@@ -982,6 +1113,7 @@ mod tests {
                     reminder: None,
                     location: None,
                     updated_at: now + 1000,
+                    client_id: None,
                 }],
                 deleted: vec![],
             },
@@ -1102,6 +1234,7 @@ mod tests {
                     priority: "high".to_string(),
                     calendar_id,
                     updated_at: 1700000000000,
+                    client_id: None,
                 }],
                 updated: vec![],
                 deleted: vec![],
@@ -1157,6 +1290,7 @@ mod tests {
                     reminder: None,
                     location: None,
                     updated_at: now,
+                    client_id: None,
                 }],
                 deleted: vec![],
             },
@@ -1203,6 +1337,7 @@ mod tests {
                     reminder: None,
                     location: None,
                     updated_at: now,
+                    client_id: None,
                 }],
                 deleted: vec![],
             },
@@ -1277,6 +1412,7 @@ mod tests {
                         reminder: None,
                         location: None,
                         updated_at: 1700000000000,
+                        client_id: None,
                     },
                     EventSyncItem {
                         id: 102,
@@ -1291,6 +1427,7 @@ mod tests {
                         reminder: None,
                         location: None,
                         updated_at: 1700000000000,
+                        client_id: None,
                     },
                 ],
                 updated: vec![],
