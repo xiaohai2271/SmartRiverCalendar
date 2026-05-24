@@ -25,6 +25,8 @@ pub struct Todo {
     pub priority: String,
     /// 所属日历 ID
     pub calendar_id: i64,
+    /// 外部系统 ID（远端同步时用于关联本地与远端记录）
+    pub external_id: Option<String>,
     /// 所属用户 ID
     pub user_id: Option<i64>,
     /// 软删除时间戳（毫秒），NULL 表示未删除
@@ -52,6 +54,8 @@ pub struct CreateTodoInput {
     pub priority: Option<String>,
     /// 所属日历 ID
     pub calendar_id: i64,
+    /// 外部系统 ID（同步时设置）
+    pub external_id: Option<String>,
     /// 所属用户 ID
     pub user_id: Option<i64>,
     /// 时区
@@ -75,12 +79,14 @@ pub struct UpdateTodoInput {
     pub priority: Option<String>,
     /// 所属日历 ID
     pub calendar_id: Option<i64>,
+    /// 外部系统 ID（同步时设置）
+    pub external_id: Option<String>,
 }
 
 /// 待办事项查询的列列表
 const TODO_COLUMNS: &str = r#"
     id, title, description, due_date, completed, priority,
-    calendar_id, user_id, deleted_at, timezone, created_at, updated_at
+    calendar_id, external_id, user_id, deleted_at, timezone, created_at, updated_at
 "#;
 
 /// 待办事项仓库
@@ -101,6 +107,7 @@ impl Todo {
             completed: row.get::<_, i64>("completed")? != 0,
             priority: row.get("priority")?,
             calendar_id: row.get("calendar_id")?,
+            external_id: row.get("external_id")?,
             user_id: row.get("user_id")?,
             deleted_at: row.get("deleted_at")?,
             timezone: row.get("timezone")?,
@@ -138,8 +145,8 @@ impl<'a> TodoRepository<'a> {
         let id = self.db.execute_in_transaction(|tx| {
             tx.execute(
                 r#"
-                INSERT INTO todos (title, description, due_date, completed, priority, calendar_id, user_id, timezone, created_at, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                INSERT INTO todos (title, description, due_date, completed, priority, calendar_id, external_id, user_id, timezone, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 "#,
                 params![
                     input.title,
@@ -148,6 +155,7 @@ impl<'a> TodoRepository<'a> {
                     if completed { 1i64 } else { 0i64 },
                     priority,
                     input.calendar_id,
+                    input.external_id,
                     input.user_id,
                     timezone,
                     now,
@@ -248,14 +256,15 @@ impl<'a> TodoRepository<'a> {
         let completed = input.completed.unwrap_or(existing.completed);
         let priority = input.priority.clone().unwrap_or(existing.priority);
         let calendar_id = input.calendar_id.unwrap_or(existing.calendar_id);
+        let external_id = input.external_id.clone().or(existing.external_id);
 
         self.db.execute_in_transaction(|tx| {
             tx.execute(
                 r#"
                 UPDATE todos
                 SET title = ?1, description = ?2, due_date = ?3, completed = ?4, 
-                    priority = ?5, calendar_id = ?6, updated_at = ?7
-                WHERE id = ?8
+                    priority = ?5, calendar_id = ?6, external_id = ?7, updated_at = ?8
+                WHERE id = ?9
                 "#,
                 params![
                     title,
@@ -264,6 +273,7 @@ impl<'a> TodoRepository<'a> {
                     if completed { 1i64 } else { 0i64 },
                     priority,
                     calendar_id,
+                    external_id,
                     now,
                     input.id
                 ],
@@ -373,6 +383,7 @@ mod tests {
             completed: Some(false),
             priority: Some("high".to_string()),
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -401,6 +412,7 @@ mod tests {
             completed: None,
             priority: None,
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -430,6 +442,7 @@ mod tests {
                 completed: None,
                 priority: None,
                 calendar_id: 1,
+                external_id: None,
                 user_id: None,
                 timezone: None,
             };
@@ -457,6 +470,7 @@ mod tests {
             completed: None,
             priority: None,
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -504,6 +518,7 @@ mod tests {
             completed: None,
             priority: None,
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -517,6 +532,7 @@ mod tests {
             completed: None,
             priority: None,
             calendar_id: 2,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -545,6 +561,7 @@ mod tests {
             completed: Some(false),
             priority: Some("low".to_string()),
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -559,6 +576,7 @@ mod tests {
             completed: Some(true),
             priority: Some("high".to_string()),
             calendar_id: None,
+            external_id: None,
         };
         let updated = repo.update(&update_input).expect("更新待办失败");
 
@@ -584,6 +602,7 @@ mod tests {
             completed: Some(false),
             priority: Some("low".to_string()),
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -598,6 +617,7 @@ mod tests {
             completed: Some(true),
             priority: None,
             calendar_id: None,
+            external_id: None,
         };
         let updated = repo.update(&update_input).expect("更新待办失败");
 
@@ -622,6 +642,7 @@ mod tests {
             completed: None,
             priority: None,
             calendar_id: None,
+            external_id: None,
         };
 
         let result = repo.update(&update_input);
@@ -649,6 +670,7 @@ mod tests {
             completed: None,
             priority: None,
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -704,6 +726,7 @@ mod tests {
                 completed: None,
                 priority: None,
                 calendar_id: i,
+                external_id: None,
                 user_id: None,
                 timezone: None,
             };
@@ -736,6 +759,7 @@ mod tests {
             completed: Some(true),
             priority: None,
             calendar_id: 1,
+            external_id: None,
             user_id: None,
             timezone: None,
         };
@@ -764,6 +788,7 @@ mod tests {
             completed: Some(false),
             priority: None,
             calendar_id: None,
+            external_id: None,
         };
         let updated = repo.update(&update_input).expect("更新失败");
         assert!(!updated.completed);
@@ -793,6 +818,7 @@ mod tests {
             completed: None,
             priority: None,
             calendar_id: 1,
+            external_id: None,
             user_id: Some(42),
             timezone: Some("America/New_York".to_string()),
         };

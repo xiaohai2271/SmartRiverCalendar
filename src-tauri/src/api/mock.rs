@@ -342,6 +342,7 @@ impl CalendarApi for MockApiClient {
                         reminder: e.reminder_minutes.map(|v| v as i32),
                         location: e.location.clone(),
                         updated_at: e.updated_at,
+                        client_id: None,
                     })
                     .collect()
             };
@@ -364,6 +365,7 @@ impl CalendarApi for MockApiClient {
                         },
                         calendar_id: t.calendar_id,
                         updated_at: t.updated_at,
+                        client_id: None,
                     })
                     .collect()
             };

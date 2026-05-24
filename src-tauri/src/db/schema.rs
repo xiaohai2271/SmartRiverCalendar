@@ -71,6 +71,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
             completed INTEGER NOT NULL DEFAULT 0,
             priority TEXT NOT NULL DEFAULT 'medium',
             calendar_id INTEGER NOT NULL,
+            external_id TEXT,
             user_id INTEGER,
             deleted_at INTEGER,
             timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
@@ -108,7 +109,6 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
         -- 索引（不依赖迁移列的索引）
         CREATE INDEX IF NOT EXISTS idx_events_calendar_id ON events(calendar_id);
         CREATE INDEX IF NOT EXISTS idx_events_start_time ON events(start_time);
-        CREATE INDEX IF NOT EXISTS idx_events_external_id ON events(external_id);
         CREATE INDEX IF NOT EXISTS idx_todos_calendar_id ON todos(calendar_id);
         CREATE INDEX IF NOT EXISTS idx_sync_state_account_id ON sync_state(account_id);
 
@@ -180,6 +180,9 @@ fn create_migration_indexes(conn: &Connection) -> Result<(), DatabaseError> {
         CREATE INDEX IF NOT EXISTS idx_events_deleted_at ON events(deleted_at);
         CREATE INDEX IF NOT EXISTS idx_todos_user_id ON todos(user_id);
         CREATE INDEX IF NOT EXISTS idx_todos_deleted_at ON todos(deleted_at);
+        -- external_id 索引（依赖迁移列，必须在 ALTER TABLE 之后）
+        CREATE INDEX IF NOT EXISTS idx_events_external_id ON events(external_id);
+        CREATE INDEX IF NOT EXISTS idx_todos_external_id ON todos(external_id);
         "#,
     )?;
 
@@ -217,6 +220,8 @@ pub fn init_database(conn: &Connection) -> Result<(), DatabaseError> {
         "ALTER TABLE todos ADD COLUMN user_id INTEGER",
         "ALTER TABLE todos ADD COLUMN deleted_at INTEGER",
         "ALTER TABLE todos ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai'",
+        "ALTER TABLE todos ADD COLUMN external_id TEXT",
+        "ALTER TABLE events ADD COLUMN external_id TEXT",
     ];
     for sql in &migrations {
         let _ = conn.execute(sql, []);
@@ -292,6 +297,7 @@ mod tests {
         assert!(indexes.contains(&"idx_events_start_time".to_string()));
         assert!(indexes.contains(&"idx_events_external_id".to_string()));
         assert!(indexes.contains(&"idx_todos_calendar_id".to_string()));
+        assert!(indexes.contains(&"idx_todos_external_id".to_string()));
         assert!(indexes.contains(&"idx_sync_state_account_id".to_string()));
         assert!(indexes.contains(&"idx_user_holidays_date".to_string()));
         assert!(indexes.contains(&"idx_local_users_is_current".to_string()));

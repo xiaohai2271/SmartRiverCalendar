@@ -376,6 +376,9 @@ pub struct EventSyncItem {
     /// 更新时间戳（毫秒）
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
+    /// 客户端本地 ID（用于去重：远端回传时标识原始本地记录）
+    #[serde(default)]
+    pub client_id: Option<String>,
 }
 
 /// 待办同步条目
@@ -401,6 +404,9 @@ pub struct TodoSyncItem {
     /// 更新时间戳（毫秒）
     #[serde(deserialize_with = "deserialize_string_or_number_i64")]
     pub updated_at: i64,
+    /// 客户端本地 ID（用于去重：远端回传时标识原始本地记录）
+    #[serde(default)]
+    pub client_id: Option<String>,
 }
 
 // ================================================================
@@ -678,6 +684,7 @@ mod tests {
                     reminder: None,
                     location: None,
                     updated_at: 1700000000000,
+                    client_id: None,
                 }],
                 updated: vec![],
                 deleted: vec![2],
