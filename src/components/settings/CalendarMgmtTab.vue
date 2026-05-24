@@ -9,11 +9,41 @@
           <div class="cal-info">
             <div class="cal-name">{{ cal.name }}</div>
             <div class="cal-type">
-              <span v-if="cal.type === 'local'">本地</span>
-              <span v-else-if="cal.type === 'online'">在线</span>
-              <span v-else class="external-type">{{ cal.type }}</span>
+              <!-- 主日历：统一显示名称，根据登录态显示在线状态标识 -->
+              <template v-if="cal.type === 'local' || cal.type === 'online'">
+                <span v-if="cal.type === 'online'" class="online-badge" :title="`已同步 · ${authStore.user?.displayName || ''}`">
+                  <!-- 云同步图标（SVG） -->
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+                  </svg>
+                  <span class="online-text">在线</span>
+                </span>
+                <span v-else class="local-text">本地</span>
+              </template>
+              <!-- 外部日历：保持不变 -->
+              <template v-else>
+                <span class="external-type">{{ cal.type }}</span>
+              </template>
               <span v-if="cal.readOnly" class="readonly-badge">只读</span>
               <span v-if="cal.lastSync" class="sync-time">最后同步: {{ formatSyncTime(cal.lastSync) }}</span>
+            </div>
+            <!-- 同步状态指示器 -->
+            <div v-if="cal.type === 'online'" class="sync-indicator" :class="getSyncIndicatorClass(cal)">
+              <svg v-if="getSyncIndicatorType(cal) === 'synced'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+              </svg>
+              <svg v-else-if="getSyncIndicatorType(cal) === 'syncing'" class="spin-animation" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 12a9 9 0 1 1-6.219-8.56"></path>
+              </svg>
+              <svg v-else-if="getSyncIndicatorType(cal) === 'error'" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+              <svg v-else width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"></path>
+                <line x1="2" y1="2" x2="22" y2="22" stroke="currentColor" stroke-width="2"></line>
+              </svg>
             </div>
             <div v-if="cal.syncStatus" class="sync-status" :class="cal.syncStatus">
               {{ getSyncStatusText(cal.syncStatus) }}
@@ -117,6 +147,7 @@
  */
 import { ref, reactive } from 'vue'
 import { useCalendarStore } from '../../stores/calendar'
+import { useAuthStore } from '../../stores/auth'
 import {
   isTauri,
   invokeConnectExchange,
@@ -127,6 +158,7 @@ import { saveExternalAccount, getAccountByServerUrl } from '../../utils/database
 
 // ==================== Store ====================
 const calendarStore = useCalendarStore()
+const authStore = useAuthStore()
 
 // ==================== State ====================
 // 添加外部日历对话框状态
@@ -309,6 +341,24 @@ function getSyncStatusText(status: string): string {
     case 'idle': return '待同步'
     default: return ''
   }
+}
+
+/**
+ * 获取同步指示器类型
+ * synced: 已同步 | syncing: 同步中 | error: 同步失败 | offline: 离线
+ */
+function getSyncIndicatorType(cal: { type: string; syncStatus?: string }): string {
+  if (cal.syncStatus === 'syncing') return 'syncing'
+  if (cal.syncStatus === 'error') return 'error'
+  if (!navigator.onLine) return 'offline'
+  return 'synced'
+}
+
+/**
+ * 获取同步指示器的 CSS class
+ */
+function getSyncIndicatorClass(cal: { type: string; syncStatus?: string }): string {
+  return getSyncIndicatorType(cal)
 }
 </script>
 
@@ -673,5 +723,73 @@ function getSyncStatusText(status: string): string {
 .warning-text {
   color: #dc2626;
   font-size: 13px;
+}
+
+/* 在线标识 */
+.online-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--accent-color);
+  color: white;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+}
+
+.online-badge svg {
+  flex-shrink: 0;
+}
+
+.online-text {
+  font-size: 10px;
+}
+
+.local-text {
+  display: inline-block;
+  padding: 2px 6px;
+  background: var(--bg-tertiary, #e5e7eb);
+  color: var(--text-secondary);
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+}
+
+/* 深色模式适配 */
+:root.dark .local-text,
+.dark .local-text {
+  background: var(--bg-tertiary, #374151);
+}
+
+/* 同步状态指示器 */
+.sync-indicator {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+}
+
+.sync-indicator.synced {
+  color: #10b981;
+}
+
+.sync-indicator.syncing {
+  color: #f59e0b;
+}
+
+.sync-indicator.error {
+  color: #dc2626;
+}
+
+.sync-indicator.offline {
+  color: var(--text-tertiary, #9ca3af);
+}
+
+/* 旋转动画 */
+.spin-animation {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 </style>
