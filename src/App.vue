@@ -96,11 +96,6 @@
 
     <!-- Main Content -->
     <main class="main-content">
-      <!-- 同步状态指示器 -->
-      <div class="sync-indicator-container">
-        <SyncIndicator />
-      </div>
-
       <router-view v-slot="{ Component }">
         <transition name="fade" mode="out-in">
           <component :is="Component" />
@@ -136,7 +131,6 @@ import { useTodoStore } from './stores/todo'
 import MiniCalendar from './components/calendar/MiniCalendar.vue'
 import ReminderPopup from './components/reminder/ReminderPopup.vue'
 import UpdateDialog from './components/update/UpdateDialog.vue'
-import SyncIndicator from './components/common/SyncIndicator.vue'
 import { checkForUpdateDetails, startUpdate, setSkippedVersion } from './services/updater'
 import { startReminderService, stopReminderService, onReminderPopup, offReminderPopup, handleSnoozeReminder, markReminderProcessed, markReminderAsViewed } from './services/reminder'
 import { isTauri, enableClockHook, setClockHookBlockPopup } from './utils/tauri'
@@ -696,13 +690,6 @@ function handleUpdateClose() {
   padding: 12px;
   padding-left: 0;
   position: relative;
-}
-
-.sync-indicator-container {
-  position: absolute;
-  top: 8px;
-  right: 12px;
-  z-index: 10;
 }
 
 /* Page transitions - Fluent smooth */
