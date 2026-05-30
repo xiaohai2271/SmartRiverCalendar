@@ -32,12 +32,16 @@
       <!-- 用户信息卡片 -->
       <UserProfile :user="authStore.user" />
 
-      <!-- 同步状态面板 -->
+      <!-- 同步状态面板（仅当支持本地数据库时显示） -->
       <SyncStatusPanel
+        v-if="capabilities.hasLocalDatabase"
         :sync-status="authStore.syncStatus"
         :last-sync-at="authStore.lastSyncAt"
         @sync="handleSync"
       />
+
+      <!-- 快速链接面板 -->
+      <ProfileLinkCard />
 
       <!-- 退出登录按钮 -->
       <div class="logout-section">
@@ -55,7 +59,12 @@ import RegisterForm from '../components/profile/RegisterForm.vue'
 import GithubLoginButton from '../components/profile/GithubLoginButton.vue'
 import UserProfile from '../components/profile/UserProfile.vue'
 import SyncStatusPanel from '../components/profile/SyncStatusPanel.vue'
+import ProfileLinkCard from '../components/profile/ProfileLinkCard.vue'
 import LogoutButton from '../components/profile/LogoutButton.vue'
+import { useCapabilities } from '../platform/provider'
+
+// ==================== Capabilities ====================
+const capabilities = useCapabilities()
 
 // ==================== Store ====================
 const authStore = useAuthStore()

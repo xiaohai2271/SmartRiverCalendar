@@ -20,6 +20,7 @@
       <div class="user-info">
         <h3 class="username">{{ user?.displayName || '未知用户' }}</h3>
         <p class="email">{{ user?.email || '未设置邮箱' }}</p>
+        <p class="user-id-text">ID: {{ user?.id.slice(0, 8) || '-' }}</p>
         <div class="provider-badge">
           <span class="provider-icon">
             <svg v-if="provider === 'github'" viewBox="0 0 24 24" fill="currentColor">
@@ -42,16 +43,24 @@
       </div>
     </div>
 
-    <!-- 用户统计信息 -->
-    <div class="profile-stats">
-      <div class="stat-item">
-        <span class="stat-value">{{ user?.id.slice(0, 8) || '-' }}</span>
-        <span class="stat-label">用户 ID</span>
-      </div>
-      <div class="stat-item">
-        <span class="stat-value">{{ providerText }}</span>
-        <span class="stat-label">登录方式</span>
-      </div>
+
+
+    <!-- 账户操作 -->
+    <div class="profile-actions">
+      <button class="action-btn" @click="handleEditProfile">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+        </svg>
+        编辑资料
+      </button>
+      <button class="action-btn" @click="handleChangePassword">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+        修改密码
+      </button>
     </div>
   </div>
 </template>
@@ -92,6 +101,17 @@ const providerText = computed(() => {
       return '本地账号'
   }
 })
+
+// ==================== Methods ====================
+function handleEditProfile() {
+  console.log('编辑资料 clicked')
+  // 留出接口/后续可触发弹窗或导航
+}
+
+function handleChangePassword() {
+  console.log('修改密码 clicked')
+  // 留出接口/后续可触发弹窗或导航
+}
 
 </script>
 
@@ -183,27 +203,43 @@ const providerText = computed(() => {
   font-weight: 500;
 }
 
-.profile-stats {
-  display: flex;
-  gap: 24px;
-  padding-top: 20px;
-  border-top: 1px solid var(--border-color);
-}
-
-.stat-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.stat-value {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
-}
-
-.stat-label {
+.user-id-text {
   font-size: 12px;
   color: var(--text-secondary);
+  margin: 0;
+  opacity: 0.7;
+}
+
+.profile-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.action-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 16px;
+  background: transparent;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  color: var(--text-primary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.action-btn:hover {
+  background: var(--bg-secondary);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.action-btn svg {
+  width: 14px;
+  height: 14px;
 }
 </style>
