@@ -488,6 +488,12 @@ onUnmounted(() => {
   background: var(--bg-primary);
   overflow: hidden;
   position: relative;
+  /* 极细极光高光描边与 30px 深亚克力效果，彻底脱离低端扁平味 */
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(30px) saturate(190%);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
 .loading-overlay {

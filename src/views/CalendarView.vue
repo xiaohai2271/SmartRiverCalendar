@@ -43,151 +43,193 @@
     <!-- Event Modal -->
     <Transition name="modal">
       <div v-if="showEventModal" class="modal-overlay" @click.self="closeEventModal">
-        <div class="event-modal fluent-card" @keydown.escape="closeEventModal">
+        <div class="event-modal elegant-modal-card" @keydown.escape="closeEventModal">
           <div class="modal-header">
             <h3>{{ isEditingEvent ? '编辑事件' : '新建事件' }}</h3>
-            <button class="close-btn" @click="closeEventModal">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <button class="close-btn" @click="closeEventModal" type="button">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
                 <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
             </button>
           </div>
 
           <form @submit.prevent="handleEventSubmit" class="modal-body">
-            <!-- Title Section -->
-            <div class="form-section">
-              <label class="section-label">标题</label>
-              <input
-                v-model="eventFormData.title"
-                type="text"
-                class="fluent-input"
-                placeholder="输入事件标题..."
-                required
-                ref="eventTitleInput"
-              />
-            </div>
-
-            <!-- Quick Actions Section -->
-            <div class="form-section">
-              <label class="section-label">快捷设置</label>
-              <div class="quick-actions-row">
-                <!-- All Day Toggle -->
-                <label class="toggle-wrapper">
-                  <input v-model="eventFormData.allDay" type="checkbox" class="toggle-input" />
-                  <span class="toggle-slider"></span>
-                  <span class="toggle-label">全天</span>
-                </label>
-
-                <div class="divider"></div>
-
-                <!-- Quick Dates -->
-                <div class="quick-dates">
-                  <button
-                    v-for="quick in filteredQuickDates"
-                    :key="quick.label"
-                    type="button"
-                    class="quick-date-btn"
-                    :class="{ active: isQuickDateActive(quick) }"
-                    @click="applyQuickDate(quick)"
-                  >
-                    {{ quick.label }}
-                  </button>
-                </div>
+            <!-- Title Section - Zero-border Title Input -->
+            <div class="form-section title-form-section">
+              <div class="zero-border-input-wrapper">
+                <input
+                  v-model="eventFormData.title"
+                  type="text"
+                  class="zero-border-title-input"
+                  placeholder="准备做点什么..."
+                  required
+                  ref="eventTitleInput"
+                />
+                <span class="focus-underline"></span>
               </div>
             </div>
 
-            <!-- Date & Time Section -->
-            <div class="form-section">
-              <label class="section-label">时间</label>
-              <div class="datetime-section">
-                <div class="datetime-row">
-                  <div class="datetime-label">开始</div>
-                  <div class="datetime-inputs">
+            <!-- Metadata Grid (Notion & Calendar Native Style) -->
+            <div class="metadata-input-grid">
+              
+              <!-- 1. All Day & Quick Dates Switcher Row -->
+              <div class="meta-form-row align-start">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  <span>全天日程</span>
+                </span>
+                <div class="meta-row-content flex-column-gap">
+                  <div class="quick-settings-row">
+                    <label class="toggle-wrapper">
+                      <input v-model="eventFormData.allDay" type="checkbox" class="toggle-input" />
+                      <span class="toggle-slider"></span>
+                    </label>
+                    <div class="vertical-divider"></div>
+                    <div class="quick-dates-pills">
+                      <button
+                        v-for="quick in filteredQuickDates"
+                        :key="quick.label"
+                        type="button"
+                        class="quick-date-pill"
+                        :class="{ active: isQuickDateActive(quick) }"
+                        @click="applyQuickDate(quick)"
+                      >
+                        {{ quick.label }}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. Start Time Row -->
+              <div class="meta-form-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                  <span>开始时间</span>
+                </span>
+                <div class="meta-row-content">
+                  <div class="datetime-inputs-wrapper">
                     <input
                       v-model="eventFormData.startDate"
                       type="date"
-                      class="fluent-input date-input"
+                      class="fluent-date-picker-input date-input"
                       required
                     />
                     <input
                       v-if="!eventFormData.allDay"
                       v-model="eventFormData.startTime"
                       type="time"
-                      class="fluent-input time-input"
+                      class="fluent-date-picker-input time-input"
                     />
                   </div>
                 </div>
+              </div>
 
-                <div class="datetime-row">
-                  <div class="datetime-label">结束</div>
-                  <div class="datetime-inputs">
+              <!-- 3. End Time Row -->
+              <div class="meta-form-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                  <span>结束时间</span>
+                </span>
+                <div class="meta-row-content">
+                  <div class="datetime-inputs-wrapper">
                     <input
                       v-model="eventFormData.endDate"
                       type="date"
-                      class="fluent-input date-input"
+                      class="fluent-date-picker-input date-input"
                       required
                     />
                     <input
                       v-if="!eventFormData.allDay"
                       v-model="eventFormData.endTime"
                       type="time"
-                      class="fluent-input time-input"
+                      class="fluent-date-picker-input time-input"
                     />
                   </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Calendar & Color Section -->
-            <div class="form-section">
-              <label class="section-label">日历与颜色</label>
-              <div class="calendar-color-section">
-                <!-- Color Picker -->
-                <div class="color-picker-row">
-                  <ColorPicker
-                    v-model="eventFormData.color"
-                    :disabled="isReadOnlyCalendar"
-                  />
-                </div>
-
-                <!-- Calendar Selector -->
-                <div class="calendar-selector">
-                  <template v-for="cal in calendarStore.calendars" :key="cal.id">
-                    <button
-                      v-if="!cal.readOnly"
-                      type="button"
-                      :class="['calendar-option', { active: eventFormData.calendarId === cal.id }]"
-                      @click="eventFormData.calendarId = cal.id"
-                    >
-                      <span class="calendar-color" :style="{ background: cal.color }"></span>
-                      <span>{{ cal.type === 'local' ? cal.name : `${cal.name} (${cal.type === 'online' ? '在线' : (cal.type === 'exchange' ? 'Exchange' : 'CalDAV')})` }}</span>
-                    </button>
-                  </template>
+              <!-- 4. 所属日历与颜色 -->
+              <div class="meta-form-row align-start">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                  </svg>
+                  <span>所属日历</span>
+                </span>
+                <div class="meta-row-content">
+                  <div class="calendar-color-row">
+                    <!-- Calendar Selector Pills -->
+                    <div class="calendar-pills-selector">
+                      <template v-for="cal in calendarStore.calendars" :key="cal.id">
+                        <button
+                          v-if="!cal.readOnly"
+                          type="button"
+                          :class="['calendar-pill-option', { active: eventFormData.calendarId === cal.id }]"
+                          @click="eventFormData.calendarId = cal.id"
+                        >
+                          <span class="calendar-pill-color" :style="{ background: cal.color }"></span>
+                          <span>{{ cal.name }}</span>
+                        </button>
+                      </template>
+                    </div>
+                    <!-- Color Picker Dot -->
+                    <div class="custom-color-picker-box">
+                      <ColorPicker
+                        v-model="eventFormData.color"
+                        :disabled="isReadOnlyCalendar"
+                      />
+                    </div>
+                  </div>
                 </div>
               </div>
-            </div>
 
-            <!-- Description Section -->
-            <div class="form-section">
-              <label class="section-label">描述</label>
-              <input
-                v-model="eventFormData.description"
-                type="text"
-                class="fluent-input"
-                placeholder="添加描述..."
-              />
+              <!-- 5. Description Row -->
+              <div class="meta-form-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                  </svg>
+                  <span>事件描述</span>
+                </span>
+                <div class="meta-row-content">
+                  <input
+                    v-model="eventFormData.description"
+                    type="text"
+                    class="fluent-borderless-description-input"
+                    placeholder="添加详细描述或地址..."
+                  />
+                </div>
+              </div>
+
             </div>
 
             <!-- Actions -->
             <div class="modal-actions">
-              <button v-if="isEditingEvent" type="button" class="fluent-button danger" @click="handleDeleteEvent">
-                删除
+              <button v-if="isEditingEvent" type="button" class="fluent-button cancel-text-btn danger-text-btn" @click="handleDeleteEvent">
+                删除事件
               </button>
-              <div class="actions-right">
-                <button type="button" class="fluent-button" @click="closeEventModal">
+              <div class="actions-right" :style="{ marginLeft: isEditingEvent ? '0' : 'auto' }">
+                <button type="button" class="fluent-button cancel-text-btn" @click="closeEventModal">
                   取消
                 </button>
-                <button type="submit" class="fluent-button primary" :disabled="!eventFormData.title.trim()">
+                <button type="submit" class="fluent-button primary action-submit-btn" :disabled="!eventFormData.title.trim()">
                   {{ isEditingEvent ? '保存' : '创建' }}
                 </button>
               </div>
@@ -702,7 +744,7 @@ function viewDaySchedules(date: Date) {
 }
 
 .event-modal {
-  width: 480px;
+  width: 520px;
   max-width: 90vw;
   overflow: hidden;
   display: flex;
@@ -1076,5 +1118,274 @@ function viewDaySchedules(date: Date) {
 /* Form Group Compact */
 .form-group.compact {
   margin-bottom: var(--space-md);
+}
+
+/* Zero-border Title Input */
+.title-form-section {
+  margin-bottom: 24px;
+}
+
+.zero-border-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.zero-border-title-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 8px 0;
+  outline: none;
+  letter-spacing: -0.5px;
+}
+
+.zero-border-title-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+.focus-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 1.5px;
+  background: var(--border-color);
+  transition: background var(--transition-normal);
+}
+
+.zero-border-title-input:focus ~ .focus-underline {
+  background: var(--accent-color);
+}
+
+/* Metadata Input Grid (Notion & Calendar native style) */
+.metadata-input-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+  background: var(--bg-tertiary);
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+.meta-form-row {
+  display: flex;
+  align-items: center;
+}
+
+.meta-form-row.align-start {
+  align-items: flex-start;
+}
+
+.meta-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.meta-svg-icon {
+  color: var(--text-tertiary);
+}
+
+.meta-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.flex-column-gap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* Quick Settings Row */
+.quick-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vertical-divider {
+  width: 1px;
+  height: 16px;
+  background: var(--border-color);
+}
+
+.quick-dates-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.quick-date-pill {
+  padding: 4px 10px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.quick-date-pill:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.quick-date-pill.active {
+  background: var(--accent-light);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+/* Datetime Inputs Wrapper */
+.datetime-inputs-wrapper {
+  display: flex;
+  gap: 8px;
+}
+
+.datetime-inputs-wrapper .fluent-date-picker-input {
+  flex: 1;
+}
+
+.datetime-inputs-wrapper .fluent-date-picker-input.time-input {
+  max-width: 110px;
+}
+
+.fluent-date-picker-input {
+  border: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.fluent-date-picker-input:focus {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px var(--accent-light);
+}
+
+/* Calendar & Color selector row */
+.calendar-color-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.calendar-pills-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.calendar-pill-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.calendar-pill-option:hover {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+.calendar-pill-option.active {
+  border-color: var(--accent-color);
+  background: var(--accent-light);
+  color: var(--accent-color);
+}
+
+.calendar-pill-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.custom-color-picker-box {
+  flex-shrink: 0;
+}
+
+/* Borderless Description Input */
+.fluent-borderless-description-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 6px 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+}
+
+.fluent-borderless-description-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+/* Cancel and Danger Action styling */
+.fluent-button.cancel-text-btn {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--text-secondary);
+}
+
+.fluent-button.cancel-text-btn:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary);
+}
+
+.fluent-button.danger-text-btn {
+  color: #dc2626 !important;
+}
+
+.fluent-button.danger-text-btn:hover {
+  background: #fee2e2 !important;
+  color: #b91c1c !important;
+}
+
+.action-submit-btn {
+  padding: 8px 24px !important;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+}
+
+.elegant-modal-card {
+  width: 520px;
+  max-width: 90vw;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  animation: scaleIn var(--transition-smooth);
 }
 </style>

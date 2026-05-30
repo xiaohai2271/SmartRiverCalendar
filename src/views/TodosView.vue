@@ -88,77 +88,94 @@
     <!-- Add/Edit Modal -->
     <Transition name="modal">
       <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
-        <div class="add-modal fluent-card" @keydown.escape="closeModal">
+        <div class="add-modal elegant-modal-card" @keydown.escape="closeModal">
           <div class="modal-header">
             <h3>{{ isEditing ? '编辑待办' : '新建待办' }}</h3>
-            <button class="close-btn" @click="closeModal">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <button class="close-btn" @click="closeModal" type="button">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
                 <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
             </button>
           </div>
           
           <form @submit.prevent="handleSubmit" class="modal-body">
-            <!-- Title - Required -->
-            <div class="form-group">
-              <label class="form-label">
-                标题 <span class="required">*</span>
-              </label>
-              <input
-                v-model="formData.title"
-                type="text"
-                class="fluent-input"
-                placeholder="输入待办事项..."
-                required
-                ref="titleInput"
-              />
-            </div>
-
-            <!-- Priority -->
-            <div class="form-group">
-              <label class="form-label">
-                优先级
-                <span class="optional-badge">可选</span>
-              </label>
-              <div class="priority-selector">
-                <button
-                  v-for="p in priorities"
-                  :key="p.value"
-                  type="button"
-                  :class="['priority-option', p.value, { active: formData.priority === p.value }]"
-                  @click="formData.priority = p.value"
-                >
-                  {{ p.label }}
-                </button>
+            <!-- Title - Zero-border Title Input -->
+            <div class="form-group title-form-group">
+              <div class="zero-border-input-wrapper">
+                <input
+                  v-model="formData.title"
+                  type="text"
+                  class="zero-border-title-input"
+                  placeholder="想做点什么..."
+                  required
+                  ref="titleInput"
+                />
+                <span class="focus-underline"></span>
               </div>
             </div>
 
-            <!-- Due Date -->
-            <div class="form-group">
-              <label class="form-label">
-                截止日期
-                <span class="optional-badge">可选</span>
-              </label>
-              <input
-                v-model="formData.dueDate"
-                type="date"
-                class="fluent-input"
-              />
+            <!-- Metadata Grid for neat layout -->
+            <div class="metadata-input-grid">
+              <!-- Priority Section -->
+              <div class="meta-form-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>
+                  </svg>
+                  <span>优先级</span>
+                </span>
+                <div class="meta-row-content">
+                  <div class="priority-capsule-track">
+                    <button
+                      v-for="p in priorities"
+                      :key="p.value"
+                      type="button"
+                      :class="['priority-capsule-pill', p.value, { active: formData.priority === p.value }]"
+                      @click="formData.priority = p.value"
+                    >
+                      <span class="priority-dot"></span>
+                      <span>{{ p.label }}</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Due Date Section -->
+              <div class="meta-form-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                  <span>截止日期</span>
+                </span>
+                <div class="meta-row-content">
+                  <div class="fluent-date-input-wrapper">
+                    <input
+                      v-model="formData.dueDate"
+                      type="date"
+                      class="fluent-date-picker-input"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- Actions -->
             <div class="modal-actions">
-              <button type="button" class="fluent-button" @click="closeModal">
+              <button type="button" class="fluent-button cancel-text-btn" @click="closeModal">
                 取消
               </button>
-              <button type="submit" class="fluent-button primary" :disabled="!formData.title.trim()">
-                {{ isEditing ? '保存修改' : '添加待办' }}
+              <button type="submit" class="fluent-button primary action-submit-btn" :disabled="!formData.title.trim()">
+                {{ isEditing ? '保存修改' : '确认添加' }}
               </button>
             </div>
           </form>
         </div>
       </div>
-      </Transition>
+    </Transition>
 
     <!-- 右键菜单 -->
   <ContextMenu
@@ -718,35 +735,41 @@ function handleToggleTodo() {
   z-index: 1000;
 }
 
-.add-modal {
+.elegant-modal-card {
   width: 440px;
   max-width: 90vw;
   background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+  overflow: hidden;
+  animation: scaleIn var(--transition-smooth);
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 20px 24px 10px 24px;
 }
 
 .modal-header h3 {
   margin: 0;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.3px;
 }
 
 .close-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -758,79 +781,185 @@ function handleToggleTodo() {
 }
 
 .modal-body {
-  padding: 24px;
+  padding: 16px 24px 24px 24px;
 }
 
-/* Form */
 .form-group {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
 }
 
-.form-label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-primary);
+/* Zero-border Title Input */
+.title-form-group {
+  margin-bottom: 28px;
 }
 
-.required {
-  color: #dc2626;
-}
-
-.optional-badge {
-  font-size: 11px;
-  padding: 2px 6px;
-  background: var(--bg-tertiary);
-  border-radius: 4px;
-  color: var(--text-tertiary);
-  font-weight: 400;
-}
-
-.fluent-input {
+.zero-border-input-wrapper {
+  position: relative;
   width: 100%;
 }
 
-/* Priority Selector */
-.priority-selector {
-  display: flex;
-  gap: 8px;
+.zero-border-title-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+  padding: 8px 0;
+  outline: none;
+  letter-spacing: -0.5px;
 }
 
-.priority-option {
-  flex: 1;
-  padding: 10px 16px;
+.zero-border-title-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+.focus-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 1.5px;
+  background: var(--border-color);
+  transition: background var(--transition-normal);
+}
+
+.zero-border-title-input:focus ~ .focus-underline {
+  background: var(--accent-color);
+}
+
+/* Metadata Input Grid (Notion & Todoist style) */
+.metadata-input-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
   background: var(--bg-tertiary);
-  border: 2px solid transparent;
-  border-radius: var(--radius-md);
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+.meta-form-row {
+  display: flex;
+  align-items: center;
+}
+
+.meta-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100px;
   color: var(--text-secondary);
+  font-size: 13px;
   font-weight: 500;
+  flex-shrink: 0;
+}
+
+.meta-svg-icon {
+  color: var(--text-tertiary);
+}
+
+.meta-row-content {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Priority Capsule Track */
+.priority-capsule-track {
+  display: flex;
+  background: var(--bg-secondary);
+  padding: 3px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  width: fit-content;
+}
+
+.priority-capsule-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  border-radius: calc(var(--radius-md) - 2px);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
-.priority-option:hover {
+.priority-capsule-pill:hover {
+  color: var(--text-primary);
   background: var(--bg-hover);
 }
 
-.priority-option.active.low {
-  background: #e2e8f0;
-  border-color: #475569;
-  color: #475569;
+.priority-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-tertiary);
+  transition: transform var(--transition-fast);
 }
 
-.priority-option.active.medium {
-  background: #fef3c7;
-  border-color: #d97706;
-  color: #d97706;
+/* Active status color adjustments - subtle design */
+.priority-capsule-pill.active {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
-.priority-option.active.high {
-  background: #fee2e2;
-  border-color: #dc2626;
-  color: #dc2626;
+.priority-capsule-pill.active.low {
+  background: rgba(52, 199, 89, 0.08);
+  color: #34C759;
+}
+.priority-capsule-pill.active.low .priority-dot {
+  background: #34C759;
+  transform: scale(1.2);
+}
+
+.priority-capsule-pill.active.medium {
+  background: rgba(255, 149, 0, 0.08);
+  color: #FF9500;
+}
+.priority-capsule-pill.active.medium .priority-dot {
+  background: #FF9500;
+  transform: scale(1.2);
+}
+
+.priority-capsule-pill.active.high {
+  background: rgba(255, 59, 48, 0.08);
+  color: #FF3B30;
+}
+.priority-capsule-pill.active.high .priority-dot {
+  background: #FF3B30;
+  transform: scale(1.2);
+}
+
+/* Fluent Date Picker Input */
+.fluent-date-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.fluent-date-picker-input {
+  border: none;
+  background: var(--bg-secondary);
+  padding: 6px 12px;
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 500;
+  outline: none;
+  border: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.fluent-date-picker-input:focus {
+  border-color: var(--accent-color);
+  background: var(--bg-secondary);
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 /* Modal Actions */
@@ -841,6 +970,24 @@ function handleToggleTodo() {
   margin-top: 24px;
   padding-top: 20px;
   border-top: 1px solid var(--border-color);
+}
+
+.cancel-text-btn {
+  background: transparent !important;
+  border-color: transparent !important;
+  color: var(--text-secondary);
+}
+
+.cancel-text-btn:hover {
+  background: var(--bg-hover) !important;
+  color: var(--text-primary);
+}
+
+.action-submit-btn {
+  padding: 8px 24px !important;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: var(--radius-md);
 }
 
 /* Transitions */
