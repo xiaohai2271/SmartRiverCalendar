@@ -5,8 +5,16 @@
       <div class="header-left">
         <button class="fluent-button today-btn" @click="calendarStore.goToToday()">今天</button>
         <div class="nav-buttons">
-          <button class="nav-btn" @click="calendarStore.prev()">‹</button>
-          <button class="nav-btn" @click="calendarStore.next()">›</button>
+          <button class="nav-btn" @click="calendarStore.prev()" aria-label="前一个月">
+            <svg class="chevron-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6"/>
+            </svg>
+          </button>
+          <button class="nav-btn" @click="calendarStore.next()" aria-label="后一个月">
+            <svg class="chevron-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6"/>
+            </svg>
+          </button>
         </div>
         <h2 class="current-date">{{ formattedDate }}</h2>
       </div>
@@ -33,10 +41,10 @@
       <YearView v-else-if="calendarStore.currentView === 'year'" @edit-event="openEditEventModal" />
     </div>
 
-    <!-- Add Event Button -->
-    <button class="add-event-btn" @click="openAddEventModal">
+    <!-- Add Event Button - Aurora Glowing Floating Button -->
+    <button class="add-event-btn" @click="openAddEventModal" aria-label="新建事件">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
     </button>
 
@@ -619,61 +627,89 @@ function viewDaySchedules(date: Date) {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 24px;
+  border-bottom: 1px solid var(--border-light);
+  padding-bottom: 16px;
 }
 
 .header-left {
   display: flex;
   align-items: center;
   gap: 16px;
-  padding-left: 16px;
+  padding-left: 8px;
 }
 
 .today-btn {
-  padding: 8px 16px;
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  padding: 6px 14px;
+  font-size: 13px;
+  transition: all var(--transition-fast);
+}
+
+.today-btn:hover {
+  background: var(--bg-hover);
+  border-color: var(--accent-color);
+  color: var(--accent-color);
 }
 
 .nav-buttons {
   display: flex;
-  gap: 4px;
+  gap: 6px;
 }
 
 .nav-btn {
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border-color);
-  background: var(--bg-secondary);
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-light);
+  background: transparent;
   border-radius: var(--radius-md);
   cursor: pointer;
-  font-size: 18px;
-  color: var(--text-primary);
-  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1);
 }
 
 .nav-btn:hover {
   background: var(--bg-hover);
   border-color: var(--border-strong);
+  color: var(--text-primary);
+  transform: scale(1.05);
+}
+
+.chevron-svg {
+  color: inherit;
 }
 
 .current-date {
-  font-size: 22px;
-  font-weight: 600;
+  font-size: 20px;
+  font-weight: 650;
+  color: var(--text-primary);
   letter-spacing: -0.5px;
+  margin: 0;
 }
 
+/* 胶囊轨道切换器 */
 .view-switcher {
   display: flex;
-  background: var(--bg-tertiary);
+  background: color-mix(in srgb, var(--bg-tertiary) 85%, transparent);
+  border: 1px solid var(--border-light);
   border-radius: var(--radius-lg);
-  padding: 4px;
+  padding: 3px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .view-btn {
-  padding: 8px 20px;
+  padding: 6px 16px;
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
   color: var(--text-secondary);
   border-radius: var(--radius-md);
   transition: all var(--transition-fast);
@@ -681,13 +717,13 @@ function viewDaySchedules(date: Date) {
 
 .view-btn:hover {
   color: var(--text-primary);
-  background: var(--bg-hover);
 }
 
 .view-btn.active {
   background: var(--bg-secondary);
-  color: var(--text-primary);
-  box-shadow: var(--shadow-sm);
+  color: var(--accent-color);
+  font-weight: 700;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .calendar-content {
@@ -700,28 +736,30 @@ function viewDaySchedules(date: Date) {
   overflow: hidden;
 }
 
-/* Add Event Button */
+/* Add Event Button - 极光高光渐变悬浮按钮 */
 .add-event-btn {
   position: fixed;
-  bottom: 24px;
-  right: 24px;
+  bottom: 32px;
+  right: 32px;
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--accent-color);
+  background: linear-gradient(135deg, var(--accent-color), #005a9e);
   color: white;
   border: none;
   cursor: pointer;
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 8px 24px rgba(0, 120, 212, 0.35);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1.2);
+  z-index: 99;
 }
 
 .add-event-btn:hover {
-  transform: scale(1.1);
-  box-shadow: 0 6px 20px rgba(0, 120, 212, 0.4);
+  transform: scale(1.1) translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 120, 212, 0.45);
+  background: linear-gradient(135deg, #0078d4, #004578);
 }
 
 .add-event-btn:active {

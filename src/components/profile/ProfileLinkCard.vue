@@ -72,40 +72,53 @@
 <style scoped>
 .profile-links-card {
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: 16px 20px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  transition: all var(--transition-fast);
+}
+
+.profile-links-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--text-tertiary);
 }
 
 .card-header {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 
 .card-title {
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.3px;
 }
 
 .links-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 }
 
 .link-item {
   display: flex;
   align-items: center;
-  padding: 12px 8px;
-  border-radius: var(--radius-md);
+  padding: 12px;
+  border-radius: 10px;
   text-decoration: none;
-  transition: background-color var(--transition-fast);
+  background: var(--bg-tertiary);
+  border: 1px solid transparent;
+  transition: all var(--transition-fast);
   color: inherit;
 }
 
 .link-item:hover {
-  background-color: var(--bg-primary);
+  background-color: var(--bg-hover);
+  border-color: var(--border-color);
+  transform: translateX(2px);
 }
 
 .link-icon {

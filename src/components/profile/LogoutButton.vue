@@ -60,20 +60,25 @@ async function handleLogout(): Promise<void> {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 12px 24px;
-  border: 1px solid #d83b01;
-  border-radius: var(--radius-md);
-  background: transparent;
+  max-width: 240px;
+  margin: 0 auto;
+  padding: 11px 24px;
+  border: 1.2px solid rgba(216, 59, 1, 0.25);
+  border-radius: 10px;
+  background: var(--bg-secondary);
   color: #d83b01;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s ease, color 0.2s ease, transform 0.1s ease;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
 }
 
 .logout-btn:hover:not(:disabled) {
-  background: #d83b01;
-  color: white;
+  background: rgba(216, 59, 1, 0.08);
+  border-color: #d83b01;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .logout-btn:active:not(:disabled) {
@@ -92,22 +97,22 @@ async function handleLogout(): Promise<void> {
 }
 
 .icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
 }
 
 .spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(216, 59, 1, 0.3);
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(216, 59, 1, 0.2);
   border-top-color: #d83b01;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
 
 .logout-btn:hover:not(:disabled) .spinner {
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border-color: rgba(216, 59, 1, 0.4);
+  border-top-color: #d83b01;
 }
 
 @keyframes spin {

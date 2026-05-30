@@ -45,6 +45,48 @@
 
 
 
+    <!-- 个人效率看板 ── Notion 风格仪表盘 -->
+    <div class="profile-stats-dashboard">
+      <h4 class="stats-title">效率看板</h4>
+      <div class="stats-grid">
+        <!-- 待办完成统计 -->
+        <div class="stats-card-mini">
+          <div class="mini-label">待办完成率</div>
+          <div class="mini-value-row">
+            <span class="mini-value">{{ todoCompletionRate }}%</span>
+            <span class="mini-sub">{{ completedTodoCount }} / {{ totalTodoCount }}</span>
+          </div>
+          <div class="mini-progress-track">
+            <div class="mini-progress-bar" :style="{ width: `${todoCompletionRate}%` }"></div>
+          </div>
+        </div>
+
+        <!-- 日程统计 -->
+        <div class="stats-card-mini">
+          <div class="mini-label">日程总数</div>
+          <div class="mini-value-row">
+            <span class="mini-value">{{ totalEventCount }}</span>
+            <span class="mini-sub">个日程安排</span>
+          </div>
+          <div class="mini-progress-track">
+            <div class="mini-progress-bar accent-bar" style="width: 100%"></div>
+          </div>
+        </div>
+
+        <!-- 云端存储使用 -->
+        <div class="stats-card-mini colspan-2">
+          <div class="mini-label">云同步空间占用</div>
+          <div class="mini-value-row">
+            <span class="mini-value">{{ storageUsedText }}</span>
+            <span class="mini-sub">50.0 MB 配额</span>
+          </div>
+          <div class="mini-progress-track">
+            <div class="mini-progress-bar storage-bar" :style="{ width: `${storagePercent}%` }"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 账户操作 -->
     <div class="profile-actions">
       <button class="action-btn" @click="handleEditProfile">
@@ -66,8 +108,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted } from 'vue'
 import type { User } from '../../types/auth'
+import { useTodoStore } from '../../stores/todo'
+import { useCalendarStore } from '../../stores/calendar'
+
+const todoStore = useTodoStore()
+const calendarStore = useCalendarStore()
+
+onMounted(() => {
+  todoStore.initialize()
+})
 
 // ==================== Props ====================
 interface Props {
@@ -76,6 +127,24 @@ interface Props {
 
 const props = withDefaults(defineProps<Props>(), {
   user: null
+})
+
+// ==================== Store Stats ====================
+const completedTodoCount = computed(() => todoStore.completedTodos.length)
+const totalTodoCount = computed(() => todoStore.todos.length)
+const todoCompletionRate = computed(() => totalTodoCount.value ? Math.round((completedTodoCount.value / totalTodoCount.value) * 100) : 0)
+
+const totalEventCount = computed(() => calendarStore.events.length)
+
+// 模拟以日程和待办体积增长的存储大小
+const storageUsedText = computed(() => {
+  const base = 0.42 + totalEventCount.value * 0.012 + totalTodoCount.value * 0.005
+  return `${base.toFixed(3)} MB`
+})
+
+const storagePercent = computed(() => {
+  const base = 0.42 + totalEventCount.value * 0.012 + totalTodoCount.value * 0.005
+  return Math.min(Math.max(Math.round((base / 50.0) * 100), 1), 100)
 })
 
 // ==================== Computed ====================
@@ -105,29 +174,34 @@ const providerText = computed(() => {
 // ==================== Methods ====================
 function handleEditProfile() {
   console.log('编辑资料 clicked')
-  // 留出接口/后续可触发弹窗或导航
 }
 
 function handleChangePassword() {
   console.log('修改密码 clicked')
-  // 留出接口/后续可触发弹窗或导航
 }
-
 </script>
 
 <style scoped>
 .user-profile-card {
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 28px;
+  box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  transition: all var(--transition-fast);
+}
+
+.user-profile-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--text-tertiary);
 }
 
 .profile-header {
   display: flex;
   align-items: center;
-  gap: 20px;
-  margin-bottom: 24px;
+  gap: 24px;
+  margin-bottom: 28px;
 }
 
 .avatar-container {
@@ -135,25 +209,31 @@ function handleChangePassword() {
 }
 
 .avatar {
-  width: 80px;
-  height: 80px;
+  width: 84px;
+  height: 84px;
   border-radius: 50%;
   object-fit: cover;
-  border: 3px solid var(--border-color);
+  border: 3px solid var(--bg-primary);
+  box-shadow: 0 0 0 1px var(--border-color), var(--shadow-sm);
+  transition: transform var(--transition-fast);
+}
+
+.user-profile-card:hover .avatar {
+  transform: scale(1.05);
 }
 
 .avatar-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--bg-secondary);
+  background: var(--bg-tertiary);
   color: var(--text-secondary);
 }
 
 .avatar-placeholder svg {
-  width: 40px;
-  height: 40px;
-  opacity: 0.5;
+  width: 42px;
+  height: 42px;
+  opacity: 0.6;
 }
 
 .user-info {
@@ -164,16 +244,18 @@ function handleChangePassword() {
 }
 
 .username {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.5px;
 }
 
 .email {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text-secondary);
   margin: 0;
+  font-weight: 500;
 }
 
 .provider-badge {
@@ -181,12 +263,14 @@ function handleChangePassword() {
   align-items: center;
   gap: 6px;
   padding: 4px 12px;
-  background: var(--bg-primary);
-  border-radius: var(--radius-sm);
+  background: var(--bg-tertiary);
+  border-radius: 20px;
   border: 1px solid var(--border-color);
   font-size: 12px;
+  font-weight: 600;
   color: var(--text-secondary);
   margin-top: 4px;
+  align-self: flex-start;
 }
 
 .provider-icon {
@@ -195,51 +279,157 @@ function handleChangePassword() {
 }
 
 .provider-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 13px;
+  height: 13px;
 }
 
 .provider-text {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .user-id-text {
   font-size: 12px;
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
   margin: 0;
-  opacity: 0.7;
+  font-family: monospace;
 }
 
 .profile-actions {
   display: flex;
   gap: 12px;
-  margin-top: 20px;
+  margin-top: auto; /* 等高拉伸时，强制按钮沉底对齐，极具秩序感 */
+  padding-top: 24px;
 }
 
 .action-btn {
   flex: 1;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: transparent;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
+  gap: 8px;
+  padding: 10px 18px;
+  background: var(--bg-tertiary);
+  border: 1.2px solid var(--border-color);
+  border-radius: 10px;
   color: var(--text-primary);
+  font-weight: 600;
   font-size: 13px;
   cursor: pointer;
   transition: all var(--transition-fast);
 }
 
 .action-btn:hover {
-  background: var(--bg-secondary);
+  background: var(--bg-hover);
   border-color: var(--accent-color);
   color: var(--accent-color);
+  transform: translateY(-1px);
+}
+
+.action-btn:active {
+  transform: scale(0.98);
 }
 
 .action-btn svg {
   width: 14px;
   height: 14px;
+  color: var(--text-secondary);
+  transition: color var(--transition-fast);
+}
+
+.action-btn:hover svg {
+  color: var(--accent-color);
+}
+
+/* 效率看板仪表盘 */
+.profile-stats-dashboard {
+  margin: 24px 0;
+  padding-top: 24px;
+  border-top: 1px dashed var(--border-color);
+}
+
+.stats-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0 0 16px 0;
+  letter-spacing: -0.3px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.stats-card-mini {
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: all var(--transition-fast);
+}
+
+.stats-card-mini:hover {
+  background: var(--bg-hover);
+  border-color: var(--text-tertiary);
+  transform: translateY(-1px);
+}
+
+.colspan-2 {
+  grid-column: span 2;
+}
+
+.mini-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.mini-value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+
+.mini-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  line-height: 1;
+}
+
+.mini-sub {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--text-tertiary);
+}
+
+.mini-progress-track {
+  height: 4px;
+  background: var(--border-color);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-top: 4px;
+}
+
+.mini-progress-bar {
+  height: 100%;
+  background: #107c10; /* 绿色代表待办完成率 */
+  border-radius: 10px;
+  transition: width 0.6s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+.mini-progress-bar.accent-bar {
+  background: var(--accent-color);
+}
+
+.mini-progress-bar.storage-bar {
+  background: #0078d4;
 }
 </style>

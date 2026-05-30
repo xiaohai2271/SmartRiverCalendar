@@ -1,37 +1,64 @@
 <template>
   <div class="home-view">
-    <div class="welcome-section">
-      <h1>欢迎使用小河日历</h1>
-      <p>掌控时间，让生活更有节奏</p>
+    <!-- 巨型 Hero 时间与当日核心面板 (TimeDisplay 内联 100% 宽度) -->
+    <div class="hero-section">
+      <TimeDisplay />
     </div>
 
-    <!-- 实时时间显示 -->
-    <TimeDisplay />
-
+    <!-- 4大核心统计格栅，替换 Emoji 并赋能 Hover 向上浮动与极光微阴影 -->
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-icon">📅</div>
+        <div class="stat-icon-wrapper display-icon">
+          <svg class="stat-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+        </div>
         <div class="stat-info">
           <div class="stat-value">{{ todayEvents.length }}</div>
           <div class="stat-label">今日日程</div>
         </div>
       </div>
+      
       <div class="stat-card">
-        <div class="stat-icon">✅</div>
+        <div class="stat-icon-wrapper pending-icon">
+          <svg class="stat-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+            <path d="m9 14 2 2 4-4"/>
+          </svg>
+        </div>
         <div class="stat-info">
           <div class="stat-value">{{ todoStore.pendingTodos.length }}</div>
           <div class="stat-label">待办事项</div>
         </div>
       </div>
+      
       <div class="stat-card">
-        <div class="stat-icon">⏰</div>
+        <div class="stat-icon-wrapper week-icon">
+          <svg class="stat-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <polyline points="12 6 12 12 16 14"/>
+          </svg>
+        </div>
         <div class="stat-info">
           <div class="stat-value">{{ weekEvents }}</div>
           <div class="stat-label">本周日程</div>
         </div>
       </div>
+      
       <div class="stat-card">
-        <div class="stat-icon">📆</div>
+        <div class="stat-icon-wrapper month-icon">
+          <svg class="stat-svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+            <line x1="9" y1="3" x2="9" y2="21"/>
+            <line x1="15" y1="3" x2="15" y2="21"/>
+            <line x1="3" y1="9" x2="21" y2="9"/>
+            <line x1="3" y1="15" x2="21" y2="15"/>
+          </svg>
+        </div>
         <div class="stat-info">
           <div class="stat-value">{{ monthEvents }}</div>
           <div class="stat-label">本月日程</div>
@@ -39,6 +66,7 @@
       </div>
     </div>
 
+    <!-- 待办与日程左右流式格栅 -->
     <div class="content-grid">
       <!-- 待办事项 -->
       <div class="todos-section">
@@ -51,9 +79,11 @@
             v-for="todo in upcomingTodos"
             :key="todo.id"
             class="todo-item"
-            :class="{ overdue: isOverdue(todo) }"
+            :class="{ overdue: isOverdue(todo), completed: todo.completed }"
             @contextmenu.prevent="handleTodoContextMenu($event, todo)"
+            @click="todoDetailVisible = true; selectedTodo = todo"
           >
+            <!-- 物理弹性反馈打勾 -->
             <label class="checkbox-wrapper" @click.stop>
               <input
                 type="checkbox"
@@ -61,21 +91,45 @@
                 @change="todoStore.toggleTodo(todo.id)"
                 class="todo-checkbox"
               />
-              <span class="checkbox-custom"></span>
+              <span class="checkbox-custom">
+                <svg class="check-mark" width="10" height="8" viewBox="0 0 10 8" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="1.5 4 4.5 7 8.5 1.5"/>
+                </svg>
+              </span>
             </label>
             <div class="todo-content">
               <div class="todo-title">{{ todo.title }}</div>
               <div class="todo-due" v-if="todo.dueDate">
-                <span class="due-icon">📅</span>
+                <svg class="due-icon-svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                  <line x1="16" y1="2" x2="16" y2="6"/>
+                  <line x1="8" y1="2" x2="8" y2="6"/>
+                  <line x1="3" y1="10" x2="21" y2="10"/>
+                </svg>
                 {{ formatDueDate(todo.dueDate) }}
               </div>
             </div>
+            <!-- Notion 级精细彩点优先级胶囊 -->
             <div class="todo-priority" :class="todo.priority">
+              <span class="priority-dot"></span>
               {{ priorityLabels[todo.priority] }}
             </div>
+            <!-- 快捷向右悬浮小箭头 -->
+            <div class="hover-action-arrow">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
+            </div>
           </div>
+          
+          <!-- 极简线描空白待办占位插画 -->
           <div v-if="upcomingTodos.length === 0" class="empty-state">
-            暂无待办事项
+            <svg class="empty-illustration" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+              <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+              <path d="m9 14 2 2 4-4"/>
+            </svg>
+            <div class="empty-text">待办已清空，今天很轻松</div>
           </div>
         </div>
       </div>
@@ -87,15 +141,42 @@
           <router-link to="/calendar" class="view-all">查看全部 →</router-link>
         </div>
         <div class="events-list">
-          <div v-for="event in upcomingEvents" :key="event.id" class="event-item" @contextmenu.prevent="handleEventContextMenu($event, event)">
-            <div class="event-color" :style="{ background: getCalendarColor(event.calendarId) }"></div>
+          <!-- hover 触发专属微光与圆角 Ribbon 舒张 -->
+          <div 
+            v-for="event in upcomingEvents" 
+            :key="event.id" 
+            class="event-item" 
+            @contextmenu.prevent="handleEventContextMenu($event, event)"
+            @click="eventDetailVisible = true; selectedEvent = event"
+          >
+            <div class="event-color-ribbon" :style="{ '--calendar-color': getCalendarColor(event.calendarId) }"></div>
             <div class="event-info">
               <div class="event-title">{{ event.title }}</div>
-              <div class="event-time">{{ formatEventTime(event) }}</div>
+              <div class="event-time">
+                <svg class="time-icon-svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="10"/>
+                  <polyline points="12 6 12 12 16 14"/>
+                </svg>
+                {{ formatEventTime(event) }}
+              </div>
+            </div>
+            <!-- 快捷向右悬浮小箭头 -->
+            <div class="hover-action-arrow">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 18 15 12 9 6"/>
+              </svg>
             </div>
           </div>
+          
+          <!-- 极简线描空白日程占位插画 -->
           <div v-if="upcomingEvents.length === 0" class="empty-state">
-            暂无即将到来的日程
+            <svg class="empty-illustration" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+              <line x1="16" y1="2" x2="16" y2="6"/>
+              <line x1="8" y1="2" x2="8" y2="6"/>
+              <line x1="3" y1="10" x2="21" y2="10"/>
+            </svg>
+            <div class="empty-text">日程已完美规划，享受当下吧</div>
           </div>
         </div>
       </div>
@@ -332,27 +413,16 @@ function handleToggleTodo() {
 .home-view {
   max-width: 900px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 24px 24px 48px;
 }
 
-.welcome-section {
-  text-align: center;
-  padding: 16px 0 8px;
+/* 巨型时间 Hero Banner 区域 */
+.hero-section {
+  width: 100%;
+  margin-bottom: 24px;
 }
 
-.welcome-section h1 {
-  font-size: 24px;
-  font-weight: 600;
-  margin-bottom: 4px;
-  color: var(--text-primary);
-}
-
-.welcome-section p {
-  color: var(--text-secondary);
-  font-size: 14px;
-  margin: 0;
-}
-
+/* 统计卡片格栅 */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -362,29 +432,76 @@ function handleToggleTodo() {
 
 .stat-card {
   background: var(--bg-secondary);
-  border-radius: 12px;
-  padding: 20px;
+  border: 1px solid var(--border-light);
+  border-radius: 16px;
+  padding: 18px 20px;
   display: flex;
   align-items: center;
   gap: 16px;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.02);
+  transition: all var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1);
+  cursor: pointer;
 }
 
-.stat-icon {
-  font-size: 32px;
+/* Hover 浮动 2px 伴随轻度阴影放大与自适应线标缩放 */
+.stat-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-strong);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+}
+
+.stat-icon-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  transition: all var(--transition-fast);
+}
+
+/* 自适应色标背景及前景色 */
+.stat-icon-wrapper.display-icon {
+  background: rgba(0, 120, 212, 0.08);
+  color: var(--accent-color);
+}
+.stat-icon-wrapper.pending-icon {
+  background: rgba(46, 204, 113, 0.08);
+  color: #2ecc71;
+}
+.stat-icon-wrapper.week-icon {
+  background: rgba(155, 89, 182, 0.08);
+  color: #9b59b6;
+}
+.stat-icon-wrapper.month-icon {
+  background: rgba(230, 126, 34, 0.08);
+  color: #e67e22;
+}
+
+.stat-card:hover .stat-icon-wrapper {
+  transform: scale(1.08);
+}
+
+.stat-svg {
+  color: inherit;
 }
 
 .stat-value {
-  font-size: 28px;
-  font-weight: 600;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'Segoe UI Variable Display', 'Segoe UI', system-ui, sans-serif;
+  line-height: 1.1;
 }
 
 .stat-label {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
+  margin-top: 2px;
 }
 
-/* Content Grid */
+/* Content Grid - 左右完美对称流式格栅 */
 .content-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -395,44 +512,62 @@ function handleToggleTodo() {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
+  padding: 0 6px;
 }
 
 .section-header h2 {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 16.5px;
+  font-weight: 650;
+  color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.3px;
 }
 
 .view-all {
   font-size: 13px;
   color: var(--accent-color);
   text-decoration: none;
+  font-weight: 500;
+  transition: opacity var(--transition-fast);
 }
 
 .view-all:hover {
-  text-decoration: underline;
+  opacity: 0.8;
 }
 
-/* Todos Section */
-.todos-list {
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
+/* Todos & Events 嵌套悬浮微光容器 */
+.todos-list,
+.events-list {
+  background: color-mix(in srgb, var(--bg-secondary) 85%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border-light);
+  border-radius: 18px; /* 增大圆角 */
+  padding: 6px; /* 嵌套呼吸内衬 */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.01);
+  display: flex;
+  flex-direction: column;
 }
 
-.todo-item {
+/* 空气流线卡片 - 彻底消灭通栏分割线 */
+.todo-item,
+.event-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-color);
-  transition: background var(--transition-fast);
+  gap: 14px;
+  padding: 12px 14px;
+  border-bottom: none !important; /* 彻底消灭生硬的黑线 */
+  border-radius: 12px; /* 条目自身带有大圆角 */
+  margin-bottom: 4px; /* 气泡间距 */
+  transition: all var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1);
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
 }
 
-.todo-item:last-child {
-  border-bottom: none;
+.todo-item:last-child,
+.event-item:last-child {
+  margin-bottom: 0;
 }
 
 .todo-item:hover {
@@ -440,10 +575,14 @@ function handleToggleTodo() {
 }
 
 .todo-item.overdue {
-  background: rgba(220, 38, 38, 0.05);
+  background: rgba(231, 76, 60, 0.02);
 }
 
-/* Custom Checkbox */
+.todo-item.overdue:hover {
+  background: rgba(231, 76, 60, 0.05);
+}
+
+/* 物理弹性打勾复选框 */
 .checkbox-wrapper {
   position: relative;
   display: flex;
@@ -459,33 +598,39 @@ function handleToggleTodo() {
 }
 
 .checkbox-custom {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border: 2px solid var(--border-strong);
   border-radius: 5px;
-  transition: all var(--transition-fast);
+  transition: all var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1.2);
   display: flex;
   align-items: center;
   justify-content: center;
+  background: transparent;
 }
 
-.checkbox-custom::after {
-  content: '';
-  width: 5px;
-  height: 9px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg) scale(0);
-  transition: transform var(--transition-fast);
+.check-mark {
+  transform: scale(0);
+  transition: transform var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1.3);
+  stroke-dasharray: 20;
+  stroke-dashoffset: 0;
 }
 
 .todo-checkbox:checked + .checkbox-custom {
   background: var(--accent-color);
   border-color: var(--accent-color);
+  box-shadow: 0 2px 6px rgba(0, 120, 212, 0.25);
+  animation: checkboxPop var(--transition-fast) ease-out;
 }
 
-.todo-checkbox:checked + .checkbox-custom::after {
-  transform: rotate(45deg) scale(1);
+.todo-checkbox:checked + .checkbox-custom .check-mark {
+  transform: scale(1);
+}
+
+@keyframes checkboxPop {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
 }
 
 .todo-content {
@@ -494,78 +639,101 @@ function handleToggleTodo() {
 }
 
 .todo-title {
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 500; /* 微调至 500，避免过重 */
+  font-size: 13.8px;
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
+}
+
+/* 已完成待办联动淡出与删除线 */
+.todo-item.completed .todo-title {
+  color: var(--text-tertiary);
+  text-decoration: line-through;
+  opacity: 0.6;
 }
 
 .todo-due {
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-secondary);
+  opacity: 0.8; /* 调整透明度形成良好视觉梯度 */
   margin-top: 4px;
-}
-
-.todo-item.overdue .todo-due {
-  color: #dc2626;
-}
-
-.due-icon {
-  font-size: 10px;
-}
-
-.todo-priority {
-  padding: 3px 8px;
-  border-radius: 4px;
-  font-size: 11px;
   font-weight: 500;
 }
 
+.due-icon-svg {
+  color: inherit;
+}
+
+.todo-item.overdue .todo-due {
+  color: #e74c3c;
+  opacity: 1;
+}
+
+/* Notion 级彩点优先级胶囊 */
+.todo-priority {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: transform var(--transition-fast);
+}
+
+.priority-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
 .todo-priority.low {
-  background: #e2e8f0;
-  color: #475569;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+.todo-priority.low .priority-dot {
+  background: var(--text-tertiary);
 }
 
 .todo-priority.medium {
-  background: #fef3c7;
-  color: #d97706;
+  background: rgba(243, 156, 18, 0.08);
+  color: #d35400;
+}
+.todo-priority.medium .priority-dot {
+  background: #f39c12;
 }
 
 .todo-priority.high {
-  background: #fee2e2;
-  color: #dc2626;
+  background: rgba(231, 76, 60, 0.08);
+  color: #c0392b;
+}
+.todo-priority.high .priority-dot {
+  background: #e74c3c;
 }
 
-/* Events Section */
-.events-list {
-  background: var(--bg-secondary);
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-}
-
-.event-item {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--border-color);
-  transition: background var(--transition-fast);
-}
-
-.event-item:last-child {
-  border-bottom: none;
-}
-
+/* Events Section (日程微光色带 Ribbon) */
 .event-item:hover {
-  background: var(--bg-hover);
+  /* 悬浮时产生专属日历色的极淡半透明背景 */
+  background: color-mix(in srgb, var(--calendar-color, var(--accent-color)) 4.5%, var(--bg-secondary));
 }
 
-.event-color {
-  width: 4px;
-  height: 36px;
+.event-color-ribbon {
+  width: 3.5px;
+  height: 28px;
   border-radius: 2px;
+  background: var(--calendar-color, var(--accent-color));
+  transition: all var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+/* hover 触发色条圆角拓宽 */
+.event-item:hover .event-color-ribbon {
+  width: 5.5px;
+  border-radius: 3px;
+  box-shadow: 0 1px 6px color-mix(in srgb, var(--calendar-color, var(--accent-color)) 40%, transparent);
 }
 
 .event-info {
@@ -573,21 +741,79 @@ function handleToggleTodo() {
 }
 
 .event-title {
-  font-weight: 500;
-  font-size: 14px;
+  font-weight: 500; /* 微调至 500 */
+  font-size: 13.8px;
+  color: var(--text-primary);
 }
 
 .event-time {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   color: var(--text-secondary);
-  font-size: 12px;
+  opacity: 0.8;
+  font-size: 11.5px;
   margin-top: 4px;
+  font-weight: 500;
 }
 
+.time-icon-svg {
+  color: inherit;
+  opacity: 0.8;
+}
+
+/* 快捷向右原位浮现箭头线标 */
+.hover-action-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-tertiary);
+  opacity: 0;
+  transform: translateX(-6px);
+  transition: all var(--transition-fast) cubic-bezier(0.1, 0.9, 0.2, 1);
+  margin-left: 4px;
+  width: 14px;
+  height: 14px;
+}
+
+.todo-item:hover .hover-action-arrow,
+.event-item:hover .hover-action-arrow {
+  opacity: 1;
+  transform: translateX(0);
+  color: var(--accent-color);
+}
+
+/* hover 时，优先级标签轻轻向左位移为小箭头让出空间，极其灵动 */
+.todo-item:hover .todo-priority {
+  transform: translateX(-2px);
+}
+
+/* 精美禅意空白占位插画 */
 .empty-state {
-  padding: 40px;
+  padding: 48px 24px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.empty-illustration {
+  color: var(--text-tertiary);
+  opacity: 0.35;
+  transition: opacity var(--transition-fast);
+}
+
+.empty-state:hover .empty-illustration {
+  opacity: 0.55;
+}
+
+.empty-text {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13.5px;
+  font-weight: 500;
+  letter-spacing: -0.1px;
 }
 
 @media (max-width: 768px) {

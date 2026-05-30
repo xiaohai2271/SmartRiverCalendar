@@ -145,16 +145,24 @@ function handleSync(): void {
 <style scoped>
 .sync-status-panel {
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: 20px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 255, 255, 0.05);
+  transition: all var(--transition-fast);
+}
+
+.sync-status-panel:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--text-tertiary);
 }
 
 .panel-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  margin-bottom: 20px;
 }
 
 .panel-title {
@@ -162,9 +170,10 @@ function handleSync(): void {
   align-items: center;
   gap: 8px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text-primary);
   margin: 0;
+  letter-spacing: -0.3px;
 }
 
 .icon {
@@ -180,19 +189,20 @@ function handleSync(): void {
   padding: 4px 12px;
   border-radius: 20px;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
 }
 
 /* 等待同步状态 */
 .status-idle {
-  background: rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.04);
   color: var(--text-secondary);
+  border: 1px solid var(--border-color);
 }
 
 .status-idle .status-dot {
@@ -201,8 +211,9 @@ function handleSync(): void {
 
 /* 同步中状态 */
 .status-syncing {
-  background: rgba(0, 120, 212, 0.1);
+  background: rgba(0, 120, 212, 0.08);
   color: var(--accent-color);
+  border: 1px solid rgba(0, 120, 212, 0.2);
 }
 
 .status-syncing .status-dot {
@@ -212,8 +223,9 @@ function handleSync(): void {
 
 /* 同步成功状态 */
 .status-success {
-  background: rgba(16, 124, 16, 0.1);
+  background: rgba(16, 124, 16, 0.08);
   color: #107c10;
+  border: 1px solid rgba(16, 124, 16, 0.2);
 }
 
 .status-success .status-dot {
@@ -222,8 +234,9 @@ function handleSync(): void {
 
 /* 同步失败状态 */
 .status-error {
-  background: rgba(216, 59, 1, 0.1);
+  background: rgba(216, 59, 1, 0.08);
   color: #d83b01;
+  border: 1px solid rgba(216, 59, 1, 0.2);
 }
 
 .status-error .status-dot {
@@ -232,8 +245,9 @@ function handleSync(): void {
 
 /* 离线状态 */
 .status-offline {
-  background: rgba(96, 94, 92, 0.1);
+  background: rgba(96, 94, 92, 0.08);
   color: #605e5c;
+  border: 1px solid rgba(96, 94, 92, 0.2);
 }
 
 .status-offline .status-dot {
@@ -254,29 +268,30 @@ function handleSync(): void {
 .panel-content {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 18px;
 }
 
 .sync-info {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .info-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 13.5px;
 }
 
 .info-label {
   color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .info-value {
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 .error-row .info-label,
@@ -295,19 +310,21 @@ function handleSync(): void {
   justify-content: center;
   gap: 8px;
   padding: 10px 20px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary);
+  border: 1.2px solid var(--border-color);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
   color: var(--text-primary);
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13.5px;
+  font-weight: 600;
   cursor: pointer;
-  transition: background-color 0.2s ease, border-color 0.2s ease, transform 0.1s ease;
+  transition: all var(--transition-fast);
 }
 
 .sync-btn:hover:not(:disabled) {
-  background: var(--bg-secondary);
+  background: var(--bg-hover);
   border-color: var(--accent-color);
+  color: var(--accent-color);
+  transform: translateY(-1px);
 }
 
 .sync-btn:active:not(:disabled) {
