@@ -45,6 +45,8 @@ export interface PlatformCapabilities {
   // ─── 认证 ───
   /** 是否支持 OAuth 本地回调（需要本地 HTTP 服务器） */
   hasOAuthCallback: boolean
+  /** 是否支持 SSO 登录（Web 端 cookie 会话检测） */
+  hasSsoLogin: boolean
 
   // ─── 同步策略能力 ───
 

@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { User, CloudSyncStatus, AuthState, LoginRequest, RegisterRequest } from '../types/auth'
-import { usePlatform } from '@/platform/provider'
+import { usePlatform, useCapabilities } from '@/platform/provider'
 import { encryptPassword, clearCachedPublicKey } from '../services/rsa'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
@@ -16,6 +16,7 @@ export const useAuthStore = defineStore('auth', () => {
   const syncStatus = ref<CloudSyncStatus>('idle')
   const lastSyncAt = ref<number | null>(null)
   const isInitialized = ref<boolean>(false)
+  const wasLoggedIn = ref<boolean>(false)
 
   // Computed
   const authState = computed<AuthState>(() => ({
@@ -39,26 +40,48 @@ export const useAuthStore = defineStore('auth', () => {
       return
     }
 
+    // localStorage 恢复 wasLoggedIn
+    const storedWasLoggedIn = localStorage.getItem('lastKnownLoggedIn')
+    if (storedWasLoggedIn === 'true') {
+      wasLoggedIn.value = true
+    }
+
     try {
       const { authRepo } = usePlatform()
+      const capabilities = useCapabilities()
       const isAuth = await authRepo.checkAuthStatus()
       if (isAuth) {
         const currentUser = await authRepo.getCurrentUser()
         if (currentUser) {
           user.value = currentUser
           isAuthenticated.value = true
+          wasLoggedIn.value = true
+          localStorage.setItem('lastKnownLoggedIn', 'true')
+        }
+      } else if (capabilities.hasSsoLogin) {
+        // SSO 检测路径：checkAuthStatus 返回 false，但可能 SSO cookie 仍有效
+        try {
+          const ssoResult = await authRepo.detectSsoSession()
+          if (ssoResult.loggedIn && ssoResult.user) {
+            user.value = ssoResult.user
+            isAuthenticated.value = true
+            wasLoggedIn.value = true
+            localStorage.setItem('lastKnownLoggedIn', 'true')
+          }
+        } catch (ssoError) {
+          if (ssoError instanceof RepositoryError && ssoError.code === RepoErrorCodes.SSO_SESSION_EXPIRED) {
+            isAuthenticated.value = false
+            user.value = null
+            wasLoggedIn.value = false
+            localStorage.setItem('lastKnownLoggedIn', 'false')
+          }
         }
       }
-      // isAuth === false: 合法的"未认证"，不做额外处理
+      // isAuth === false 且无 SSO: 合法的"未认证"，不做额外处理
     } catch (error) {
-      // RepositoryError：系统错误，不清除认证状态
-      // 避免 keyring 故障或网络问题导致已登录用户被踢到登录页
       if (error instanceof RepositoryError) {
         console.error('[AuthStore] 认证状态检查系统错误:', error.code, error.message)
-        // 系统错误时保持当前状态，不做任何变更
-        // 如果之前有缓存的认证信息，用户仍可继续使用
       } else {
-        // 未知错误，保守处理：清除认证状态
         console.error('初始化认证状态失败:', error)
         user.value = null
         isAuthenticated.value = false
@@ -87,8 +110,10 @@ export const useAuthStore = defineStore('auth', () => {
         if (currentUser) {
           user.value = currentUser
           isAuthenticated.value = true
+          wasLoggedIn.value = true
+          localStorage.setItem('lastKnownLoggedIn', 'true')
 
-          // 【变更】登录成功后，日历身份切换（local → online）
+          // 登录成功后，日历身份切换（local → online）
           // 替代原有的 syncCalendarsFromServer()
           const { useCalendarStore } = await import('./calendar')
           const calendarStore = useCalendarStore()
@@ -127,8 +152,10 @@ export const useAuthStore = defineStore('auth', () => {
         if (currentUser) {
           user.value = currentUser
           isAuthenticated.value = true
+          wasLoggedIn.value = true
+          localStorage.setItem('lastKnownLoggedIn', 'true')
 
-          // 【变更】注册成功后，日历身份切换（local → online）
+          // 注册成功后，日历身份切换（local → online）
           // 替代原有的 syncCalendarsFromServer()
           const { useCalendarStore } = await import('./calendar')
           const calendarStore = useCalendarStore()
@@ -188,7 +215,7 @@ export const useAuthStore = defineStore('auth', () => {
    * 用户登出
    */
   async function logout(): Promise<void> {
-    // 【新增】退出前日历身份切换（online → local）
+    // 退出前日历身份切换（online → local）
     try {
       const { useCalendarStore } = await import('./calendar')
       const calendarStore = useCalendarStore()
@@ -197,19 +224,30 @@ export const useAuthStore = defineStore('auth', () => {
       console.warn('[AuthStore] 退出前日历切换失败:', error)
     }
 
+    // Web 端 SSO 广播登出事件
+    const capabilities = useCapabilities()
+    if (capabilities.hasSsoLogin) {
+      try {
+        const { authRepo } = usePlatform()
+        await authRepo.notifySsoEvent({ type: 'logout' })
+      } catch (error) {
+        console.warn('[AuthStore] SSO 登出广播失败:', error)
+      }
+    }
+
     try {
       const { authRepo } = usePlatform()
       await authRepo.logout()
     } catch (error) {
       console.error('登出失败:', error)
     } finally {
-      // 清除缓存的 RSA 公钥
       clearCachedPublicKey()
-      // 无论后端登出是否成功，都清除本地状态
       user.value = null
       isAuthenticated.value = false
       syncStatus.value = 'idle'
       lastSyncAt.value = null
+      wasLoggedIn.value = false
+      localStorage.setItem('lastKnownLoggedIn', 'false')
     }
   }
 
@@ -302,7 +340,6 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * 从服务端同步日历到本地
-   * 登录/注册成功后调用，确保本地日历数据与服务端一致
    */
   async function syncCalendarsFromServer(): Promise<void> {
     try {
@@ -310,7 +347,6 @@ export const useAuthStore = defineStore('auth', () => {
       const success = await syncRepo.syncCalendarsFromServer()
 
       if (success) {
-        // 重新加载日历数据
         const { useCalendarStore } = await import('./calendar')
         const calendarStore = useCalendarStore()
         await calendarStore.reloadFromDatabase()
@@ -321,9 +357,12 @@ export const useAuthStore = defineStore('auth', () => {
       }
     } catch (error) {
       console.error('[AuthStore] 日历同步失败:', error)
-      // 显示错误提示给用户，但不阻塞登录流程
-      // 用户可以手动触发重试
     }
+  }
+
+  /** 清理资源（停止 SsoCoordinator 等） */
+  function cleanup(): void {
+    // 后续集成 SsoCoordinator 实例管理时在此停止
   }
 
   return {
@@ -333,6 +372,7 @@ export const useAuthStore = defineStore('auth', () => {
     syncStatus,
     lastSyncAt,
     isInitialized,
+    wasLoggedIn,
     // Computed
     authState,
     // Actions
@@ -345,6 +385,7 @@ export const useAuthStore = defineStore('auth', () => {
     checkAuthStatus,
     startSync,
     stopSync,
-    syncCalendarsFromServer
+    syncCalendarsFromServer,
+    cleanup,
   }
 })

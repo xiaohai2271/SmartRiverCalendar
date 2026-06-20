@@ -20,6 +20,7 @@ export const webCapabilities: PlatformCapabilities = {
   hasMinimizeToTray: false,
   hasProxySettings: false,
   hasOAuthCallback: false,
+  hasSsoLogin: true,
   hasBackgroundSync: false,
   hasIncrementalSync: false,
   hasClientConflictResolution: false,

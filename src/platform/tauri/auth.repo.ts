@@ -1,4 +1,4 @@
-import type { IAuthRepository, AuthResult } from '../types/auth.repository'
+import type { IAuthRepository, AuthResult, SsoSessionResult, SsoEvent } from '../types/auth.repository'
 import type { User } from '@/types/auth'
 import { safeInvoke } from '@/utils/tauri'
 import { RepositoryError, RepoErrorCodes } from '../errors'
@@ -121,5 +121,19 @@ export class TauriAuthRepository implements IAuthRepository {
   async getPublicKey(): Promise<string | null> {
     const response = await safeInvoke<{ data: { public_key: string } }>('auth_get_public_key')
     return response?.data?.public_key ?? null
+  }
+
+  // ─── SSO no-op 方法（桌面端不需要 SSO） ───
+
+  async detectSsoSession(): Promise<SsoSessionResult> {
+    return { loggedIn: false }
+  }
+
+  async notifySsoEvent(_event: SsoEvent): Promise<void> {
+    // 桌面端不需要 SSO 广播
+  }
+
+  subscribeSsoEvents(_callback: (event: SsoEvent) => void): () => void {
+    return () => {}
   }
 }
