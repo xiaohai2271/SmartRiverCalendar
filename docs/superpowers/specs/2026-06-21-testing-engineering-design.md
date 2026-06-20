@@ -24,8 +24,8 @@
 
 ```
 e2e/
-├── playwright.config.ts          # Web 端配置
-├── playwright.tauri.config.ts    # 桌面端配置
+├── playwright.config.ts          # Web 端配置（Playwright）
+├── wdio.tauri.conf.ts            # 桌面端配置（WebDriverIO + tauri-driver）
 ├── fixtures/                     # API mock 数据
 │   ├── calendars.json
 │   ├── events.json
@@ -77,14 +77,27 @@ export async function mockApiRoutes(page: Page) {
 }
 ```
 
-桌面端 Tauri IPC 调用通过 `page.addInitScript()` 拦截 `window.__TAURI__`：
+桌面端 Tauri API 调用通过 `page.addInitScript()` 拦截 `window.__TAURI__`，需覆盖 invoke + event + plugin：
 
 ```typescript
 // e2e/helpers/tauri-mock.ts
-export async function mockTauriInvoke(page: Page, mocks: Record<string, unknown>) {
+export async function mockTauriApi(page: Page, mocks: Record<string, unknown>) {
   await page.addInitScript((mockData) => {
+    const listeners: Record<string, Function[]> = {}
+
     window.__TAURI__ = {
-      invoke: (cmd: string) => Promise.resolve(mockData[cmd] ?? null),
+      invoke: (cmd: string, args?: any) => {
+        if (mockData[cmd]) return Promise.resolve(typeof mockData[cmd] === 'function' ? mockData[cmd](args) : mockData[cmd])
+        return Promise.resolve(null)
+      },
+      event: {
+        listen: (event: string, handler: Function) => {
+          if (!listeners[event]) listeners[event] = []
+          listeners[event].push(handler)
+          return Promise.resolve(() => { listeners[event] = listeners[event].filter(h => h !== handler) })
+        },
+        emit: (event: string, payload?: any) => { listeners[event]?.forEach(h => h(payload)) },
+      },
     }
   }, mocks)
 }
@@ -97,7 +110,8 @@ E2E 测试不仅验证 UI 交互，还需验证数据在 Store 层和 API 层的
 ```typescript
 // e2e/helpers/data-verify.ts
 
-// 通过 window.__pinia__ 访问 Store 状态，验证前端数据一致性
+// 通过 Pinia $id 访问 Store 状态（需在应用入口暴露 pinia 实例到 window）
+// 实现方式：在 e2e 环境下，main.ts 中添加 window.__pinia__ = pinia
 export async function verifyStoreState(page: Page, storeName: string, path: string, expected: unknown) {
   const actual = await page.evaluate(({ store, key }) => {
     const pinia = (window as any).__pinia__
@@ -125,13 +139,20 @@ export async function verifySyncTransition(page: Page, fromStatus: string, toSta
 
 ## 桌面端 Tauri E2E
 
-使用 `tauri-driver`（WebDriverIO 协议）连接桌面应用 webview：
+> **技术选型说明**：`tauri-driver` 使用 WebDriver 协议，与 Playwright 的 CDP 协议不兼容。
+> 桌面端 E2E 采用 **WebDriverIO + tauri-driver** 方案（Tauri 官方推荐），与 Web 端 Playwright 分属独立工具链。
+
+### 方案 A：WebDriverIO + tauri-driver（推荐，Tauri 官方方案）
 
 ```typescript
-// e2e/tauri/tray-popup.spec.ts
-test('点击系统托盘图标应显示主窗口', async ({ page }) => {
-  await page.evaluate(() => window.__TAURI__.event.emit('tray-click'))
-  await expect(page.locator('.home-view')).toBeVisible()
+// e2e/tauri/tray-popup.spec.ts (WebDriverIO)
+describe('系统托盘', () => {
+  it('点击系统托盘图标应显示主窗口', async () => {
+    // tauri-driver 已启动桌面应用，browser 对象连接 webview
+    await browser.execute(() => window.__TAURI__.event.emit('tray-click'))
+    const homeView = await browser.$('.home-view')
+    await expect(homeView).toBeDisplayed()
+  })
 })
 ```
 
@@ -139,7 +160,20 @@ test('点击系统托盘图标应显示主窗口', async ({ page }) => {
 1. 先构建 Tauri 应用：`pnpm tauri build`
 2. 安装 tauri-driver：`cargo install tauri-driver`
 3. 启动 tauri-driver 作为 WebDriver 代理
-4. Playwright 通过 WebDriver 协议连接
+4. WebDriverIO 通过 WebDriver 协议连接 tauri-driver
+
+### 方案 B：Tauri MCP Bridge（备选，已有基础设施）
+
+本项目已安装 `tauri-mcp-server`，可通过 MCP Bridge 工具操作桌面应用：
+- `webview_dom_snapshot` / `webview_interact` / `webview_execute_js` 操作 webview
+- `ipc_execute_command` 执行 Tauri IPC 命令
+- `manage_window` 管理窗口
+
+此方案适合 Agent 驱动的探索式测试，但不适合 CI 流水线中的回归测试。
+
+### 最终选择
+
+**日常 CI 使用方案 A（WebDriverIO + tauri-driver）**，Agent 探索式测试可选用方案 B。
 
 ## 平台差异适配矩阵
 
@@ -186,7 +220,7 @@ E2E 测试需覆盖两端差异逻辑，下表标注每个流程在两端的适�
 | 用户名密码登录成功 | 输入邮箱+密码 → 点击登录 | Store `isAuthenticated=true`；UI 显示用户信息和同步面板；API 请求包含 RSA 加密密码 |
 | 用户名密码登录失败 | 输入错误密码 → 点击登录 | Store 保持 `isAuthenticated=false`；UI 显示错误提示；不触发同步 |
 | 登录后登出 | 登录成功 → 点击退出 | Store `isAuthenticated=false, user=null`；UI 回到登录表单；同步状态清空 |
-| Token 过期自动刷新 | 登录成功 → 模拟 API 返回 401 → 验证自动刷新 | 原请求自动重试；用户无感知；不出现登出 |
+| Token 过期自动刷新 | 登录成功 → 模拟 API 返回 401 → 验证自动刷新 | 原请求自动重试；用户无感知；不出现登出；通过观察 API 请求次数验证（1次刷新请求 + 1次原请求重试 = 2次后续请求） |
 | Token 过期刷新失败 | 登录成功 → 模拟刷新接口也返回 401 | Store 被清空；UI 回到登录表单 |
 | 注册新账号 | 点击注册 → 填写信息 → 提交 | 注册成功后自动登录；Store 状态正确 |
 | 页面刷新后保持登录 | 登录成功 → 刷新页面 | 从 API 恢复认证状态；UI 保持登录态 |
@@ -241,8 +275,8 @@ E2E 测试需覆盖两端差异逻辑，下表标注每个流程在两端的适�
 - 创建：验证同步状态流转 `idle → syncing → success`
 - 删除：验证 Store `events` 数组长度 -1
 - 编辑：验证 Store 中对应事件的 `updatedAt` 已更新
-- 桌面端离线：验证 `safeInvoke('create_event')` 被调用 + `safeInvoke('cloud_sync_trigger')` 未被调用
-- 桌面端联网：验证 `safeInvoke('cloud_sync_trigger')` 被调用
+- 桌面端离线：验证 `safeInvoke('create_event')` 被调用 + `syncRepo.triggerCloudSync()` 未被调用
+- 桌面端联网：验证 `syncRepo.triggerCloudSync()` 被调用
 
 ---
 
@@ -394,8 +428,8 @@ E2E 测试需覆盖两端差异逻辑，下表标注每个流程在两端的适�
 **数据验证：**
 - 同步成功：验证 `authStore.syncStatus === 'success'` + `authStore.lastSyncAt !== null`
 - 数据刷新：验证 `calendarStore.events` 和 `todoStore.todos` 与同步后远端数据一致
-- 桌面端：验证 `safeInvoke('cloud_sync_trigger')` 被调用
-- 桌面端：验证 `safeInvoke('cloud_sync_get_status')` 返回 `pendingChanges === 0`（所有变更已推送）
+- 桌面端：验证 `syncRepo.triggerCloudSync()` 被调用
+- 桌面端：验证 `syncRepo.getSyncStatus()` 返回 `pendingChanges === 0`（所有变更已推送）
 
 ---
 
@@ -454,23 +488,44 @@ E2E 测试需覆盖两端差异逻辑，下表标注每个流程在两端的适�
 
 #### 12. 日历管理 (`web/calendar-manage.spec.ts`)
 
+**Web 端用例：**
+
 | 用例 | 步骤 | 验证点 |
 |------|------|--------|
-| 新增本地日历 | 创建日历（名称+颜色） | 日历出现在列表中；Store `calendars` 包含新日历 |
-| 编辑日历 | 修改名称/颜色 | 更新生效；Store 状态更新 |
-| 删除日历 | 删除日历 → 确认 | 日历从列表消失；关联事件一并删除 |
+| 新增日历 | 创建日历（名称+颜色） | 日历出现在列表中；Store `calendars` 包含新日历；API `POST /calendars` 被调用 |
+| 编辑日历 | 修改名称/颜色 | 更新生效；Store 状态更新；API `PUT /calendars/:id` 被调用 |
+| 删除日历 | 删除日历 → 确认 | 日历从列表消失；关联事件一并删除；API `DELETE /calendars/:id` 被调用 |
 | 切换日历可见性 | 点击日历勾选框 | 事件在视图中显示/隐藏 |
+
+**桌面端用例（`tauri/` 目录）：**
+
+| 用例 | 步骤 | 验证点 |
+|------|------|--------|
+| 新增本地日历 | 创建日历（type=local） | 写入 SQLite；不触发 sync_log；不调用 `triggerSync()` |
+| 新增在线日历 | 创建日历（type=online） | 写入 SQLite + sync_log；`triggerSync()` 被调用 |
+| 登录身份切换后日历类型变更 | 登录 → `loginTransition()` | 本地日历 type 变为 online；双向同步执行 |
+| 刷新后从 SQLite 恢复 | 创建日历 → 重启应用 | 日历从 SQLite 恢复；Store 状态正确 |
 
 ---
 
 #### 13. 外部日历集成 (`web/external-calendar.spec.ts`)
 
+**Web 端用例：**
+
 | 用例 | 步骤 | 验证点 |
 |------|------|--------|
-| 添加 Exchange 账号 | 输入服务器+账号+密码 → 连接 | 凭证加密存储；外部日历出现在列表 |
+| 添加 Exchange 账号 | 输入服务器+账号+密码 → 连接 | API 请求格式正确；外部日历出现在列表 |
 | 添加 CalDAV 账号 | 输入服务器+账号+密码 → 连接 | 外部日历出现在列表 |
 | 外部日历只读控制 | 在只读外部日历下尝试创建事件 | 创建被拒绝或禁用 |
 | 双向同步事件 | 在外部日历创建事件 → 同步 | 事件推送到外部服务 |
+
+**桌面端用例（`tauri/` 目录）：**
+
+| 用例 | 步骤 | 验证点 |
+|------|------|--------|
+| 添加外部账号 | 输入凭证 → 连接 | 凭证通过 `safeInvoke` 加密存储到 SQLite；外部日历出现在列表 |
+| 外部日历事件本地缓存 | 同步外部日历 → 断网 | 事件从本地 SQLite 缓存可见（dataPriority=local-first） |
+| 外部日历双向同步 | 在外部日历创建事件 → 同步 | 事件通过 Rust 后端直连推送到 Exchange/CalDAV |
 
 ---
 
@@ -558,10 +613,23 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: '20', cache: 'pnpm' }
       - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/cache@v4
+        with:
+          path: |
+            src-tauri/target
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: tauri-${{ runner.os }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: tauri-${{ runner.os }}-
       - run: pnpm install
       - run: pnpm tauri build
-      - run: cargo install tauri-driver
-      - run: pnpm exec playwright test --config=e2e/playwright.tauri.config.ts
+      - name: Cache tauri-driver
+        id: cache-td
+        uses: actions/cache@v4
+        with: { path: ~/.cargo/bin/tauri-driver, key: tauri-driver-1 }
+      - if: steps.cache-td.outputs.cache-hit != 'true'
+        run: cargo install tauri-driver
+      - run: pnpm exec wdio run e2e/wdio.tauri.conf.ts
 ```
 
 ## Agent 自动化测试生成
@@ -607,9 +675,29 @@ jobs:
 
 ## 现有问题修复
 
-当前 21 个失败测试集中在 SSO 相关 auth repo，根因：
+当前 21 个失败测试集中在 SSO 相关 auth repo，根因是 **`IAuthRepository` 接口定义缺失 SSO 方法**，而非仅测试过时：
+
 - `auth-store-sso.test.ts`（7 失败）：`wasLoggedIn` 属性不存在、`cleanup` 方法不存在
 - `platform/tauri/__tests__/auth.repo.test.ts`（4 失败）：`detectSsoSession`、`notifySsoEvent`、`subscribeSsoEvents` 方法不存在
 - `platform/web/__tests__/auth.repo.test.ts`（10 失败）：同上 + `setWasLoggedInGetter` 方法不存在
 
-这些都是测试与实现不同步导致的，P0 阶段需要修复或删除过时测试。
+`SsoCoordinator` 已通过 `authRepo.detectSsoSession()` 等方式调用这些方法，但 `IAuthRepository` 接口中没有定义。P0 阶段需要：
+
+1. **先决定接口演进方向**：将 SSO 方法加入 `IAuthRepository` 接口（统一抽象），还是让 `SsoCoordinator` 依赖扩展接口（如 `ISsoAuthRepository`）
+2. 补全接口定义和类型（`SsoSessionResult`、`SsoEvent` 等）
+3. 使两端 Repository 实现和测试与接口对齐
+
+### 架构违规记录
+
+`cloudSyncService`（`src/services/cloudSync.ts`）桌面端路径直接调用 `safeInvoke('cloud_sync_trigger')` 而非通过 `syncRepo.triggerCloudSync()`，违反 Repository 分层架构。E2E 测试断言应基于 Repository 接口（`syncRepo`）而非底层实现（`safeInvoke`）。此架构问题需在后续迭代中修复，测试设计不应固化此违规。
+
+### 数据验证基础设施
+
+`data-verify.ts` 通过 `window.__pinia__` 访问 Store 状态，Pinia 默认不暴露此属性。需在应用入口（`main.ts`）中添加条件暴露：
+
+```typescript
+// main.ts 中（仅 E2E 环境下暴露）
+if (import.meta.env.MODE === 'test-e2e') {
+  window.__pinia__ = pinia
+}
+```
