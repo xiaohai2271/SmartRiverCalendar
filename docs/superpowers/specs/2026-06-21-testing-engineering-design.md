@@ -77,7 +77,10 @@ export async function mockApiRoutes(page: Page) {
 }
 ```
 
-桌面端 Tauri API 调用通过 `page.addInitScript()` 拦截 `window.__TAURI__`，需覆盖 invoke + event + plugin：
+桌面端 Tauri API 调用的前端行为模拟（主要用于 L2 组件测试或 Playwright 环境下的纯前端降级 E2E），可通过 `page.addInitScript()` 拦截 `window.__TAURI__`。
+> **注意**：在使用 `tauri-driver` 的真实桌面端 E2E 测试中，将拉起真实的 Rust 后端，无需（也无法简单）拦截 `__TAURI__`，此时应直接操作真实的本地 SQLite 测试数据库。
+
+需覆盖 invoke + event + plugin：
 
 ```typescript
 // e2e/helpers/tauri-mock.ts
@@ -103,6 +106,8 @@ export async function mockTauriApi(page: Page, mocks: Record<string, unknown>) {
 }
 ```
 
+> **Tauri 2.x 兼容性注意**：Tauri 2.x 的底层 IPC 依赖 `window.__TAURI_INTERNALS__`。若前端代码使用的是 Tauri 2.x 推荐的 ESM 导入（`@tauri-apps/api/core`），在 Playwright 纯前端 mock 环境下，直接 mock `window.__TAURI__` 可能失效。建议额外 mock `window.__TAURI_INTERNALS__ = { ipc: ... }`，或在构建阶段使用别名将 Tauri API 指向 mock 实现。
+
 ## 数据验证辅助工具
 
 E2E 测试不仅验证 UI 交互，还需验证数据在 Store 层和 API 层的一致性：
@@ -120,9 +125,13 @@ export async function verifyStoreState(page: Page, storeName: string, path: stri
   expect(actual).toEqual(expected)
 }
 
-// 验证 API 请求被正确发出（通过 Playwright Route 记录）
+// 验证 API 请求被正确发出
+// 提示：推荐使用 Playwright 的 page.waitForRequest() 或监听 page.on('request') 事件，
+// 这样可以避免在 mock 路由内部手动维护共享的状态数组，实现更干净的声明式断言。
 export async function verifyApiCalled(page: Page, urlPattern: string, method: string, times: number = 1) {
-  // 在 mockApiRoutes 中记录请求，此处断言
+  // 实现示例：
+  // const reqPromise = page.waitForRequest(req => req.url().includes(urlPattern) && req.method() === method)
+  // await reqPromise
 }
 
 // 验证页面刷新后数据持久化
@@ -264,6 +273,9 @@ E2E 测试需覆盖两端差异逻辑，下表标注每个流程在两端的适�
 | 在线日历在线创建 | 选择在线日历 + 在线状态 → 创建事件 | 写入 SQLite + sync_log(synced=0) → `triggerSync()` → sync_log 更新为 synced=1 |
 | 在线日历离线创建 | 选择在线日历 + 离线状态 → 创建事件 | 写入 SQLite + sync_log(synced=0)；事件可见；同步状态为 offline |
 | 离线创建→联网同步 | 离线创建 → 恢复网络 | `window.online` 触发 → `triggerSync()` → sync_log 推送成功 → `syncStatus='success'` |
+
+> **E2E 离线状态模拟提示**：在 CI 环境下，建议在 WebDriverIO/Playwright 中使用 `browser.execute` 动态修改 `navigator.onLine` 并手动派发 `offline` / `online` 事件来模拟网络切换，无需在 OS 层面断网：
+> `Object.defineProperty(navigator, 'onLine', { value: false, writable: true }); window.dispatchEvent(new Event('offline'));`
 | 联网后数据一致性 | 离线创建→联网同步→刷新 | 事件数据与远端一致；无重复；`reloadFromDatabase()` 后数据正确 |
 | 登录身份切换（local→online） | 登录 → 触发 `loginTransition()` | 日历 type 从 local 变为 online；双向同步执行；`reloadFromDatabase()` 后日历列表正确 |
 | 登出身份切换（online→local） | 登出 → 触发 `logoutTransition()` | 最终同步执行；日历 type 从 online 变为 local；本地日历仍可用 |
@@ -584,6 +596,7 @@ jobs:
       - run: pnpm install
       - run: pnpm test:run
       - run: pnpm test:coverage
+        # 建议在 vitest.config.ts 中配置 coverage.thresholds 确保覆盖率 > 50%，形成真正的 CI 卡点
       - uses: actions/upload-artifact@v4
         with: { name: coverage, path: coverage/ }
 
@@ -623,10 +636,11 @@ jobs:
           restore-keys: tauri-${{ runner.os }}-
       - run: pnpm install
       - run: pnpm tauri build
+      # 建议：实际项目中可直接下载 Github Release 的预编译 tauri-driver 二进制文件，以大幅减少 cargo install 的编译耗时
       - name: Cache tauri-driver
         id: cache-td
         uses: actions/cache@v4
-        with: { path: ~/.cargo/bin/tauri-driver, key: tauri-driver-1 }
+        with: { path: ~/.cargo/bin/tauri-driver.exe, key: tauri-driver-1 }
       - if: steps.cache-td.outputs.cache-hit != 'true'
         run: cargo install tauri-driver
       - run: pnpm exec wdio run e2e/wdio.tauri.conf.ts
@@ -683,7 +697,7 @@ jobs:
 
 `SsoCoordinator` 已通过 `authRepo.detectSsoSession()` 等方式调用这些方法，但 `IAuthRepository` 接口中没有定义。P0 阶段需要：
 
-1. **先决定接口演进方向**：将 SSO 方法加入 `IAuthRepository` 接口（统一抽象），还是让 `SsoCoordinator` 依赖扩展接口（如 `ISsoAuthRepository`）
+1. **统一接口抽象（推荐）**：将 SSO 方法统一加入 `IAuthRepository` 接口。对于不支持 SSO 的桌面端实现，可以直接返回空操作（No-op）或抛出/返回特定的 `NOT_SUPPORTED` 状态。这避免了 Store 层引入复杂的类型判断，维持了 Repository 分层的纯粹性。
 2. 补全接口定义和类型（`SsoSessionResult`、`SsoEvent` 等）
 3. 使两端 Repository 实现和测试与接口对齐
 
@@ -701,3 +715,5 @@ if (import.meta.env.MODE === 'test-e2e') {
   window.__pinia__ = pinia
 }
 ```
+
+并在启动命令中显式指定模式（例如在 Playwright 的 `webServer` 配置或启动脚本中指定 `pnpm dev --mode test-e2e`），以确保该环境变量生效。
