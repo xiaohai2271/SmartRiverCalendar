@@ -51,8 +51,14 @@ async function initializeApp() {
   // 2. 创建应用并使用插件
   console.log('[main.ts] 2. 创建 Vue 应用...')
   const app = createApp(App)
-  app.use(createPinia())
+  const pinia = createPinia()
+  app.use(pinia)
   app.use(router)
+
+  // E2E 环境下暴露 Pinia 实例到 window，供数据验证工具使用
+  if (import.meta.env.VITE_E2E === 'true') {
+    ;(window as any).__pinia__ = pinia
+  }
 
   // Global error handler - 捕获所有 Vue 错误
   app.config.errorHandler = (err, _instance, info) => {
