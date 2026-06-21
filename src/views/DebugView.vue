@@ -180,26 +180,75 @@
     <div v-if="activeTab === 'api'" class="debug-section">
       <div class="section-header">
         <h3>API 配置</h3>
-        <span :class="['mode-badge', apiConfig.mode]">
-          {{ apiConfig.mode === 'mock' ? 'Mock 模式' : 'Real 模式' }}
-        </span>
       </div>
       <div class="api-config-content">
-        <div class="setting-item">
-          <label>API 模式</label>
-          <select v-model="apiConfig.mode" class="api-mode-select">
-            <option value="mock">Mock（模拟数据）</option>
-            <option value="real">Real（真实后端）</option>
-          </select>
+        <div class="setting-item" style="margin-bottom: 12px;">
+          <button class="action-btn" @click="fillDefaultApiConfig" style="width: auto; padding: 6px 16px;">
+            线上环境
+          </button>
+          <span style="margin-left: 8px; color: var(--neutral-foreground-secondary); font-size: 12px;">一键填入默认线上地址</span>
         </div>
-        <div v-if="apiConfig.mode === 'real'" class="setting-item">
-          <label>API 地址</label>
-          <input
-            v-model="apiConfig.baseUrl"
-            type="text"
-            class="api-url-input"
-            placeholder="https://api.example.com/api/v1"
-          />
+        <div class="setting-item">
+          <label>API 接口地址</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input
+              v-model="apiConfig.apiUrl"
+              type="text"
+              class="api-url-input"
+              placeholder="https://calendar.menghuan.life/api"
+              style="flex: 1;"
+            />
+            <button
+              class="action-btn"
+              @click="checkApiConnectivity('api')"
+              :disabled="connectivityChecking === 'api'"
+              style="width: auto; padding: 4px 12px; font-size: 12px;"
+            >
+              {{ connectivityChecking === 'api' ? '⏳' : connectivityResults.apiUrl?.reachable === true ? '✅' : connectivityResults.apiUrl?.reachable === false ? '❌' : '检查连接' }}
+            </button>
+          </div>
+          <div v-if="connectivityResults.apiUrl" style="font-size: 11px; margin-top: 4px;">
+            <span v-if="connectivityResults.apiUrl.reachable" style="color: var(--green);">
+              可达 ({{ connectivityResults.apiUrl.latencyMs }}ms)
+            </span>
+            <span v-else style="color: var(--red);">
+              不可达: {{ connectivityResults.apiUrl.error }}
+            </span>
+          </div>
+        </div>
+        <div class="setting-item">
+          <label>平台地址（OAuth 跳转）</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input
+              v-model="apiConfig.platformUrl"
+              type="text"
+              class="api-url-input"
+              placeholder="https://calendar.menghuan.life"
+              style="flex: 1;"
+            />
+            <button
+              class="action-btn"
+              @click="checkApiConnectivity('platform')"
+              :disabled="connectivityChecking === 'platform'"
+              style="width: auto; padding: 4px 12px; font-size: 12px;"
+            >
+              {{ connectivityChecking === 'platform' ? '⏳' : connectivityResults.platformUrl?.reachable === true ? '✅' : connectivityResults.platformUrl?.reachable === false ? '❌' : '检查连接' }}
+            </button>
+          </div>
+          <div v-if="connectivityResults.platformUrl" style="font-size: 11px; margin-top: 4px;">
+            <span v-if="connectivityResults.platformUrl.reachable && connectivityResults.platformUrl.keywordFound" style="color: var(--green);">
+              可达，已验证 ({{ connectivityResults.platformUrl.latencyMs }}ms)
+            </span>
+            <span v-else-if="connectivityResults.platformUrl.reachable && connectivityResults.platformUrl.keywordFound === false" style="color: #f0a030;">
+              可达但未检测到"小河日历"，请确认地址 ⚠️
+            </span>
+            <span v-else-if="connectivityResults.platformUrl.reachable" style="color: var(--green);">
+              可达 ({{ connectivityResults.platformUrl.latencyMs }}ms)
+            </span>
+            <span v-else style="color: var(--red);">
+              不可达: {{ connectivityResults.platformUrl.error }}
+            </span>
+          </div>
         </div>
         <div class="api-config-actions">
           <button
@@ -207,14 +256,14 @@
             @click="handleSwitchApiConfig"
             :disabled="switchingApi"
           >
-            {{ switchingApi ? '切换中...' : '应用配置' }}
+            {{ switchingApi ? '应用中...' : '应用配置' }}
           </button>
         </div>
         <div v-if="apiConfigMessage" :class="['config-message', apiConfigMessageType]">
           {{ apiConfigMessage }}
         </div>
         <div class="config-warning">
-          ⚠️ 切换 API 模式会清除当前登录状态和 Token，需要重新登录
+          ⚠️ 切换地址会清除当前登录状态和 Token，需要重新登录
         </div>
       </div>
     </div>
@@ -314,12 +363,38 @@ const storageInfo = ref<Record<string, number>>({})
 
 // API 配置相关
 const apiConfig = reactive({
-  mode: 'mock',
-  baseUrl: 'http://localhost:3000/api',
+  apiUrl: 'https://calendar.menghuan.life/api',
+  platformUrl: 'https://calendar.menghuan.life',
 })
 const switchingApi = ref(false)
 const apiConfigMessage = ref('')
 const apiConfigMessageType = ref<'success' | 'error'>('success')
+const connectivityChecking = ref<'api' | 'platform' | null>(null)
+const connectivityResults = reactive<{
+  apiUrl: { reachable: boolean; latencyMs: number | null; error: string | null; keywordFound: boolean | null } | null
+  platformUrl: { reachable: boolean; latencyMs: number | null; error: string | null; keywordFound: boolean | null } | null
+}>({ apiUrl: null, platformUrl: null })
+
+// 一键填入线上默认地址
+function fillDefaultApiConfig() {
+  apiConfig.apiUrl = 'https://calendar.menghuan.life/api'
+  apiConfig.platformUrl = 'https://calendar.menghuan.life'
+}
+
+// 检查连通性
+async function checkApiConnectivity(target: 'api' | 'platform') {
+  connectivityChecking.value = target
+  try {
+    const { checkConnectivity } = await import('../utils/connectivity')
+    const result = await checkConnectivity(apiConfig.apiUrl, apiConfig.platformUrl)
+    connectivityResults.apiUrl = result.apiUrl
+    connectivityResults.platformUrl = result.platformUrl
+  } catch (err) {
+    console.error('连通性检查失败:', err)
+  } finally {
+    connectivityChecking.value = null
+  }
+}
 
 // 加载 API 配置
 async function loadApiConfig() {
@@ -327,8 +402,8 @@ async function loadApiConfig() {
   try {
     const config = await getApiConfig()
     if (config) {
-      apiConfig.mode = config.mode
-      apiConfig.baseUrl = config.baseUrl
+      apiConfig.apiUrl = config.apiUrl
+      apiConfig.platformUrl = config.platformUrl
     }
   } catch (error) {
     console.error('获取 API 配置失败:', error)
@@ -337,14 +412,30 @@ async function loadApiConfig() {
 
 // 切换 API 配置
 async function handleSwitchApiConfig() {
-  // 确认对话框
+  // 校验地址格式
+  const urlPattern = /^https?:\/\/.+/
+  if (!urlPattern.test(apiConfig.apiUrl)) {
+    apiConfigMessage.value = 'API 接口地址格式不正确，需以 http:// 或 https:// 开头'
+    apiConfigMessageType.value = 'error'
+    return
+  }
+  if (!urlPattern.test(apiConfig.platformUrl)) {
+    apiConfigMessage.value = '平台地址格式不正确，需以 http:// 或 https:// 开头'
+    apiConfigMessageType.value = 'error'
+    return
+  }
+  // 自动去除尾部斜杠
+  apiConfig.apiUrl = apiConfig.apiUrl.replace(/\/+$/, '')
+  apiConfig.platformUrl = apiConfig.platformUrl.replace(/\/+$/, '')
+
   const confirmed = confirm(
-    `确定要切换到 ${apiConfig.mode === 'mock' ? 'Mock' : 'Real'} 模式吗？\n\n` +
+    '确定要应用新的 API 配置吗？\n\n' +
     '切换后会：\n' +
     '• 清除当前登录状态\n' +
     '• 清除缓存的 Token\n' +
     '• 需要重新登录\n\n' +
-    (apiConfig.mode === 'real' ? `API 地址: ${apiConfig.baseUrl}\n\n` : '') +
+    `API 接口地址: ${apiConfig.apiUrl}\n` +
+    `平台地址: ${apiConfig.platformUrl}\n\n` +
     '是否继续？'
   )
   if (!confirmed) return
@@ -353,16 +444,16 @@ async function handleSwitchApiConfig() {
   apiConfigMessage.value = ''
 
   try {
-    const result = await switchApiConfig(apiConfig.mode, apiConfig.baseUrl)
+    const result = await switchApiConfig(apiConfig.apiUrl, apiConfig.platformUrl)
     if (result?.success) {
-      apiConfigMessage.value = `已切换到 ${result.mode === 'mock' ? 'Mock' : 'Real'} 模式`
+      apiConfigMessage.value = '配置已应用'
       apiConfigMessageType.value = 'success'
     } else {
-      apiConfigMessage.value = '切换失败'
+      apiConfigMessage.value = '应用配置失败'
       apiConfigMessageType.value = 'error'
     }
   } catch (error) {
-    apiConfigMessage.value = `切换失败: ${error instanceof Error ? error.message : String(error)}`
+    apiConfigMessage.value = `应用失败: ${error instanceof Error ? error.message : String(error)}`
     apiConfigMessageType.value = 'error'
   } finally {
     switchingApi.value = false

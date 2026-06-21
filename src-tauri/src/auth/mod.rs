@@ -3,6 +3,8 @@
 
 pub mod handler;
 pub mod oauth;
+pub mod pkce;
 pub mod token;
+pub mod desktop_oauth;
 
 pub use handler::AuthHandler;

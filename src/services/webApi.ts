@@ -1,7 +1,21 @@
 // Web API 客户端
 // 在非 Tauri 环境下直接调用后端 API
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1188/v1'
+const LS_KEY_API_URL = 'sr_api_url'
+const LS_KEY_PLATFORM_URL = 'sr_platform_url'
+const DEFAULT_API_URL = 'https://calendar.menghuan.life/api'
+const DEFAULT_PLATFORM_URL = 'https://calendar.menghuan.life'
+
+function getApiUrl(): string {
+  return localStorage.getItem(LS_KEY_API_URL) || import.meta.env.VITE_API_BASE_URL || DEFAULT_API_URL
+}
+
+function getPlatformUrl(): string {
+  return localStorage.getItem(LS_KEY_PLATFORM_URL) || DEFAULT_PLATFORM_URL
+}
+
+/** 导出 getPlatformUrl 供外部使用 */
+export { getPlatformUrl }
 
 let accessToken: string | null = null
 let refreshTokenValue: string | null = null
@@ -33,7 +47,7 @@ function clearTokens(): void {
 // 刷新访问令牌
 async function doRefreshToken(): Promise<string> {
   if (!refreshTokenValue) throw new Error('无可用的刷新令牌')
-  const resp = await fetch(`${BASE_URL}/auth/refresh`, {
+  const resp = await fetch(`${getApiUrl()}/auth/refresh`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ refresh_token: refreshTokenValue })
@@ -55,7 +69,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
   if (accessToken) {
     headers['Authorization'] = `Bearer ${accessToken}`
   }
-  const resp = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+  const resp = await fetch(`${getApiUrl()}${path}`, { ...options, headers })
 
   // 401 时尝试刷新令牌后重试
   if (resp.status === 401 && refreshTokenValue) {
@@ -73,7 +87,7 @@ async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> 
       await new Promise<string>(resolve => refreshWaiters.push(resolve))
     }
     headers['Authorization'] = `Bearer ${accessToken}`
-    const retryResp = await fetch(`${BASE_URL}${path}`, { ...options, headers })
+    const retryResp = await fetch(`${getApiUrl()}${path}`, { ...options, headers })
     return retryResp.json()
   }
 
@@ -144,5 +158,12 @@ export const webApi = {
   // 检查认证状态（使用 /user/profile 代替不存在的 /auth/check-status）
   async checkStatus() {
     return apiFetch<{ code: number; data: { id: number; email: string; display_name: string } | null }>('/user/profile')
-  }
+  },
+
+  /** Web 端切换 API 配置 */
+  switchWebApiConfig(apiUrl: string, platformUrl: string): void {
+    localStorage.setItem(LS_KEY_API_URL, apiUrl)
+    localStorage.setItem(LS_KEY_PLATFORM_URL, platformUrl)
+    clearTokens()
+  },
 }

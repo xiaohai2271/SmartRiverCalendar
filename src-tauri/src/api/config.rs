@@ -1,133 +1,94 @@
 // API 配置模块
-// 管理 API 模式 (Mock/Real)、基础 URL、OAuth 配置等
+// 管理 API 接口地址、平台地址、OAuth 配置等
+// 移除 ApiMode 枚举，默认使用线上环境
 
 use serde::{Deserialize, Serialize};
-
-/// API 运行模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ApiMode {
-    /// Mock 模式 — 使用内存模拟数据，用于开发和测试
-    Mock,
-    /// Real 模式 — 连接真实后端服务
-    Real,
-}
 
 /// API 配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ApiConfig {
-    /// API 运行模式
-    pub mode: ApiMode,
-    /// API 基础 URL (Real 模式使用)
-    pub base_url: String,
+    /// API 接口地址（如 https://calendar.menghuan.life/api）
+    #[serde(rename = "apiUrl")]
+    pub api_url: String,
+    /// 平台地址（OAuth 跳转，如 https://calendar.menghuan.life）
+    #[serde(rename = "platformUrl")]
+    pub platform_url: String,
     /// GitHub OAuth Client ID
+    #[serde(rename = "githubClientId")]
     pub github_client_id: String,
 }
+
+/// 线上默认值
+const DEFAULT_API_URL: &str = "https://calendar.menghuan.life/api";
+const DEFAULT_PLATFORM_URL: &str = "https://calendar.menghuan.life";
 
 impl ApiConfig {
     /// 从环境变量创建配置
     ///
     /// 环境变量:
-    /// - SMART_RIVER_API_MODE: "mock" 或 "real"
-    /// - SMART_RIVER_API_BASE_URL: API 基础 URL (Real 模式必需)
+    /// - SMART_RIVER_API_URL: API 接口地址
+    /// - SMART_RIVER_PLATFORM_URL: 平台地址（OAuth 跳转）
     /// - SMART_RIVER_GITHUB_CLIENT_ID: GitHub OAuth Client ID
     pub fn from_env() -> Self {
-        let mode = std::env::var("SMART_RIVER_API_MODE")
-            .ok()
-            .and_then(|v| match v.to_lowercase().as_str() {
-                "mock" => Some(ApiMode::Mock),
-                "real" => Some(ApiMode::Real),
-                _ => None,
-            })
-            .unwrap_or(ApiMode::Mock);
+        let api_url = std::env::var("SMART_RIVER_API_URL")
+            .or_else(|_| std::env::var("SMART_RIVER_API_BASE_URL")) // 兼容旧环境变量名
+            .unwrap_or_else(|_| DEFAULT_API_URL.to_string());
 
-        let base_url = std::env::var("SMART_RIVER_API_BASE_URL")
-            .unwrap_or_else(|_| "http://localhost:3000/api".to_string());
+        let platform_url = std::env::var("SMART_RIVER_PLATFORM_URL")
+            .unwrap_or_else(|_| DEFAULT_PLATFORM_URL.to_string());
 
         let github_client_id = std::env::var("SMART_RIVER_GITHUB_CLIENT_ID")
-            .unwrap_or_else(|_| "mock_github_client_id".to_string());
+            .unwrap_or_else(|_| String::new());
 
         Self {
-            mode,
-            base_url,
+            api_url,
+            platform_url,
             github_client_id,
         }
-    }
-
-    /// 创建默认 Mock 配置
-    pub fn default_mock() -> Self {
-        Self {
-            mode: ApiMode::Mock,
-            base_url: "http://localhost:3000/api".to_string(),
-            github_client_id: "mock_github_client_id".to_string(),
-        }
-    }
-
-    /// 创建 Real 模式配置
-    pub fn real(base_url: String, github_client_id: String) -> Self {
-        Self {
-            mode: ApiMode::Real,
-            base_url,
-            github_client_id,
-        }
-    }
-
-    /// 检查是否为 Mock 模式
-    pub fn is_mock(&self) -> bool {
-        self.mode == ApiMode::Mock
-    }
-
-    /// 检查是否为 Real 模式
-    pub fn is_real(&self) -> bool {
-        self.mode == ApiMode::Real
     }
 
     /// 从数据库设置创建配置
     ///
-    /// 从 SQLite app_settings 表读取 api_mode 和 api_base_url
+    /// 从 SQLite app_settings 表读取 api_url 和 api_platform_url
     /// 如果数据库中不存在，回退到环境变量
     pub fn from_settings(db: &rusqlite::Connection) -> Self {
-        let mode_str = db.query_row(
-            "SELECT value FROM app_settings WHERE key = 'api_mode'",
+        let api_url = db.query_row(
+            "SELECT value FROM app_settings WHERE key = 'api_url'",
             [],
             |row| row.get::<_, String>(0),
         ).ok();
 
-        let base_url = db.query_row(
-            "SELECT value FROM app_settings WHERE key = 'api_base_url'",
+        let platform_url = db.query_row(
+            "SELECT value FROM app_settings WHERE key = 'api_platform_url'",
             [],
             |row| row.get::<_, String>(0),
         ).ok();
 
-        let mode = mode_str
-            .and_then(|v| match v.to_lowercase().as_str() {
-                "mock" => Some(ApiMode::Mock),
-                "real" => Some(ApiMode::Real),
-                _ => None,
-            })
+        // 兼容旧字段名：如果 api_url 不存在但 api_base_url 存在，使用旧值
+        let final_api_url = api_url
+            .or_else(|| db.query_row(
+                "SELECT value FROM app_settings WHERE key = 'api_base_url'",
+                [],
+                |row| row.get::<_, String>(0),
+            ).ok())
             .unwrap_or_else(|| {
-                // 回退到环境变量
-                std::env::var("SMART_RIVER_API_MODE")
-                    .ok()
-                    .and_then(|v| match v.to_lowercase().as_str() {
-                        "mock" => Some(ApiMode::Mock),
-                        "real" => Some(ApiMode::Real),
-                        _ => None,
-                    })
-                    .unwrap_or(ApiMode::Mock)
+                std::env::var("SMART_RIVER_API_URL")
+                    .or_else(|_| std::env::var("SMART_RIVER_API_BASE_URL"))
+                    .unwrap_or_else(|_| DEFAULT_API_URL.to_string())
             });
 
-        let final_base_url = base_url
-            .unwrap_or_else(||
-                std::env::var("SMART_RIVER_API_BASE_URL")
-                    .unwrap_or_else(|_| "http://localhost:3000/api".to_string())
-            );
+        let final_platform_url = platform_url
+            .unwrap_or_else(|| {
+                std::env::var("SMART_RIVER_PLATFORM_URL")
+                    .unwrap_or_else(|_| DEFAULT_PLATFORM_URL.to_string())
+            });
 
         let github_client_id = std::env::var("SMART_RIVER_GITHUB_CLIENT_ID")
-            .unwrap_or_else(|_| "mock_github_client_id".to_string());
+            .unwrap_or_else(|_| String::new());
 
         Self {
-            mode,
-            base_url: final_base_url,
+            api_url: final_api_url,
+            platform_url: final_platform_url,
             github_client_id,
         }
     }
@@ -136,12 +97,21 @@ impl ApiConfig {
     pub fn save_to_db(&self, db: &rusqlite::Connection) -> Result<(), rusqlite::Error> {
         let now = chrono::Utc::now().timestamp();
         db.execute(
-            "INSERT OR REPLACE INTO app_settings (key, value, description, updated_at) VALUES ('api_mode', ?1, 'API 运行模式 (mock/real)', ?2)",
-            rusqlite::params![format!("{:?}", self.mode).to_lowercase(), now],
+            "INSERT OR REPLACE INTO app_settings (key, value, description, updated_at) VALUES ('api_url', ?1, 'API 接口地址', ?2)",
+            rusqlite::params![self.api_url, now],
         )?;
         db.execute(
-            "INSERT OR REPLACE INTO app_settings (key, value, description, updated_at) VALUES ('api_base_url', ?1, 'API 基础 URL', ?2)",
-            rusqlite::params![self.base_url, now],
+            "INSERT OR REPLACE INTO app_settings (key, value, description, updated_at) VALUES ('api_platform_url', ?1, '平台地址（OAuth 跳转）', ?2)",
+            rusqlite::params![self.platform_url, now],
+        )?;
+        // 清除旧字段，避免回退读取
+        db.execute(
+            "DELETE FROM app_settings WHERE key = 'api_base_url'",
+            [],
+        )?;
+        db.execute(
+            "DELETE FROM app_settings WHERE key = 'api_mode'",
+            [],
         )?;
         Ok(())
     }
@@ -149,7 +119,11 @@ impl ApiConfig {
 
 impl Default for ApiConfig {
     fn default() -> Self {
-        Self::default_mock()
+        Self {
+            api_url: DEFAULT_API_URL.to_string(),
+            platform_url: DEFAULT_PLATFORM_URL.to_string(),
+            github_client_id: String::new(),
+        }
     }
 }
 
@@ -157,65 +131,76 @@ impl Default for ApiConfig {
 mod tests {
     use super::*;
 
-    /// 测试 ApiMode 序列化
-    #[test]
-    fn test_api_mode_serialization() {
-        let mock = ApiMode::Mock;
-        let json = serde_json::to_string(&mock).unwrap();
-        assert!(json.contains("Mock"));
-
-        let real = ApiMode::Real;
-        let json = serde_json::to_string(&real).unwrap();
-        assert!(json.contains("Real"));
-    }
-
     /// 测试 ApiConfig 默认值
     #[test]
     fn test_api_config_default() {
         let config = ApiConfig::default();
-        assert!(config.is_mock());
-        assert!(!config.is_real());
-    }
-
-    /// 测试 ApiConfig::default_mock
-    #[test]
-    fn test_api_config_default_mock() {
-        let config = ApiConfig::default_mock();
-        assert_eq!(config.mode, ApiMode::Mock);
-    }
-
-    /// 测试 ApiConfig::real
-    #[test]
-    fn test_api_config_real() {
-        let config = ApiConfig::real(
-            "https://api.example.com".to_string(),
-            "github_client_123".to_string(),
-        );
-        assert_eq!(config.mode, ApiMode::Real);
-        assert_eq!(config.base_url, "https://api.example.com");
-        assert_eq!(config.github_client_id, "github_client_123");
-    }
-
-    /// 测试 is_mock 和 is_real
-    #[test]
-    fn test_api_mode_checks() {
-        let mock_config = ApiConfig::default_mock();
-        assert!(mock_config.is_mock());
-        assert!(!mock_config.is_real());
-
-        let real_config = ApiConfig::real("https://api.example.com".to_string(), "client_id".to_string());
-        assert!(!real_config.is_mock());
-        assert!(real_config.is_real());
+        assert_eq!(config.api_url, DEFAULT_API_URL);
+        assert_eq!(config.platform_url, DEFAULT_PLATFORM_URL);
+        assert_eq!(config.github_client_id, "");
     }
 
     /// 测试 ApiConfig 序列化
     #[test]
     fn test_api_config_serialization() {
-        let config = ApiConfig::default_mock();
+        let config = ApiConfig::default();
         let json = serde_json::to_string(&config).unwrap();
         let deserialized: ApiConfig = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(deserialized.mode, ApiMode::Mock);
-        assert_eq!(deserialized.base_url, config.base_url);
+        assert_eq!(deserialized.api_url, config.api_url);
+        assert_eq!(deserialized.platform_url, config.platform_url);
+    }
+
+    /// 测试 save_to_db 和 from_settings 的一致性
+    #[test]
+    fn test_api_config_db_roundtrip() {
+        let config = ApiConfig {
+            api_url: "https://test.example.com/api".to_string(),
+            platform_url: "https://test.example.com".to_string(),
+            github_client_id: "test_client_id".to_string(),
+        };
+
+        // 创建内存数据库
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                description TEXT,
+                updated_at INTEGER
+            )",
+            [],
+        ).unwrap();
+
+        config.save_to_db(&db).unwrap();
+
+        let loaded = ApiConfig::from_settings(&db);
+        assert_eq!(loaded.api_url, config.api_url);
+        assert_eq!(loaded.platform_url, config.platform_url);
+    }
+
+    /// 测试旧字段兼容性
+    #[test]
+    fn test_api_config_legacy_field_compat() {
+        let db = rusqlite::Connection::open_in_memory().unwrap();
+        db.execute(
+            "CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                description TEXT,
+                updated_at INTEGER
+            )",
+            [],
+        ).unwrap();
+
+        // 写入旧字段名
+        let now = chrono::Utc::now().timestamp();
+        db.execute(
+            "INSERT INTO app_settings (key, value, description, updated_at) VALUES ('api_base_url', 'https://legacy.example.com/api', '旧 API 地址', ?1)",
+            rusqlite::params![now],
+        ).unwrap();
+
+        let loaded = ApiConfig::from_settings(&db);
+        assert_eq!(loaded.api_url, "https://legacy.example.com/api");
     }
 }

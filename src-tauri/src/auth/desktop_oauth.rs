@@ -21,9 +21,6 @@ use crate::db::connection::DatabaseConnection;
 /// 全局 OAuth 进行中标志（防重入）
 static OAUTH_IN_PROGRESS: AtomicBool = AtomicBool::new(false);
 
-/// Web 端基础 URL
-const WEB_BASE_URL: &str = "https://calendar.menghuan.life";
-
 /// 轮询间隔（毫秒）
 const POLL_INTERVAL_MS: u64 = 2000;
 
@@ -92,6 +89,7 @@ struct ApiErrorResponse {
 pub async fn start_oauth(
     provider: &str,
     api_base_url: &str,
+    platform_url: &str,
     app: tauri::AppHandle,
     cancel_token: CancellationToken,
 ) -> Result<String, String> {
@@ -168,7 +166,7 @@ pub async fn start_oauth(
     // 4. 构造浏览器 URL 并打开
     let browser_url = format!(
         "{}/client-login?session_id={}&provider={}",
-        WEB_BASE_URL, session_id, provider
+        platform_url, session_id, provider
     );
 
     match open::that(&browser_url) {
