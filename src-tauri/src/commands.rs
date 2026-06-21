@@ -2,6 +2,7 @@ use log::{info, error, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::State;
+use base64::Engine;
 
 use crate::caldav;
 use crate::crypto;
@@ -59,6 +60,8 @@ pub struct AccountInfo {
     pub username: String,
     /// 加密后的密码
     pub encrypted_password: String,
+    /// 密钥派生盐值（base64 编码）
+    pub key_salt: String,
     /// 显示名称
     pub display_name: String,
     /// 是否启用
@@ -211,9 +214,21 @@ pub async fn connect_exchange(
     server_url: Option<String>,
     username: String,
     password: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ConnectResult, String> {
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 加密密码
-    let encrypted_password = crypto::encrypt_password(&password)
+    let salt = crypto::generate_salt();
+    let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
+    let encrypted_password = crypto::encrypt_password(&password, user_id, &salt)
         .map_err(|e| format!("密码加密失败: {}", e))?;
 
     // 创建 EWS 客户端
@@ -241,6 +256,7 @@ pub async fn connect_exchange(
             server_url: username.clone(), // 存储邮箱地址，服务器地址由 Autodiscover 动态获取
             username: username.clone(),
             encrypted_password,
+            key_salt: salt_b64,
             display_name: username,
             enabled: true,
             last_sync: None,
@@ -255,11 +271,23 @@ pub async fn connect_caldav(
     server_url: String,
     username: String,
     password: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ConnectResult, String> {
     info!("[CalDAV] 开始连接, server_url: {}, username: {}", server_url, username);
 
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 加密密码
-    let encrypted_password = crypto::encrypt_password(&password)
+    let salt = crypto::generate_salt();
+    let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
+    let encrypted_password = crypto::encrypt_password(&password, user_id, &salt)
         .map_err(|e| {
             error!("[CalDAV] 密码加密失败: {}", e);
             format!("密码加密失败: {}", e)
@@ -300,6 +328,7 @@ pub async fn connect_caldav(
         server_url,
         username: username.clone(),
         encrypted_password,
+        key_salt: salt_b64,
         display_name: username,
         enabled: true,
         last_sync: None,
@@ -340,6 +369,8 @@ pub async fn get_external_calendars(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<Vec<CalendarInfo>, String> {
     info!("[get_external_calendars] accountId: {}, accountType: {}, serverUrl: {}", account_id, account_type, server_url);
 
@@ -347,8 +378,23 @@ pub async fn get_external_calendars(
         return Err("账号 ID 不能为空".to_string());
     }
 
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 解密密码
-    let password = crypto::decrypt_password(&encrypted_password)
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     // 根据账号类型获取日历列表
@@ -463,13 +509,30 @@ pub async fn create_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     calendar_url: String,
     event: ExternalEventInput,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ExternalEventResult, String> {
     info!("[create_external_event] 账号: {}, 日历: {}, 类型: {}", account_id, calendar_url, account_type);
 
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 解密密码
-    let password = crypto::decrypt_password(&encrypted_password)
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -524,14 +587,31 @@ pub async fn get_external_events(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     calendar_url: String,
     calendar_id: String,
     start_time: i64,
     end_time: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<Vec<ExternalEventOutput>, String> {
     info!("[get_external_events] 获取外部事件: 账号 {}, 日历 {}", account_id, calendar_url);
 
-    let password = crypto::decrypt_password(&encrypted_password)
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -575,12 +655,29 @@ pub async fn update_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     _calendar_url: String,
     event: ExternalEventInput,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ExternalEventResult, String> {
     info!("[update_external_event] 更新事件: 账号 {}, 事件 {}", account_id, event.id);
 
-    let password = crypto::decrypt_password(&encrypted_password)
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -625,12 +722,29 @@ pub async fn delete_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     _calendar_url: String,
     event_id: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ExternalEventResult, String> {
     info!("[delete_external_event] 删除事件: 账号 {}, 事件 {}", account_id, event_id);
 
-    let password = crypto::decrypt_password(&encrypted_password)
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -1161,11 +1275,15 @@ pub fn create_account(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     display_name: Option<String>,
     enabled: Option<bool>,
     db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<DbAccount, DatabaseError> {
     info!("[create_account] 创建账号: {} ({})", username, account_type);
+    if key_salt.is_empty() {
+        warn!("[create_account] key_salt 为空，加密密码将无法解密");
+    }
     let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
         message: "数据库连接锁获取失败".to_string(),
     })?;
@@ -1175,6 +1293,7 @@ pub fn create_account(
         server_url,
         username,
         encrypted_password,
+        key_salt: if key_salt.is_empty() { None } else { Some(key_salt) },
         display_name,
         enabled: enabled.unwrap_or(true),
     };
@@ -1189,11 +1308,15 @@ pub fn update_account(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     display_name: Option<String>,
     enabled: bool,
     db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<DbAccount, DatabaseError> {
     info!("[update_account] 更新账号: id={}", id);
+    if key_salt.is_empty() {
+        warn!("[update_account] key_salt 为空，加密密码将无法解密");
+    }
     let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
         message: "数据库连接锁获取失败".to_string(),
     })?;
@@ -1204,6 +1327,7 @@ pub fn update_account(
         server_url,
         username,
         encrypted_password,
+        key_salt: if key_salt.is_empty() { None } else { Some(key_salt) },
         display_name,
         enabled,
     };
@@ -2465,6 +2589,7 @@ mod tests {
             server_url: "https://mail.example.com/EWS/Exchange.asmx".to_string(),
             username: "user@example.com".to_string(),
             encrypted_password: "encrypted_password_123".to_string(),
+            key_salt: "dGVzdHNhbHQ=".to_string(),
             display_name: "测试用户".to_string(),
             enabled: true,
             last_sync: Some(1700000000),

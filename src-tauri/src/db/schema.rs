@@ -87,6 +87,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
             server_url TEXT NOT NULL,
             username TEXT NOT NULL,
             encrypted_password TEXT NOT NULL,
+            key_salt TEXT,
             display_name TEXT,
             enabled INTEGER NOT NULL DEFAULT 1,
             created_at INTEGER NOT NULL,
@@ -222,6 +223,7 @@ pub fn init_database(conn: &Connection) -> Result<(), DatabaseError> {
         "ALTER TABLE todos ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai'",
         "ALTER TABLE todos ADD COLUMN external_id TEXT",
         "ALTER TABLE events ADD COLUMN external_id TEXT",
+        "ALTER TABLE accounts ADD COLUMN key_salt TEXT",
     ];
     for sql in &migrations {
         let _ = conn.execute(sql, []);
