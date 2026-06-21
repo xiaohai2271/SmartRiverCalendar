@@ -174,6 +174,20 @@ export class WebSyncRepository implements ISyncRepository {
     return response?.code === 0
   }
 
+  async triggerExternalSync(): Promise<boolean> {
+    // Web 端无 Rust 后端，外部日历同步通过远端 API 代理
+    return this.triggerCloudSync()
+  }
+
+  async startExternalSync(_intervalMinutes: number): Promise<boolean> {
+    // Web 端使用 startAutoSync 替代
+    return false
+  }
+
+  async stopExternalSync(): Promise<boolean> {
+    return false
+  }
+
   async syncCalendarsFromServer(): Promise<boolean> {
     // Web 端不需要特殊处理，calendarRepo.getAll() 已经直接调用 API
     // 返回 true 表示同步完成
@@ -228,5 +242,22 @@ export class WebSyncRepository implements ISyncRepository {
   async pushPendingChanges(): Promise<{ pushed: number; failed: number }> {
     // Web 端无需推送，所有操作直接走 API
     return { pushed: 0, failed: 0 }
+  }
+
+  async onExternalSyncComplete(_callback: () => void): Promise<() => void> {
+    // Web 端无需此后端事件
+    return () => {}
+  }
+
+  async onSyncComplete(_callback: () => void): Promise<() => void> {
+    return () => {}
+  }
+
+  async onSyncError(_callback: () => void): Promise<() => void> {
+    return () => {}
+  }
+
+  async onAuthTokenExpired(_callback: () => void): Promise<() => void> {
+    return () => {}
   }
 }

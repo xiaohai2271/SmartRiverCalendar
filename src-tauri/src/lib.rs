@@ -363,6 +363,16 @@ pub fn run() {
             commands::create_event,
             commands::update_event,
             commands::delete_event,
+            // 带同步语义的事件命令
+            commands::create_event_with_sync,
+            commands::update_event_with_sync,
+            commands::delete_event_with_sync,
+            commands::delete_events_by_calendar_and_time_range,
+            // 性能优化：按范围加载命令
+            commands::get_events_by_time_range_and_calendars,
+            commands::get_event_count,
+            commands::get_upcoming_events,
+            commands::search_events,
             // 本地待办命令
             commands::get_todos,
             commands::get_todos_by_calendar,
@@ -421,6 +431,10 @@ pub fn run() {
             commands::update_calendar_type,
             commands::sync_record_pending,
             commands::sync_push_pending,
+            // 外部日历同步命令
+            commands::external_sync_start,
+            commands::external_sync_trigger,
+            commands::external_sync_stop,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

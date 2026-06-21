@@ -296,7 +296,8 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCalendarStore } from '../stores/calendar'
-import { formatDate, formatTime, isEventOnDay } from '../utils/date'
+import { usePlatform } from '@/platform/provider'
+import { formatDate, formatTime, isEventOnDay, startOfDay as startOfDayFn, endOfDay as endOfDayFn } from '../utils/date'
 import ContextMenu from '../components/common/ContextMenu.vue'
 import ConfirmPopover from '../components/common/ConfirmPopover.vue'
 import EventDetailModal from '../components/common/EventDetailModal.vue'
@@ -369,48 +370,55 @@ watch(() => route.query.date, (dateParam) => {
   }
 }, { immediate: true })
 
-// 筛选后的事件
+// 搜索词或日期范围变化时重新加载事件
+watch([searchQuery, startDate, endDate], () => {
+  loadScheduleEvents()
+}, { immediate: true })
+
+// 筛选后的事件（使用独立查询）
+const { eventRepo } = usePlatform()
+const scheduleEvents = ref<CalendarEvent[]>([])
+
+async function loadScheduleEvents() {
+  const visibleCalendarIds = calendarStore.visibleCalendars.map(c => c.id)
+  if (visibleCalendarIds.length === 0) {
+    scheduleEvents.value = []
+    return
+  }
+
+  if (searchQuery.value.trim()) {
+    scheduleEvents.value = await eventRepo.search(searchQuery.value, 100, visibleCalendarIds)
+    return
+  }
+
+  // 日期范围查询
+  if (startDate.value && endDate.value) {
+    const searchStart = new Date(startDate.value).getTime()
+    const searchEnd = new Date(endDate.value).getTime() + 86400000
+    scheduleEvents.value = await eventRepo.getByTimeRangeAndCalendars(searchStart, searchEnd, visibleCalendarIds)
+  } else if (startDate.value) {
+    const searchStart = new Date(startDate.value).getTime()
+    const searchEnd = searchStart + 365 * 86400000
+    scheduleEvents.value = await eventRepo.getByTimeRangeAndCalendars(searchStart, searchEnd, visibleCalendarIds)
+  } else if (endDate.value) {
+    const searchEnd = new Date(endDate.value).getTime() + 86400000
+    const searchStart = searchEnd - 365 * 86400000
+    scheduleEvents.value = await eventRepo.getByTimeRangeAndCalendars(searchStart, searchEnd, visibleCalendarIds)
+  } else {
+    // 无筛选条件时使用 Store 数据
+    scheduleEvents.value = calendarStore.eventsForCurrentView
+  }
+}
+
 const filteredEvents = computed(() => {
-  let events = calendarStore.events
+  let events = scheduleEvents.value
 
   // 按日历筛选
   if (selectedCalendars.value.length > 0) {
     events = events.filter(e => selectedCalendars.value.includes(e.calendarId))
   }
 
-  // 辅助函数：将日期字符串解析为本地时间的 startOfDay
-  function parseDateLocal(dateStr: string): Date {
-    const [year, month, day] = dateStr.split('-').map(Number)
-    return new Date(year, month - 1, day, 0, 0, 0, 0)
-  }
-
-  // 按日期范围筛选（时间交集匹配：事件与搜索范围有重叠即匹配）
-  if (startDate.value) {
-    const searchStart = parseDateLocal(startDate.value).getTime()
-    if (endDate.value) {
-      const searchEnd = parseDateLocal(endDate.value).getTime() + 86400000 // 包含结束日期当天
-      // 重叠条件：event.startTime < searchEnd && event.endTime > searchStart
-      events = events.filter(e => e.startTime < searchEnd && e.endTime > searchStart)
-    } else {
-      // 只有开始日期时，匹配 endTime > searchStart 的事件
-      events = events.filter(e => e.endTime > searchStart)
-    }
-  } else if (endDate.value) {
-    const searchEnd = parseDateLocal(endDate.value).getTime() + 86400000
-    // 只有结束日期时，匹配 startTime < searchEnd 的事件
-    events = events.filter(e => e.startTime < searchEnd)
-  }
-
-  // 按搜索词筛选
-  if (searchQuery.value.trim()) {
-    const query = searchQuery.value.toLowerCase()
-    events = events.filter(e =>
-      e.title.toLowerCase().includes(query) ||
-      (e.description && e.description.toLowerCase().includes(query))
-    )
-  }
-
-  // 按开始时间倒序排序（最新的在前）
+  // 按开始时间倒序排序
   return [...events].sort((a, b) => b.startTime - a.startTime)
 })
 

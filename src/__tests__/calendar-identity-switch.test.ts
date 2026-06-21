@@ -24,6 +24,7 @@ const capabilitiesMock = {
   hasMinimizeToTray: false,
   hasProxySettings: false,
   hasOAuthCallback: false,
+  hasExternalSync: true,
 }
 
 // ── Mock 函数 ──
@@ -47,6 +48,13 @@ vi.mock('@/platform/provider', () => ({
       getSyncStatus: vi.fn().mockResolvedValue({ status: 'idle', lastSyncAt: null, pendingChanges: 0 }),
       startAutoSync: vi.fn(),
       stopAutoSync: vi.fn(),
+      triggerExternalSync: vi.fn().mockResolvedValue(true),
+      startExternalSync: vi.fn().mockResolvedValue(true),
+      stopExternalSync: vi.fn().mockResolvedValue(true),
+      onExternalSyncComplete: vi.fn().mockResolvedValue(() => {}),
+      onSyncComplete: vi.fn().mockResolvedValue(() => {}),
+      onSyncError: vi.fn().mockResolvedValue(() => {}),
+      onAuthTokenExpired: vi.fn().mockResolvedValue(() => {}),
     },
     calendarRepo: {
       getAll: mockCalendarGetAll,
@@ -57,6 +65,10 @@ vi.mock('@/platform/provider', () => ({
     },
     eventRepo: {
       getAll: mockEventGetAll,
+      getByTimeRangeAndCalendars: vi.fn().mockResolvedValue([]),
+      getCount: vi.fn().mockResolvedValue(0),
+      getUpcoming: vi.fn().mockResolvedValue([]),
+      search: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       update: vi.fn(),
       delete: vi.fn(),
@@ -81,6 +93,12 @@ vi.mock('@/platform/provider', () => ({
 vi.mock('@/services/rsa', () => ({
   encryptPassword: vi.fn().mockResolvedValue('encrypted-password'),
   clearCachedPublicKey: vi.fn(),
+}))
+
+vi.mock('@/services/cloudSync', () => ({
+  cloudSyncService: {
+    triggerSync: mockTriggerCloudSync,
+  },
 }))
 
 describe('日历账户身份切换', () => {

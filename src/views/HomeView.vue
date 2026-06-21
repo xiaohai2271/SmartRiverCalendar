@@ -223,7 +223,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useCalendarStore } from '../stores/calendar'
 import { useTodoStore } from '../stores/todo'
-import { isSameDay, formatDateTime, formatDate } from '../utils/date'
+import { usePlatform } from '@/platform/provider'
+import { isSameDay, formatDateTime, formatDate, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '../utils/date'
 import type { CalendarEvent, Todo, MenuItem } from '../types'
 import TimeDisplay from '../components/home/TimeDisplay.vue'
 import ContextMenu from '../components/common/ContextMenu.vue'
@@ -233,6 +234,46 @@ import EventDetailModal from '../components/common/EventDetailModal.vue'
 
 const calendarStore = useCalendarStore()
 const todoStore = useTodoStore()
+const { eventRepo } = usePlatform()
+
+// 独立加载的事件数据（不依赖 Store 的 loadedRange）
+const homeTodayEvents = ref<CalendarEvent[]>([])
+const homeUpcomingEvents = ref<CalendarEvent[]>([])
+const homeWeekEventCount = ref(0)
+const homeMonthEventCount = ref(0)
+
+async function loadHomeEvents() {
+  const visibleCalendarIds = calendarStore.visibleCalendars.map(c => c.id)
+  if (visibleCalendarIds.length === 0) {
+    homeTodayEvents.value = []
+    homeUpcomingEvents.value = []
+    homeWeekEventCount.value = 0
+    homeMonthEventCount.value = 0
+    return
+  }
+  const now = new Date()
+  const todayStart = startOfDay(now).getTime()
+  const tomorrowStart = endOfDay(now).getTime()
+  const weekStart = startOfWeek(now).getTime()
+  const weekEnd = endOfWeek(now).getTime()
+  const monthStart = startOfMonth(now).getTime()
+  const monthEnd = endOfMonth(now).getTime()
+
+  try {
+    const [today, week, month, upcoming] = await Promise.all([
+      eventRepo.getByTimeRangeAndCalendars(todayStart, tomorrowStart, visibleCalendarIds),
+      eventRepo.getByTimeRangeAndCalendars(weekStart, weekEnd, visibleCalendarIds),
+      eventRepo.getByTimeRangeAndCalendars(monthStart, monthEnd, visibleCalendarIds),
+      eventRepo.getUpcoming(5, visibleCalendarIds),
+    ])
+    homeTodayEvents.value = today
+    homeWeekEventCount.value = week.length
+    homeMonthEventCount.value = month.length
+    homeUpcomingEvents.value = upcoming
+  } catch (error) {
+    console.error('[HomeView] 加载首页事件失败:', error)
+  }
+}
 
 // 右键菜单状态
 const contextMenuVisible = ref(false)
@@ -252,6 +293,7 @@ const eventDetailVisible = ref(false)
 
 onMounted(() => {
   todoStore.initialize()
+  loadHomeEvents()
 })
 
 const priorityLabels = {
@@ -261,34 +303,19 @@ const priorityLabels = {
 }
 
 const todayEvents = computed(() => {
-  const today = new Date()
-  return calendarStore.events.filter(e => isSameDay(new Date(e.startTime), today))
+  return homeTodayEvents.value
 })
 
 const weekEvents = computed(() => {
-  const now = new Date()
-  const weekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)
-  return calendarStore.events.filter(e => {
-    const eventDate = new Date(e.startTime)
-    return eventDate >= now && eventDate <= weekLater
-  }).length
+  return homeWeekEventCount.value
 })
 
 const monthEvents = computed(() => {
-  const now = new Date()
-  const monthLater = new Date(now.getFullYear(), now.getMonth() + 1, now.getDate())
-  return calendarStore.events.filter(e => {
-    const eventDate = new Date(e.startTime)
-    return eventDate >= now && eventDate <= monthLater
-  }).length
+  return homeMonthEventCount.value
 })
 
 const upcomingEvents = computed(() => {
-  const now = Date.now()
-  return calendarStore.events
-    .filter(e => e.startTime > now)
-    .sort((a, b) => a.startTime - b.startTime)
-    .slice(0, 5)
+  return homeUpcomingEvents.value
 })
 
 // 按截止日期排序的待办事项（未完成的，top 5）

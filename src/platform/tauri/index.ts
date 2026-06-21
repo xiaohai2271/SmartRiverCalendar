@@ -6,6 +6,7 @@ import { TauriTodoRepository } from './todo.repo'
 import { TauriSettingsRepository } from './settings.repo'
 import { TauriAuthRepository } from './auth.repo'
 import { TauriSyncRepository } from './sync.repo'
+import { TauriReminderRepository } from './reminder.repo'
 
 /** 创建 Tauri 平台 Provider */
 export function createTauriProvider(): PlatformProvider {
@@ -17,5 +18,6 @@ export function createTauriProvider(): PlatformProvider {
     settingsRepo: new TauriSettingsRepository(),
     authRepo: new TauriAuthRepository(),
     syncRepo: new TauriSyncRepository(),
+    reminderRepo: new TauriReminderRepository(),
   }
 }

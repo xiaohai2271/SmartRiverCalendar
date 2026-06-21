@@ -53,7 +53,12 @@ vi.mock('@/platform/provider', () => ({
     capabilities: mockCapabilities,
     authRepo: mockAuthRepo,
     calendarRepo: {},
-    eventRepo: {},
+    eventRepo: {
+      getByTimeRangeAndCalendars: vi.fn().mockResolvedValue([]),
+      getCount: vi.fn().mockResolvedValue(0),
+      getUpcoming: vi.fn().mockResolvedValue([]),
+      search: vi.fn().mockResolvedValue([]),
+    },
     todoRepo: {},
     settingsRepo: {},
     syncRepo: mockSyncRepo,

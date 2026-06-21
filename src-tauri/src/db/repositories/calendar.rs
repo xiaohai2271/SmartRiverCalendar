@@ -17,7 +17,7 @@ pub struct Calendar {
     pub name: String,
     /// 日历颜色（十六进制，如 "#FF5733"）
     pub color: String,
-    /// 日历类型：local、exchange、caldav
+    /// 日历类型：local、exchange、caldav、online
     #[serde(rename = "type")]
     pub type_: String,
     /// 关联的外部账户 ID
@@ -26,6 +26,8 @@ pub struct Calendar {
     pub visible: bool,
     /// 是否启用同步
     pub sync_enabled: bool,
+    /// 是否为只读日历
+    pub read_only: bool,
     /// 所属用户 ID
     pub user_id: Option<i64>,
     /// 软删除时间戳（毫秒），NULL 表示未删除
@@ -50,6 +52,8 @@ pub struct CreateCalendarRequest {
     pub visible: bool,
     #[serde(default)]
     pub sync_enabled: bool,
+    #[serde(default)]
+    pub read_only: bool,
     #[serde(default)]
     pub user_id: Option<i64>,
     #[serde(default)]
@@ -85,6 +89,7 @@ impl Calendar {
             account_id: row.get("account_id")?,
             visible: row.get::<_, i64>("visible")? != 0,
             sync_enabled: row.get::<_, i64>("sync_enabled")? != 0,
+            read_only: row.get::<_, i64>("read_only")? != 0,
             user_id: row.get("user_id")?,
             deleted_at: row.get("deleted_at")?,
             timezone: row.get("timezone")?,
@@ -103,7 +108,7 @@ pub struct CalendarRepository<'a> {
 
 /// 日历查询的列列表
 const CALENDAR_COLUMNS: &str = r#"
-    id, name, color, type, account_id, visible, sync_enabled,
+    id, name, color, type, account_id, visible, sync_enabled, read_only,
     user_id, deleted_at, timezone, created_at, updated_at
 "#;
 
@@ -135,8 +140,8 @@ impl<'a> CalendarRepository<'a> {
             };
             tx.execute(
                 r#"
-                INSERT INTO calendars (name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                INSERT INTO calendars (name, color, type, account_id, visible, sync_enabled, read_only, user_id, timezone, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
                 "#,
                 params![
                     req.name,
@@ -145,6 +150,7 @@ impl<'a> CalendarRepository<'a> {
                     account_id,
                     req.visible as i64,
                     req.sync_enabled as i64,
+                    req.read_only as i64,
                     req.user_id,
                     timezone,
                     now,
@@ -162,6 +168,7 @@ impl<'a> CalendarRepository<'a> {
                 account_id,
                 visible: req.visible,
                 sync_enabled: req.sync_enabled,
+                read_only: req.read_only,
                 user_id: req.user_id,
                 deleted_at: None,
                 timezone,
@@ -198,12 +205,13 @@ impl<'a> CalendarRepository<'a> {
             };
             tx.execute(
                 r#"
-                INSERT INTO calendars (id, name, color, type, account_id, visible, sync_enabled, user_id, timezone, created_at, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+                INSERT INTO calendars (id, name, color, type, account_id, visible, sync_enabled, read_only, user_id, timezone, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
                 ON CONFLICT(id) DO UPDATE SET
                     name=excluded.name, color=excluded.color, type=excluded.type,
                     account_id=excluded.account_id, visible=excluded.visible,
-                    sync_enabled=excluded.sync_enabled, user_id=excluded.user_id,
+                    sync_enabled=excluded.sync_enabled, read_only=excluded.read_only,
+                    user_id=excluded.user_id,
                     timezone=excluded.timezone, updated_at=excluded.updated_at,
                     deleted_at=NULL
                 "#,
@@ -215,6 +223,7 @@ impl<'a> CalendarRepository<'a> {
                     account_id,
                     req.visible as i64,
                     req.sync_enabled as i64,
+                    req.read_only as i64,
                     req.user_id,
                     timezone,
                     now,
@@ -222,8 +231,6 @@ impl<'a> CalendarRepository<'a> {
                 ],
             )?;
 
-            // 如果 INSERT OR IGNORE 忽略了插入，需要查询现有记录
-            // 如果成功插入，返回新记录
             let calendar = tx.query_row(
                 &format!("SELECT {CALENDAR_COLUMNS} FROM calendars WHERE id = ?1"),
                 params![id],
@@ -325,6 +332,7 @@ impl<'a> CalendarRepository<'a> {
                 account_id: existing.account_id,
                 visible,
                 sync_enabled,
+                read_only: existing.read_only,
                 user_id: existing.user_id,
                 deleted_at: existing.deleted_at,
                 timezone: existing.timezone,
@@ -463,6 +471,7 @@ impl<'a> CalendarRepository<'a> {
                 account_id: existing.account_id,
                 visible: existing.visible,
                 sync_enabled,
+                read_only: existing.read_only,
                 user_id: existing.user_id,
                 deleted_at: existing.deleted_at,
                 timezone: existing.timezone,

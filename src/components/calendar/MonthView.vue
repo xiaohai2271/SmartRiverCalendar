@@ -136,7 +136,7 @@ const settings = computed(() => settingsStore.settings)
 
 // 事件泳道映射（用于多天事件排序）
 const eventLanes = computed(() => {
-  return computeEventLanes(calendarStore.events, currentDate.value)
+  return computeEventLanes(calendarStore.eventsForCurrentView, currentDate.value)
 })
 
 // 事件显示模式
@@ -220,7 +220,7 @@ function shouldShowFestival(day: Date): boolean {
 }
 
 function getEventsForDay(day: Date): CalendarEvent[] {
-  const events = calendarStore.events.filter(event => {
+  const events = calendarStore.eventsForCurrentView.filter(event => {
     return isEventOnDay(event, day)
   })
   const lanes = eventLanes.value
