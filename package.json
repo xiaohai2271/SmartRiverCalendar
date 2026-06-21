@@ -12,7 +12,8 @@
     "tauri:build": "tauri build",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "e2e": "npx playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
     "@fluentui/web-components": "^2.6.1",
