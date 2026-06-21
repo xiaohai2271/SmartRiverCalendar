@@ -9,7 +9,7 @@ export const config: Options.Testrunner = {
       esModule: true,
     },
   },
-  specs: ['./e2e/tauri/**/*.spec.ts'],
+  specs: ['./tauri/**/*.spec.ts'],
   exclude: [],
   maxInstances: 1,
   capabilities: [
@@ -17,7 +17,7 @@ export const config: Options.Testrunner = {
       maxInstances: 1,
       browserName: 'custom',
       'tauri:options': {
-        application: '../../src-tauri/target/release/smart-river-calendar.exe',
+        application: '../src-tauri/target/release/smart-river-calendar.exe',
       },
     },
   ],

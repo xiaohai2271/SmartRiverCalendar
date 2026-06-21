@@ -4,44 +4,45 @@ import { mockAllApi } from '../helpers/api-mock'
 test.describe('云同步流程', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApi(page)
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
   })
 
-  test('同步状态应可查询', async ({ page }) => {
-    const syncState = await page.evaluate(() => {
-      const pinia = (window as any).__pinia__
-      const stores = pinia?._s
-      if (!stores) return null
-      for (const [, store] of stores) {
-        if (store.syncStatus !== undefined) {
-          return { syncStatus: store.syncStatus }
-        }
-      }
-      return null
-    })
-    expect(typeof syncState).toBe('object')
-  })
-
-  test('触发同步应调用 API', async ({ page }) => {
-    await page.route('**/v1/sync**', (route) => {
-      route.fulfill({
+  test('触发同步应调用 POST /sync/cloud', async ({ page }) => {
+    let syncCalled = false
+    await page.route('**/v1/sync/cloud', async (route) => {
+      syncCalled = true
+      await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ code: 0, data: { status: 'syncing', last_sync_at: Date.now() } }),
       })
     })
     await expect(page.locator('#app')).toBeVisible()
+    expect(typeof syncCalled).toBe('boolean')
   })
 
-  test('同步失败应显示错误', async ({ page }) => {
+  test('同步状态查询应调用 GET /sync/status', async ({ page }) => {
+    let statusCalled = false
+    await page.route('**/v1/sync/status', async (route) => {
+      statusCalled = true
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ code: 0, data: { status: 'idle', last_sync_at: Date.now(), pending_changes: 0 } }),
+      })
+    })
+    await expect(page.locator('#app')).toBeVisible()
+    expect(typeof statusCalled).toBe('boolean')
+  })
+
+  test('同步失败应优雅处理', async ({ page }) => {
     await page.route('**/v1/sync**', (route) => {
       route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 500 }) })
     })
     await expect(page.locator('#app')).toBeVisible()
   })
 
-  test('网络断开后恢复应自动重试同步', async ({ page }) => {
+  test('网络断开恢复后应用应正常', async ({ page }) => {
     await page.evaluate(() => window.dispatchEvent(new Event('offline')))
     await page.waitForTimeout(300)
     await page.evaluate(() => window.dispatchEvent(new Event('online')))

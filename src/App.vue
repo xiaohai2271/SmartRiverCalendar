@@ -11,7 +11,7 @@
 
   <div class="app-container">
     <!-- Sidebar - Fluent Design -->
-    <aside class="sidebar fluent-card">
+    <aside class="sidebar fluent-card" data-testid="sidebar">
       <div class="logo">
         <div class="logo-icon">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
@@ -25,7 +25,7 @@
       </div>
 
       <nav class="nav-menu">
-        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
+        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }" data-testid="nav-home">
           <span class="nav-icon">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M2.75 9.5L10 3.25L17.25 9.5V15.75C17.25 16.3 16.8 16.75 16.25 16.75H12.75V12.75C12.75 12.2 12.3 11.75 11.75 11.75H8.25C7.7 11.75 7.25 12.2 7.25 12.75V16.75H3.75C3.2 16.75 2.75 16.3 2.75 15.75V9.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -33,7 +33,7 @@
           </span>
           <span>首页</span>
         </router-link>
-        <router-link to="/calendar" class="nav-item" :class="{ active: $route.path === '/calendar' }">
+        <router-link to="/calendar" class="nav-item" :class="{ active: $route.path === '/calendar' }" data-testid="nav-calendar">
           <span class="nav-icon">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <rect x="2.75" y="4.25" width="14.5" height="13" rx="2.5" stroke="currentColor" stroke-width="1.5"/>
@@ -48,7 +48,7 @@
           </span>
           <span>日历</span>
         </router-link>
-        <router-link to="/todos" class="nav-item" :class="{ active: $route.path === '/todos' }">
+        <router-link to="/todos" class="nav-item" :class="{ active: $route.path === '/todos' }" data-testid="nav-todos">
           <span class="nav-icon">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <rect x="2.75" y="2.75" width="14.5" height="14.5" rx="2.5" stroke="currentColor" stroke-width="1.5"/>
@@ -57,7 +57,7 @@
           </span>
           <span>待办</span>
         </router-link>
-        <router-link to="/schedules" class="nav-item" :class="{ active: $route.path === '/schedules' }">
+        <router-link to="/schedules" class="nav-item" :class="{ active: $route.path === '/schedules' }" data-testid="nav-schedules">
           <span class="nav-icon">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M3.25 4.75H16.75M3.25 9.75H16.75M3.25 14.75H11.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
@@ -68,7 +68,7 @@
           </span>
           <span>日程</span>
         </router-link>
-        <router-link to="/profile" class="nav-item" :class="{ active: $route.path === '/profile' }">
+        <router-link to="/profile" class="nav-item" :class="{ active: $route.path === '/profile' }" data-testid="nav-profile">
           <span class="nav-icon">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <path d="M10 9.75C12.0711 9.75 13.75 8.07107 13.75 6C13.75 3.92893 12.0711 2.25 10 2.25C7.92893 2.25 6.25 3.92893 6.25 6C6.25 8.07107 7.92893 9.75 10 9.75Z" stroke="currentColor" stroke-width="1.5"/>
@@ -77,7 +77,7 @@
           </span>
           <span>我的</span>
         </router-link>
-        <router-link to="/settings" class="nav-item" :class="{ active: $route.path === '/settings' }">
+        <router-link to="/settings" class="nav-item" :class="{ active: $route.path === '/settings' }" data-testid="nav-settings">
           <span class="nav-icon">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <circle cx="10" cy="10" r="2.75" stroke="currentColor" stroke-width="1.5"/>

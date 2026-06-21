@@ -18,8 +18,8 @@
 
       <!-- 用户基本信息 -->
       <div class="user-info">
-        <h3 class="username">{{ user?.displayName || '未知用户' }}</h3>
-        <p class="email">{{ user?.email || '未设置邮箱' }}</p>
+        <h3 class="username" data-testid="user-display-name">{{ user?.displayName || '未知用户' }}</h3>
+        <p class="email" data-testid="user-email">{{ user?.email || '未设置邮箱' }}</p>
         <p class="user-id-text">ID: {{ user?.id.slice(0, 8) || '-' }}</p>
         <div class="provider-badge">
           <span class="provider-icon">

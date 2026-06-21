@@ -4,62 +4,59 @@ import { mockAllApi } from '../helpers/api-mock'
 test.describe('视图切换导航', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApi(page)
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
   })
 
-  test('应能导航到日历页', async ({ page }) => {
-    const calendarLink = page.locator('a[href="/calendar"], [data-testid="nav-calendar"]')
-    if (await calendarLink.isVisible().catch(() => false)) {
-      await calendarLink.click()
-      await page.waitForURL('**/calendar')
-      expect(page.url()).toContain('/calendar')
-    }
+  test('侧边栏应显示所有导航链接', async ({ page }) => {
+    await expect(page.getByTestId('sidebar')).toBeVisible()
+    await expect(page.getByTestId('nav-home')).toBeVisible()
+    await expect(page.getByTestId('nav-calendar')).toBeVisible()
+    await expect(page.getByTestId('nav-todos')).toBeVisible()
+    await expect(page.getByTestId('nav-settings')).toBeVisible()
   })
 
-  test('应能导航到待办页', async ({ page }) => {
-    const todosLink = page.locator('a[href="/todos"], [data-testid="nav-todos"]')
-    if (await todosLink.isVisible().catch(() => false)) {
-      await todosLink.click()
-      await page.waitForURL('**/todos')
-      expect(page.url()).toContain('/todos')
-    }
+  test('点击日历导航应跳转到 /calendar', async ({ page }) => {
+    await page.getByTestId('nav-calendar').click()
+    await page.waitForURL('**/calendar')
+    expect(page.url()).toContain('/calendar')
   })
 
-  test('应能导航到日程页', async ({ page }) => {
-    const schedulesLink = page.locator('a[href="/schedules"], [data-testid="nav-schedules"]')
-    if (await schedulesLink.isVisible().catch(() => false)) {
-      await schedulesLink.click()
+  test('点击待办导航应跳转到 /todos', async ({ page }) => {
+    await page.getByTestId('nav-todos').click()
+    await page.waitForURL('**/todos')
+    expect(page.url()).toContain('/todos')
+  })
+
+  test('点击日程导航应跳转到 /schedules', async ({ page }) => {
+    await page.getByTestId('nav-schedules')?.click?.()
+    if (await page.getByTestId('nav-schedules').isVisible().catch(() => false)) {
+      await page.getByTestId('nav-schedules').click()
       await page.waitForURL('**/schedules')
       expect(page.url()).toContain('/schedules')
     }
   })
 
-  test('应能导航到设置页', async ({ page }) => {
-    const settingsLink = page.locator('a[href="/settings"], [data-testid="nav-settings"]')
-    if (await settingsLink.isVisible().catch(() => false)) {
-      await settingsLink.click()
-      await page.waitForURL('**/settings')
-      expect(page.url()).toContain('/settings')
-    }
+  test('点击设置导航应跳转到 /settings', async ({ page }) => {
+    await page.getByTestId('nav-settings').click()
+    await page.waitForURL('**/settings')
+    expect(page.url()).toContain('/settings')
   })
 
   test('直接访问路由应正确渲染', async ({ page }) => {
     const routes = ['/calendar', '/todos', '/schedules', '/settings', '/about']
     for (const route of routes) {
-      await page.goto(route)
-      await page.waitForLoadState('domcontentloaded')
+      await page.goto(route, { waitUntil: 'domcontentloaded' })
       await expect(page.locator('#app')).toBeVisible()
     }
   })
 
   test('浏览器后退应正常工作', async ({ page }) => {
-    await page.goto('/calendar', { waitUntil: 'domcontentloaded' })
+    await page.getByTestId('nav-calendar').click()
     await page.waitForURL('**/calendar')
-    await page.goto('/todos', { waitUntil: 'domcontentloaded' })
+    await page.getByTestId('nav-todos').click()
     await page.waitForURL('**/todos')
     await page.goBack()
-    await page.waitForURL(/\/(calendar)?$/).catch(() => {})
-    await expect(page.locator('#app')).toBeVisible()
+    await page.waitForLoadState('domcontentloaded')
+    expect(page.url()).toContain('/calendar')
   })
 })

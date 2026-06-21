@@ -3,20 +3,20 @@
     <!-- Header -->
     <div class="calendar-header">
       <div class="header-left">
-        <button class="fluent-button today-btn" @click="calendarStore.goToToday()">今天</button>
+        <button class="fluent-button today-btn" data-testid="btn-today" @click="calendarStore.goToToday()">今天</button>
         <div class="nav-buttons">
-          <button class="nav-btn" @click="calendarStore.prev()" aria-label="前一个月">
+          <button class="nav-btn" data-testid="btn-prev" @click="calendarStore.prev()" aria-label="前一个月">
             <svg class="chevron-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="15 18 9 12 15 6"/>
             </svg>
           </button>
-          <button class="nav-btn" @click="calendarStore.next()" aria-label="后一个月">
+          <button class="nav-btn" data-testid="btn-next" @click="calendarStore.next()" aria-label="后一个月">
             <svg class="chevron-svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="9 18 15 12 9 6"/>
             </svg>
           </button>
         </div>
-        <h2 class="current-date">{{ formattedDate }}</h2>
+        <h2 class="current-date" data-testid="current-date-label">{{ formattedDate }}</h2>
       </div>
 
       <div class="header-right">
@@ -25,6 +25,7 @@
             v-for="view in views"
             :key="view.value"
             :class="['view-btn', { active: calendarStore.currentView === view.value }]"
+            data-testid="view-btn"
             @click="calendarStore.setView(view.value)"
           >
             {{ view.label }}
@@ -42,7 +43,7 @@
     </div>
 
     <!-- Add Event Button - Aurora Glowing Floating Button -->
-    <button class="add-event-btn" @click="openAddEventModal" aria-label="新建事件">
+    <button class="add-event-btn" data-testid="btn-add-event" @click="openAddEventModal" aria-label="新建事件">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
         <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
@@ -51,7 +52,7 @@
     <!-- Event Modal -->
     <Transition name="modal">
       <div v-if="showEventModal" class="modal-overlay" @click.self="closeEventModal">
-        <div class="event-modal elegant-modal-card" @keydown.escape="closeEventModal">
+        <div class="event-modal elegant-modal-card" data-testid="event-modal" @keydown.escape="closeEventModal">
           <div class="modal-header">
             <h3>{{ isEditingEvent ? '编辑事件' : '新建事件' }}</h3>
             <button class="close-btn" @click="closeEventModal" type="button">
@@ -69,6 +70,7 @@
                   v-model="eventFormData.title"
                   type="text"
                   class="zero-border-title-input"
+                  data-testid="event-title-input"
                   placeholder="准备做点什么..."
                   required
                   ref="eventTitleInput"
@@ -92,7 +94,7 @@
                 <div class="meta-row-content flex-column-gap">
                   <div class="quick-settings-row">
                     <label class="toggle-wrapper">
-                      <input v-model="eventFormData.allDay" type="checkbox" class="toggle-input" />
+                      <input v-model="eventFormData.allDay" type="checkbox" class="toggle-input" data-testid="event-allday-toggle" />
                       <span class="toggle-slider"></span>
                     </label>
                     <div class="vertical-divider"></div>
@@ -221,6 +223,7 @@
                     v-model="eventFormData.description"
                     type="text"
                     class="fluent-borderless-description-input"
+                    data-testid="event-description-input"
                     placeholder="添加详细描述或地址..."
                   />
                 </div>
@@ -230,14 +233,14 @@
 
             <!-- Actions -->
             <div class="modal-actions">
-              <button v-if="isEditingEvent" type="button" class="fluent-button cancel-text-btn danger-text-btn" @click="handleDeleteEvent">
+              <button v-if="isEditingEvent" type="button" class="fluent-button cancel-text-btn danger-text-btn" data-testid="event-delete-btn" @click="handleDeleteEvent">
                 删除事件
               </button>
               <div class="actions-right" :style="{ marginLeft: isEditingEvent ? '0' : 'auto' }">
-                <button type="button" class="fluent-button cancel-text-btn" @click="closeEventModal">
+                <button type="button" class="fluent-button cancel-text-btn" data-testid="event-cancel-btn" @click="closeEventModal">
                   取消
                 </button>
-                <button type="submit" class="fluent-button primary action-submit-btn" :disabled="!eventFormData.title.trim()">
+                <button type="submit" class="fluent-button primary action-submit-btn" data-testid="event-submit-btn" :disabled="!eventFormData.title.trim()">
                   {{ isEditingEvent ? '保存' : '创建' }}
                 </button>
               </div>

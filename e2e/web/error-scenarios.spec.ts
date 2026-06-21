@@ -6,8 +6,7 @@ test.describe('错误场景', () => {
     await page.route('**/v1/**', (route) => {
       route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ code: 500 }) })
     })
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
     await expect(page.locator('#app')).toBeVisible()
   })
 
@@ -15,22 +14,19 @@ test.describe('错误场景', () => {
     await page.route('**/v1/**', (route) => {
       route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ code: 401 }) })
     })
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/', { waitUntil: 'domcontentloaded' })
     await expect(page.locator('#app')).toBeVisible()
   })
 
   test('网络完全中断应不崩溃', async ({ page }) => {
     await mockNetworkError(page)
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded').catch(() => {})
+    await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {})
     await expect(page.locator('#app')).toBeVisible()
   })
 
   test('无效路由应显示页面而非空白', async ({ page }) => {
     await mockAllApi(page)
-    await page.goto('/nonexistent-route')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/nonexistent-route', { waitUntil: 'domcontentloaded' })
     await expect(page.locator('#app')).toBeVisible()
   })
 
@@ -38,8 +34,7 @@ test.describe('错误场景', () => {
     await page.route('**/v1/**', (route) => {
       route.fulfill({ status: 200, contentType: 'application/json', body: 'invalid json{{{`' })
     })
-    await page.goto('/')
-    await page.waitForLoadState('domcontentloaded').catch(() => {})
+    await page.goto('/', { waitUntil: 'domcontentloaded' }).catch(() => {})
     await expect(page.locator('#app')).toBeVisible()
   })
 })

@@ -17,7 +17,7 @@
           <span class="item-desc">选择契合您喜好的应用配色主题，支持跟随系统自适应</span>
         </div>
         <div class="item-control">
-          <select :value="settingsStore.settings.theme" @change="handleThemeChange" class="fluent-select">
+          <select :value="settingsStore.settings.theme" @change="handleThemeChange" class="fluent-select" data-testid="theme-select">
             <option value="light">浅色模式</option>
             <option value="dark">深色模式</option>
             <option value="auto">跟随系统</option>
@@ -44,7 +44,7 @@
           <span class="item-desc">在日历格中显示传统的农历日期</span>
         </div>
         <label class="toggle-wrapper">
-          <input type="checkbox" v-model="settings.showLunar" @change="saveSettings" class="toggle-input" />
+          <input type="checkbox" v-model="settings.showLunar" @change="saveSettings" class="toggle-input" data-testid="toggle-show-lunar" />
           <span class="toggle-slider"></span>
         </label>
       </div>

@@ -4,38 +4,27 @@ import { mockAllApi } from '../helpers/api-mock'
 test.describe('设置管理', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApi(page)
-    await page.goto('/settings')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/settings', { waitUntil: 'domcontentloaded' })
   })
 
-  test('应显示设置页面', async ({ page }) => {
-    await expect(page.locator('#app')).toBeVisible()
+  test('应显示设置页面和标签页', async ({ page }) => {
+    await expect(page.getByTestId('settings-tab').first()).toBeVisible()
   })
 
-  test('设置项应可交互', async ({ page }) => {
-    const themeToggle = page.locator('[data-testid="theme-toggle"], select[name="theme"], button:has-text("主题")')
-    if (await themeToggle.isVisible().catch(() => false)) {
-      await themeToggle.click()
+  test('点击显示标签应展示设置内容', async ({ page }) => {
+    const displayTab = page.locator('[data-testid="settings-tab"][data-tab-key="display"]')
+    if (await displayTab.isVisible().catch(() => false)) {
+      await displayTab.click()
+      await page.waitForTimeout(300)
     }
     await expect(page.locator('#app')).toBeVisible()
   })
 
-  test('日历显示设置应可修改', async ({ page }) => {
-    const lunarToggle = page.locator('[data-testid="show-lunar"], input[name="showLunar"]')
-    if (await lunarToggle.isVisible().catch(() => false)) {
-      await lunarToggle.click()
-    }
-    await expect(page.locator('#app')).toBeVisible()
-  })
-
-  test('Web 端不应显示桌面专属设置', async ({ page }) => {
-    const desktopOnlyElements = page.locator(
-      '[data-testid="auto-start"], [data-testid="clock-hook"], [data-testid="system-tray"], [data-testid="proxy-settings"]'
-    )
-    const count = await desktopOnlyElements.count()
-    for (let i = 0; i < count; i++) {
-      const visible = await desktopOnlyElements.nth(i).isVisible().catch(() => false)
-      expect(visible).toBe(false)
+  test('Web 端不应显示桌面专属设置项', async ({ page }) => {
+    const desktopTestIds = ['auto-start', 'clock-hook', 'system-tray', 'proxy-settings']
+    for (const testId of desktopTestIds) {
+      const count = await page.getByTestId(testId).count()
+      expect(count).toBe(0)
     }
   })
 })

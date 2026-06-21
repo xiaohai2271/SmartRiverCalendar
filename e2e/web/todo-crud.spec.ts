@@ -4,68 +4,133 @@ import { mockAllApi } from '../helpers/api-mock'
 test.describe('待办 CRUD', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApi(page)
-    await page.goto('/todos')
-    await page.waitForLoadState('domcontentloaded')
+    await page.goto('/todos', { waitUntil: 'domcontentloaded' })
   })
 
-  test('应显示待办页面', async ({ page }) => {
-    await expect(page.locator('#app')).toBeVisible()
+  test('应显示待办页面和新增按钮', async ({ page }) => {
+    await expect(page.getByTestId('btn-add-todo')).toBeVisible()
   })
 
-  test('应能创建新待办', async ({ page }) => {
-    await page.route('**/v1/todos**', (route) => {
+  test('创建待办应调用 POST /todos 并在列表中显示', async ({ page }) => {
+    let postCalled = false
+    let postPayload: any = null
+    const newTodoTitle = `E2E测试待办_${Date.now()}`
+
+    await page.route('**/v1/todos**', async (route) => {
       if (route.request().method() === 'POST') {
-        const body = route.request().postDataJSON()
-        route.fulfill({
+        postCalled = true
+        postPayload = route.request().postDataJSON()
+        await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({ code: 0, data: { id: `todo-${Date.now()}`, ...body } }),
+          body: JSON.stringify({
+            code: 0,
+            data: {
+              id: `todo-${Date.now()}`,
+              title: postPayload?.title ?? newTodoTitle,
+              completed: false,
+              priority: postPayload?.priority ?? 'medium',
+              calendar_id: postPayload?.calendar_id ?? 1,
+              created_at: Date.now(),
+              updated_at: Date.now(),
+            },
+          }),
+        })
+      } else if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            data: [
+              { id: `todo-${Date.now()}`, title: newTodoTitle, completed: false, priority: 'medium', calendar_id: 1 },
+            ],
+          }),
         })
       } else {
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 0, data: [] }),
-        })
+        await route.continue()
       }
     })
 
-    const addBtn = page.locator('[data-testid="add-todo"], button:has-text("添加"), button:has-text("新建")')
-    if (await addBtn.isVisible().catch(() => false)) {
-      await addBtn.click()
-      const titleInput = page.locator('input[placeholder*="待办"], input[placeholder*="标题"], input[name="title"]')
-      if (await titleInput.isVisible().catch(() => false)) {
-        await titleInput.fill('E2E 测试待办')
-      }
-    }
-    await expect(page.locator('#app')).toBeVisible()
+    await page.getByTestId('btn-add-todo').click()
+    await expect(page.getByTestId('todo-modal')).toBeVisible()
+    await page.getByTestId('todo-title-input').fill(newTodoTitle)
+    await page.getByTestId('todo-submit-btn').click()
+
+    await page.waitForTimeout(1000)
+
+    expect(postCalled).toBe(true)
+    expect(postPayload?.title).toBe(newTodoTitle)
   })
 
-  test('应能完成待办', async ({ page }) => {
-    await page.route('**/v1/todos/*', (route) => {
+  test('取消创建待办应关闭弹窗且不调用 API', async ({ page }) => {
+    let postCalled = false
+    await page.route('**/v1/todos**', async (route) => {
+      if (route.request().method() === 'POST') {
+        postCalled = true
+      }
+      await route.continue()
+    })
+
+    await page.getByTestId('btn-add-todo').click()
+    await expect(page.getByTestId('todo-modal')).toBeVisible()
+    await page.getByTestId('todo-cancel-btn').click()
+
+    await page.waitForTimeout(500)
+    expect(postCalled).toBe(false)
+  })
+
+  test('完成待办应调用 PUT /todos/:id', async ({ page }) => {
+    let putCalled = false
+    let putPayload: any = null
+
+    await page.route('**/v1/todos/*', async (route) => {
       if (route.request().method() === 'PUT') {
-        const body = route.request().postDataJSON()
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: body }) })
+        putCalled = true
+        putPayload = route.request().postDataJSON()
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 0,
+            data: { ...putPayload, completed: true },
+          }),
+        })
       } else {
-        route.continue()
+        await route.continue()
       }
     })
 
-    const checkbox = page.locator('.todo-checkbox, [data-testid="todo-complete"], input[type="checkbox"]').first()
+    const checkbox = page.getByTestId('todo-checkbox').first()
     if (await checkbox.isVisible().catch(() => false)) {
       await checkbox.click()
+      await page.waitForTimeout(1000)
+      expect(putCalled).toBe(true)
+      expect(putPayload?.completed).toBe(true)
+    } else {
+      test.skip()
     }
-    await expect(page.locator('#app')).toBeVisible()
   })
 
-  test('应能删除待办', async ({ page }) => {
-    await page.route('**/v1/todos/*', (route) => {
+  test('删除待办应调用 DELETE /todos/:id', async ({ page }) => {
+    let deleteCalled = false
+
+    await page.route('**/v1/todos/*', async (route) => {
       if (route.request().method() === 'DELETE') {
-        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0 }) })
+        deleteCalled = true
+        await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0 }) })
       } else {
-        route.continue()
+        await route.continue()
       }
     })
-    await expect(page.locator('#app')).toBeVisible()
+
+    const deleteBtn = page.getByTestId('btn-delete-todo').first()
+    if (await deleteBtn.isVisible().catch(() => false)) {
+      await deleteBtn.click()
+      await page.waitForTimeout(1000)
+      expect(deleteCalled).toBe(true)
+    } else {
+      test.skip()
+    }
   })
 })
