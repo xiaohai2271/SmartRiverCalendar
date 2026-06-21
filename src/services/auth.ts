@@ -22,33 +22,23 @@ export class AuthService {
    * 用户登录
    * @param username 用户名（邮箱）
    * @param password 密码
-   * @returns 认证响应和用户信息，或 null
+   * @returns 认证响应和用户信息，失败抛出 RepositoryError
    */
-  async login(username: string, password: string): Promise<{ authResponse: AuthResponse; user: User | null } | null> {
-    // 使用 RSA 加密密码
+  async login(username: string, password: string): Promise<{ authResponse: AuthResponse; user: User | null }> {
     const encryptedPassword = await encryptPassword(password)
-    if (!encryptedPassword) {
-      console.error('[AuthService] 密码加密失败，无法登录')
-      return null
-    }
 
     const { authRepo } = usePlatform()
     const result = await authRepo.login(username, encryptedPassword)
 
-    if (result) {
-      const authResponse: AuthResponse = {
-        userId: result.userId,
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
-        expiresIn: result.expiresIn
-      }
-      // 获取用户信息（仅调用一次，避免重复请求）
-      const user = await this.getCurrentUser()
-      this.triggerAuthChange(true, user)
-      return { authResponse, user }
+    const authResponse: AuthResponse = {
+      userId: result.userId,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
     }
-
-    return null
+    const user = await this.getCurrentUser()
+    this.triggerAuthChange(true, user)
+    return { authResponse, user }
   }
 
   /**
@@ -56,32 +46,23 @@ export class AuthService {
    * @param username 用户名
    * @param email 邮箱
    * @param password 密码
-   * @returns 认证响应和用户信息，或 null
+   * @returns 认证响应和用户信息，失败抛出 RepositoryError
    */
-  async register(username: string, email: string, password: string): Promise<{ authResponse: AuthResponse; user: User | null } | null> {
-    // 使用 RSA 加密密码
+  async register(username: string, email: string, password: string): Promise<{ authResponse: AuthResponse; user: User | null }> {
     const encryptedPassword = await encryptPassword(password)
-    if (!encryptedPassword) {
-      console.error('[AuthService] 密码加密失败，无法注册')
-      return null
-    }
 
     const { authRepo } = usePlatform()
     const result = await authRepo.register(email, encryptedPassword, username)
 
-    if (result) {
-      const authResponse: AuthResponse = {
-        userId: result.userId,
-        accessToken: result.accessToken,
-        refreshToken: result.refreshToken,
-        expiresIn: result.expiresIn
-      }
-      const user = await this.getCurrentUser()
-      this.triggerAuthChange(true, user)
-      return { authResponse, user }
+    const authResponse: AuthResponse = {
+      userId: result.userId,
+      accessToken: result.accessToken,
+      refreshToken: result.refreshToken,
+      expiresIn: result.expiresIn,
     }
-
-    return null
+    const user = await this.getCurrentUser()
+    this.triggerAuthChange(true, user)
+    return { authResponse, user }
   }
 
   /**
@@ -172,18 +153,18 @@ export class AuthService {
 
   /**
    * 获取当前用户信息
-   * @returns 用户信息或 null
+   * @returns 用户信息，未登录抛出 RepositoryError
    */
-  async getCurrentUser(): Promise<User | null> {
+  async getCurrentUser(): Promise<User> {
     const { authRepo } = usePlatform()
     return authRepo.getCurrentUser()
   }
 
   /**
    * 获取 RSA 公钥
-   * @returns 公钥字符串或 null
+   * @returns 公钥字符串，失败抛出 RepositoryError
    */
-  async getPublicKey(): Promise<string | null> {
+  async getPublicKey(): Promise<string> {
     const { authRepo } = usePlatform()
     return authRepo.getPublicKey()
   }

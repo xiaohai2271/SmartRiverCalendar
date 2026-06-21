@@ -8,6 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 // ===== Mock 依赖 =====
 
@@ -169,7 +170,13 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('登录失败保持未登录状态', async () => {
-      mockAuthRepo.login.mockResolvedValueOnce(null)
+      mockAuthRepo.login.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.VALIDATION_ERROR,
+          message: '登录失败：无效的认证响应',
+          platform: 'tauri',
+        })
+      )
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()

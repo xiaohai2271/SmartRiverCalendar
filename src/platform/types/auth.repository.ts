@@ -17,17 +17,17 @@ export type SsoEvent =
   | { type: 'login'; userId: number }
 
 export interface IAuthRepository {
-  /** 登录 */
-  login(email: string, encryptedPassword: string): Promise<AuthResult | null>
+  /** 登录，失败抛出 RepositoryError */
+  login(email: string, encryptedPassword: string): Promise<AuthResult>
 
-  /** 注册 */
-  register(email: string, encryptedPassword: string, displayName: string): Promise<AuthResult | null>
+  /** 注册，失败抛出 RepositoryError */
+  register(email: string, encryptedPassword: string, displayName: string): Promise<AuthResult>
 
   /** 登出 */
   logout(): Promise<void>
 
-  /** 获取当前用户资料 */
-  getCurrentUser(): Promise<User | null>
+  /** 获取当前用户资料，未登录抛出 NOT_FOUND */
+  getCurrentUser(): Promise<User>
 
   /** 检查认证状态 */
   checkAuthStatus(): Promise<boolean>
@@ -35,8 +35,8 @@ export interface IAuthRepository {
   /** 刷新访问令牌 */
   refreshToken(): Promise<boolean>
 
-  /** 获取 RSA 公钥 */
-  getPublicKey(): Promise<string | null>
+  /** 获取 RSA 公钥，失败抛出 RepositoryError */
+  getPublicKey(): Promise<string>
 
   /** 检测 SSO 会话状态（Web 端使用 cookie 检测，桌面端返回 loggedIn: false） */
   detectSsoSession(): Promise<SsoSessionResult>

@@ -10,7 +10,7 @@ export class WebAuthRepository implements IAuthRepository {
 
   constructor(private readonly apiClient: WebApiClient) {}
 
-  async login(email: string, encryptedPassword: string): Promise<AuthResult | null> {
+  async login(email: string, encryptedPassword: string): Promise<AuthResult> {
     const data = await this.apiClient.post<
       ApiResponse<{ user_id: number; access_token: string; refresh_token: string; expires_in: number }>
     >('/auth/login', { email, password: encryptedPassword })
@@ -25,10 +25,14 @@ export class WebAuthRepository implements IAuthRepository {
       }
     }
 
-    return null
+    throw new RepositoryError({
+      code: RepoErrorCodes.VALIDATION_ERROR,
+      message: `登录失败：${data.message ?? '无效的认证响应'}`,
+      platform: this.platform,
+    })
   }
 
-  async register(email: string, encryptedPassword: string, displayName: string): Promise<AuthResult | null> {
+  async register(email: string, encryptedPassword: string, displayName: string): Promise<AuthResult> {
     const data = await this.apiClient.post<
       ApiResponse<{ user_id: number; access_token: string; refresh_token: string; expires_in: number }>
     >('/auth/register', { email, password: encryptedPassword, display_name: displayName })
@@ -43,7 +47,11 @@ export class WebAuthRepository implements IAuthRepository {
       }
     }
 
-    return null
+    throw new RepositoryError({
+      code: RepoErrorCodes.VALIDATION_ERROR,
+      message: `注册失败：${data.message ?? '无效的认证响应'}`,
+      platform: this.platform,
+    })
   }
 
   async logout(): Promise<void> {
@@ -54,25 +62,29 @@ export class WebAuthRepository implements IAuthRepository {
     }
   }
 
-  async getCurrentUser(): Promise<User | null> {
-    try {
-      const data = await this.apiClient.get<ApiResponse<WebUserProfile>>('/user/profile')
-      if (data.code === 0 && data.data) {
-        return transformWebUser(data.data)
-      }
-      return null
-    } catch {
-      return null
+  async getCurrentUser(): Promise<User> {
+    const data = await this.apiClient.get<ApiResponse<WebUserProfile>>('/user/profile')
+    if (data.code === 0 && data.data) {
+      return transformWebUser(data.data)
     }
+    throw new RepositoryError({
+      code: RepoErrorCodes.NOT_FOUND,
+      message: '未找到当前用户',
+      platform: this.platform,
+    })
   }
 
   async checkAuthStatus(): Promise<boolean> {
     try {
-      // 使用 /user/profile 判断认证状态，/auth/check-status 端点不存在
       const data = await this.apiClient.get<ApiResponse<WebUserProfile>>('/user/profile')
       return data.code === 0 && data.data !== null
-    } catch {
-      return false
+    } catch (error) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: '认证状态检查失败',
+        platform: this.platform,
+        cause: error,
+      })
     }
   }
 
@@ -92,13 +104,19 @@ export class WebAuthRepository implements IAuthRepository {
     }
   }
 
-  async getPublicKey(): Promise<string | null> {
-    try {
-      const data = await this.apiClient.get<ApiResponse<{ public_key: string }>>('/auth/public-key')
-      return data?.data?.public_key ?? null
-    } catch {
-      return null
+  async getPublicKey(): Promise<string> {
+    const data = await this.apiClient.get<ApiResponse<{ public_key: string }>>('/auth/public-key')
+    const key = data?.data?.public_key
+
+    if (!key) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
+        message: '获取 RSA 公钥失败',
+        platform: this.platform,
+      })
     }
+
+    return key
   }
 
   // ─── SSO 方法 ───

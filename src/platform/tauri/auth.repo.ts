@@ -7,58 +7,98 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 export class TauriAuthRepository implements IAuthRepository {
   private readonly platform = 'tauri' as const
 
-  async login(email: string, encryptedPassword: string): Promise<AuthResult | null> {
-    const response = await safeInvoke<{
+  async login(email: string, encryptedPassword: string): Promise<AuthResult> {
+    let response: {
       user_id: number
       access_token: string
       refresh_token: string
       expires_in: number
-    }>('auth_login', {
-      email,
-      password: encryptedPassword,
-    })
+    } | null
 
-    if (response?.access_token) {
-      return {
-        userId: response.user_id,
-        accessToken: response.access_token,
-        refreshToken: response.refresh_token,
-        expiresIn: response.expires_in,
-      }
+    try {
+      response = await safeInvoke<{
+        user_id: number
+        access_token: string
+        refresh_token: string
+        expires_in: number
+      }>('auth_login', {
+        email,
+        password: encryptedPassword,
+      })
+    } catch (error) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: '登录请求失败',
+        platform: this.platform,
+        cause: error,
+      })
     }
 
-    return null
+    if (!response?.access_token) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.VALIDATION_ERROR,
+        message: '登录失败：无效的认证响应',
+        platform: this.platform,
+      })
+    }
+
+    return {
+      userId: response.user_id,
+      accessToken: response.access_token,
+      refreshToken: response.refresh_token,
+      expiresIn: response.expires_in,
+    }
   }
 
-  async register(email: string, encryptedPassword: string, displayName: string): Promise<AuthResult | null> {
-    const response = await safeInvoke<{
+  async register(email: string, encryptedPassword: string, displayName: string): Promise<AuthResult> {
+    let response: {
       user_id: number
       access_token: string
       refresh_token: string
       expires_in: number
-    }>('auth_register', {
-      email,
-      password: encryptedPassword,
-      display_name: displayName,
-    })
+    } | null
 
-    if (response?.access_token) {
-      return {
-        userId: response.user_id,
-        accessToken: response.access_token,
-        refreshToken: response.refresh_token,
-        expiresIn: response.expires_in,
-      }
+    try {
+      response = await safeInvoke<{
+        user_id: number
+        access_token: string
+        refresh_token: string
+        expires_in: number
+      }>('auth_register', {
+        email,
+        password: encryptedPassword,
+        display_name: displayName,
+      })
+    } catch (error) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: '注册请求失败',
+        platform: this.platform,
+        cause: error,
+      })
     }
 
-    return null
+    if (!response?.access_token) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.VALIDATION_ERROR,
+        message: '注册失败：无效的认证响应',
+        platform: this.platform,
+      })
+    }
+
+    return {
+      userId: response.user_id,
+      accessToken: response.access_token,
+      refreshToken: response.refresh_token,
+      expiresIn: response.expires_in,
+    }
   }
 
   async logout(): Promise<void> {
     await safeInvoke('auth_logout')
   }
 
-  async getCurrentUser(): Promise<User | null> {
+  async getCurrentUser(): Promise<User> {
     const response = await safeInvoke<{
       id: number
       email: string
@@ -67,17 +107,21 @@ export class TauriAuthRepository implements IAuthRepository {
       provider: string
     }>('auth_get_profile')
 
-    if (response) {
-      return {
-        id: String(response.id),
-        email: response.email,
-        displayName: response.display_name,
-        avatarUrl: response.avatar_url ?? undefined,
-        provider: (response.provider as User['provider']) || 'local',
-      }
+    if (!response) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NOT_FOUND,
+        message: '未找到当前用户',
+        platform: this.platform,
+      })
     }
 
-    return null
+    return {
+      id: String(response.id),
+      email: response.email,
+      displayName: response.display_name,
+      avatarUrl: response.avatar_url ?? undefined,
+      provider: (response.provider as User['provider']) || 'local',
+    }
   }
 
   async checkAuthStatus(): Promise<boolean> {
@@ -118,9 +162,19 @@ export class TauriAuthRepository implements IAuthRepository {
     return result === true
   }
 
-  async getPublicKey(): Promise<string | null> {
+  async getPublicKey(): Promise<string> {
     const response = await safeInvoke<{ data: { public_key: string } }>('auth_get_public_key')
-    return response?.data?.public_key ?? null
+    const key = response?.data?.public_key
+
+    if (!key) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
+        message: '获取 RSA 公钥失败',
+        platform: this.platform,
+      })
+    }
+
+    return key
   }
 
   // ─── SSO no-op 方法（桌面端不需要 SSO） ───

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 // Mock authRepo
 const mockAuthRepo = {
@@ -53,32 +54,23 @@ describe('RSA 加密服务', () => {
   })
 
   describe('encryptPassword', () => {
-    it('获取公钥失败时返回 null', async () => {
-      // authRepo.getPublicKey 返回 null
-      mockAuthRepo.getPublicKey.mockResolvedValueOnce(null)
+    it('获取公钥失败时抛出错误', async () => {
+      mockAuthRepo.getPublicKey.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
+          message: '获取 RSA 公钥失败',
+          platform: 'tauri',
+        })
+      )
 
-      const result = await encryptPassword('test-password')
-
-      expect(result).toBeNull()
+      await expect(encryptPassword('test-password')).rejects.toThrow(RepositoryError)
       expect(mockAuthRepo.getPublicKey).toHaveBeenCalled()
     })
 
-    it('公钥数据为空时返回 null', async () => {
-      mockAuthRepo.getPublicKey.mockResolvedValueOnce(null)
-
-      const result = await encryptPassword('test-password')
-
-      expect(result).toBeNull()
-    })
-
-    it('crypto.subtle 不可用时返回 null', async () => {
-      // 返回无效的公钥（会导致 crypto.subtle.importKey 失败）
+    it('crypto.subtle 不可用时抛出错误', async () => {
       mockAuthRepo.getPublicKey.mockResolvedValueOnce('invalid-base64-key')
 
-      const result = await encryptPassword('test-password')
-
-      // 加密失败应返回 null 而非抛出异常
-      expect(result).toBeNull()
+      await expect(encryptPassword('test-password')).rejects.toThrow()
     })
   })
 

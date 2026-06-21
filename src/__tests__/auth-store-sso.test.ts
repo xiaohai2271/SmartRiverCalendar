@@ -10,7 +10,13 @@ const mockDetectSsoSession = vi.fn()
 const mockNotifySsoEvent = vi.fn()
 const mockSubscribeSsoEvents = vi.fn().mockReturnValue(() => {})
 const mockCheckAuthStatus = vi.fn().mockResolvedValue(false)
-const mockGetCurrentUser = vi.fn().mockResolvedValue(null)
+const mockGetCurrentUser = vi.fn().mockRejectedValue(
+  new RepositoryError({
+    code: RepoErrorCodes.NOT_FOUND,
+    message: '未找到当前用户',
+    platform: 'web',
+  })
+)
 const mockSetWasLoggedInGetter = vi.fn()
 
 let mockCapabilities: PlatformCapabilities
@@ -92,7 +98,13 @@ describe('AuthStore SSO 集成', () => {
       hasClientConflictResolution: false,
     }
     mockCheckAuthStatus.mockResolvedValue(false)
-    mockGetCurrentUser.mockResolvedValue(null)
+    mockGetCurrentUser.mockRejectedValue(
+      new RepositoryError({
+        code: RepoErrorCodes.NOT_FOUND,
+        message: '未找到当前用户',
+        platform: 'web',
+      })
+    )
     mockDetectSsoSession.mockResolvedValue({ loggedIn: false })
   })
 
