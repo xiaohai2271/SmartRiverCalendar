@@ -6,7 +6,7 @@
         <h2 class="page-title">待办事项</h2>
         <span class="todo-count">{{ todoStore.pendingTodos.length }} 项待完成</span>
       </div>
-      <button class="fluent-button primary add-btn" @click="openAddModal">
+      <button class="fluent-button primary add-btn" data-testid="btn-add-todo" @click="openAddModal">
         <span class="btn-icon">+</span>
         <span>新建待办</span>
       </button>
@@ -18,6 +18,8 @@
         v-for="tab in filterTabs"
         :key="tab.value"
         :class="['tab', { active: filter === tab.value }]"
+        data-testid="filter-tab"
+        :data-filter="tab.value"
         @click="filter = tab.value"
       >
         {{ tab.label }}
@@ -32,6 +34,7 @@
           v-for="todo in filteredTodos"
           :key="todo.id"
           class="todo-item fluent-card"
+          data-testid="todo-item"
           :class="{ completed: todo.completed }"
           @contextmenu.prevent="handleTodoContextMenu($event, todo)"
         >
@@ -40,7 +43,8 @@
               type="checkbox"
               :checked="todo.completed"
               @change="todoStore.toggleTodo(todo.id)"
-              class="todo-checkbox"
+               class="todo-checkbox"
+               data-testid="todo-checkbox"
             />
             <span class="checkbox-custom"></span>
           </label>
@@ -59,13 +63,13 @@
             {{ priorityLabels[todo.priority] }}
           </div>
           
-          <button class="edit-btn" @click="openEditModal(todo)" title="编辑">
+           <button class="edit-btn" data-testid="btn-edit-todo" @click="openEditModal(todo)" title="编辑">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
             </svg>
           </button>
           
-          <button class="delete-btn" @click="todoStore.deleteTodo(todo.id)" title="删除">
+           <button class="delete-btn" data-testid="btn-delete-todo" @click="todoStore.deleteTodo(todo.id)" title="删除">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M4.5 3V1.5C4.5 1.22 4.72 1 5 1H11C11.28 1 11.5 1.22 11.5 1.5V3M2.5 4H13.5M12.5 4V14C12.5 14.28 12.28 14.5 12 14.5H4C3.72 14.5 3.5 14.28 3.5 14V4M6.5 7V11.5M9.5 7V11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
             </svg>
@@ -74,7 +78,7 @@
       </TransitionGroup>
 
       <!-- Empty State -->
-      <div v-if="filteredTodos.length === 0" class="empty-state">
+       <div v-if="filteredTodos.length === 0" class="empty-state" data-testid="todos-empty">
         <div class="empty-icon">✓</div>
         <div class="empty-text">
           {{ filter === 'completed' ? '还没有完成任何待办' : '暂无待办事项' }}
@@ -88,7 +92,7 @@
     <!-- Add/Edit Modal -->
     <Transition name="modal">
       <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
-        <div class="add-modal elegant-modal-card" @keydown.escape="closeModal">
+        <div class="add-modal elegant-modal-card" data-testid="todo-modal" @keydown.escape="closeModal">
           <div class="modal-header">
             <h3>{{ isEditing ? '编辑待办' : '新建待办' }}</h3>
             <button class="close-btn" @click="closeModal" type="button">
@@ -105,7 +109,8 @@
                 <input
                   v-model="formData.title"
                   type="text"
-                  class="zero-border-title-input"
+                   class="zero-border-title-input"
+                   data-testid="todo-title-input"
                   placeholder="想做点什么..."
                   required
                   ref="titleInput"
@@ -165,10 +170,10 @@
 
             <!-- Actions -->
             <div class="modal-actions">
-              <button type="button" class="fluent-button cancel-text-btn" @click="closeModal">
+               <button type="button" class="fluent-button cancel-text-btn" data-testid="todo-cancel-btn" @click="closeModal">
                 取消
               </button>
-              <button type="submit" class="fluent-button primary action-submit-btn" :disabled="!formData.title.trim()">
+               <button type="submit" class="fluent-button primary action-submit-btn" data-testid="todo-submit-btn" :disabled="!formData.title.trim()">
                 {{ isEditing ? '保存修改' : '确认添加' }}
               </button>
             </div>

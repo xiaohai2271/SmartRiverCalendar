@@ -22,6 +22,7 @@
       <label for="register-email">邮箱</label>
       <input
         id="register-email"
+        data-testid="register-email-input"
         v-model="formData.email"
         type="email"
         placeholder="请输入邮箱"
@@ -37,6 +38,7 @@
       <label for="register-password">密码</label>
       <input
         id="register-password"
+        data-testid="register-password-input"
         v-model="formData.password"
         type="password"
         placeholder="请输入密码（至少6位）"
@@ -56,6 +58,7 @@
     <button
       type="submit"
       class="btn btn-primary btn-full"
+      data-testid="register-submit-btn"
       :disabled="isLoading || !isFormValid"
     >
       <span v-if="isLoading" class="spinner"></span>
@@ -65,7 +68,7 @@
     <!-- 切换到登录 -->
     <div class="form-footer">
       <span>已有账号？</span>
-      <button type="button" class="btn-link" @click="switchToLogin">
+      <button type="button" class="btn-link" data-testid="switch-to-login" @click="switchToLogin">
         去登录
       </button>
     </div>

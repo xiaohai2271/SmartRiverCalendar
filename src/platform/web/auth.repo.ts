@@ -1,4 +1,4 @@
-import type { IAuthRepository, AuthResult } from '../types/auth.repository'
+import type { IAuthRepository, AuthResult, SsoSessionResult, SsoEvent } from '../types/auth.repository'
 import type { User } from '@/types/auth'
 import { WebApiClient } from './api-client'
 import { transformWebUser, type ApiResponse, type WebUserProfile } from './transforms'
@@ -98,6 +98,76 @@ export class WebAuthRepository implements IAuthRepository {
       return data?.data?.public_key ?? null
     } catch {
       return null
+    }
+  }
+
+  // ─── SSO 方法 ───
+
+  private wasLoggedInGetter: (() => boolean) | null = null
+  private ssoChannel: BroadcastChannel | null = null
+
+  /** 注入 wasLoggedIn getter，用于 detectSsoSession 中判断是否应抛 SSO_SESSION_EXPIRED */
+  setWasLoggedInGetter(getter: () => boolean): void {
+    this.wasLoggedInGetter = getter
+  }
+
+  async detectSsoSession(): Promise<SsoSessionResult> {
+    // SSO 检测使用 cookie（credentials: 'include'），不走 apiClient（避免 Authorization header 和 token 刷新逻辑）
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1188/v1'
+    try {
+      const resp = await fetch(`${baseUrl}/user/profile`, {
+        credentials: 'include',
+      })
+      const data = await resp.json()
+
+      if (resp.ok && data.code === 0 && data.data) {
+        return {
+          loggedIn: true,
+          user: transformWebUser(data.data),
+        }
+      }
+
+      if (resp.status === 401) {
+        const wasLoggedIn = this.wasLoggedInGetter?.() ?? false
+        if (wasLoggedIn) {
+          throw new RepositoryError({
+            code: RepoErrorCodes.SSO_SESSION_EXPIRED,
+            message: 'SSO 会话已过期',
+            platform: this.platform,
+          })
+        }
+        return { loggedIn: false }
+      }
+
+      return { loggedIn: false }
+    } catch (error) {
+      if (error instanceof RepositoryError) {
+        throw error
+      }
+      // 网络错误，静默返回 false
+      return { loggedIn: false }
+    }
+  }
+
+  async notifySsoEvent(event: SsoEvent): Promise<void> {
+    if (!this.ssoChannel) {
+      this.ssoChannel = new BroadcastChannel('smart-river-calendar-sso')
+    }
+    this.ssoChannel.postMessage(event)
+  }
+
+  subscribeSsoEvents(callback: (event: SsoEvent) => void): () => void {
+    if (!this.ssoChannel) {
+      this.ssoChannel = new BroadcastChannel('smart-river-calendar-sso')
+    }
+
+    const handler = (e: MessageEvent) => {
+      callback(e.data as SsoEvent)
+    }
+    this.ssoChannel.addEventListener('message', handler)
+
+    return () => {
+      this.ssoChannel?.removeEventListener('message', handler)
     }
   }
 }

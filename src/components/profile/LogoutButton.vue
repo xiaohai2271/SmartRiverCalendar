@@ -2,6 +2,7 @@
   <button
     type="button"
     class="logout-btn"
+    data-testid="logout-btn"
     :disabled="isLoading"
     @click="handleLogout"
   >

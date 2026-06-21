@@ -102,8 +102,8 @@ export class WebApiClient {
   }
 
   /** 通用 GET 请求 */
-  async get<T>(path: string): Promise<T> {
-    return apiFetch<T>(path)
+  async get<T>(path: string, options?: RequestInit): Promise<T> {
+    return apiFetch<T>(path, options)
   }
 
   /** 通用 POST 请求 */

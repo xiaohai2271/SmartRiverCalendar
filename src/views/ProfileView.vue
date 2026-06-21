@@ -4,7 +4,7 @@
 
     <!-- 未登录状态：显示登录/注册表单（保持小而美的窄版居中限制） -->
     <div v-if="!authStore.isAuthenticated" class="auth-container">
-      <div class="auth-card">
+      <div class="auth-card" data-testid="auth-card">
         <!-- 登录表单 -->
         <LoginForm
           v-if="currentForm === 'login'"
@@ -28,7 +28,7 @@
     </div>
 
     <!-- 已登录状态：双列 Premium Dashboard 宽屏网格布局 -->
-    <div v-else class="profile-container">
+    <div v-else class="profile-container" data-testid="profile-logged-in">
       <!-- 左列：用户信息看板 -->
       <div class="dashboard-left">
         <UserProfile :user="authStore.user" />

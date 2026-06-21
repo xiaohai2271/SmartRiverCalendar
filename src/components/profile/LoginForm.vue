@@ -1,5 +1,5 @@
 <template>
-  <form class="login-form" @submit.prevent="handleSubmit">
+  <form class="login-form" data-testid="login-form" @submit.prevent="handleSubmit">
     <h3 class="form-title">欢迎回来</h3>
 
     <!-- 邮箱输入框 -->
@@ -7,6 +7,7 @@
       <label for="login-email">邮箱</label>
       <input
         id="login-email"
+        data-testid="login-email-input"
         v-model="formData.email"
         type="email"
         placeholder="请输入邮箱"
@@ -22,6 +23,7 @@
       <label for="login-password">密码</label>
       <input
         id="login-password"
+        data-testid="login-password-input"
         v-model="formData.password"
         type="password"
         placeholder="请输入密码"
@@ -40,6 +42,7 @@
     <button
       type="submit"
       class="btn btn-primary btn-full"
+      data-testid="login-submit-btn"
       :disabled="isLoading || !isFormValid"
     >
       <span v-if="isLoading" class="spinner"></span>
@@ -49,7 +52,7 @@
     <!-- 切换到注册 -->
     <div class="form-footer">
       <span>还没有账号？</span>
-      <button type="button" class="btn-link" @click="switchToRegister">
+      <button type="button" class="btn-link" data-testid="switch-to-register" @click="switchToRegister">
         去注册
       </button>
     </div>
