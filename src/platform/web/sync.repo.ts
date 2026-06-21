@@ -64,7 +64,7 @@ export class WebSyncRepository implements ISyncRepository {
 
   async getExternalCalendars(params: ExternalEventParams): Promise<ExternalCalendarInfo[]> {
     const response = await this.apiClient.post<
-      ApiResponse<Array<{ id: string; name: string; color?: string; url: string; read_only?: boolean }>>
+      ApiResponse<Array<{ id: string; name: string; color?: string; url: string; read_only?: boolean; readOnly?: boolean }>>
     >('/sync/external-calendars', {
       account_id: params.accountId,
     })
@@ -76,7 +76,7 @@ export class WebSyncRepository implements ISyncRepository {
       name: cal.name,
       color: cal.color,
       url: cal.url,
-      readOnly: cal.read_only ?? false,
+      readOnly: cal.read_only ?? cal.readOnly ?? false,
     }))
   }
 
