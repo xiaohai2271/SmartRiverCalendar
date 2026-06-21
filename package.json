@@ -33,6 +33,7 @@
     "vue-router": "^4.6.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
     "@tauri-apps/cli": "^2.10.1",
     "@types/dompurify": "^3.2.0",
     "@types/node": "^24.12.0",
