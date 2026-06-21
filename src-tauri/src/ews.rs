@@ -5,6 +5,7 @@
 
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use serde::Serialize;
+use crate::xml_utils::{create_safe_reader, validate_xml_size};
 
 /// 日历文件夹信息
 #[derive(Debug, Clone, Serialize)]
@@ -135,7 +136,11 @@ impl EwsClient {
 
     /// 解析 Autodiscover 响应，提取 EWS URL
     fn parse_autodiscover_response(xml: &str) -> Option<String> {
-        let mut reader = quick_xml::Reader::from_str(xml);
+        if validate_xml_size(xml).is_err() {
+            log::warn!("[EWS] 自动发现 XML 响应过大，跳过解析");
+            return None;
+        }
+        let mut reader = create_safe_reader(xml);
         let mut in_ews_url = false;
         let mut ews_url = String::new();
 
@@ -592,8 +597,9 @@ impl EwsClient {
 
     /// 解析事件列表响应 XML
     fn parse_events_response(&self, xml: &str) -> Result<Vec<EventInfo>, String> {
+        validate_xml_size(xml)?;
         let mut events = Vec::new();
-        let mut reader = quick_xml::Reader::from_str(xml);
+        let mut reader = create_safe_reader(xml);
 
         let mut in_item = false;
         let mut current_id = String::new();
@@ -682,7 +688,8 @@ impl EwsClient {
 
     /// 解析创建事件响应 XML
     fn parse_create_response(&self, xml: &str) -> Result<String, String> {
-        let mut reader = quick_xml::Reader::from_str(xml);
+        validate_xml_size(xml)?;
+        let mut reader = create_safe_reader(xml);
         let mut in_item_id = false;
         let mut item_id = String::new();
 
@@ -738,8 +745,9 @@ impl EwsClient {
     ///
     /// 从 EWS 响应中提取日历文件夹信息
     fn parse_calendar_response(&self, xml: &str) -> Result<Vec<CalendarInfo>, String> {
+        validate_xml_size(xml)?;
         let mut calendars = Vec::new();
-        let mut reader = quick_xml::Reader::from_str(xml);
+        let mut reader = create_safe_reader(xml);
 
         let mut in_folder = false;
         let mut current_id = String::new();

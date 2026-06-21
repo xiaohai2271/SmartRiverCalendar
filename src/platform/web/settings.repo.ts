@@ -3,18 +3,22 @@ import type { AppSettings, PopupSettings, UserHolidayEntry } from '@/types'
 import { WebApiClient } from './api-client'
 import { type ApiResponse } from './transforms'
 import { RepositoryError, RepoErrorCodes } from '../errors'
+import { getDefaultAppSettings, getDefaultPopupSettings } from '../shared/defaults'
 
 /** Web 设置 Repository 实现 — 设置存远端 API，无本地缓存 */
 export class WebSettingsRepository implements ISettingsRepository {
   private readonly platform = 'web' as const
+  private readonly apiClient: WebApiClient
 
-  constructor(private readonly apiClient: WebApiClient) {}
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async loadAppSettings(): Promise<AppSettings> {
     // API: GET /settings?prefix=app.
     const response = await this.apiClient.get<ApiResponse<Array<{ key: string; value: string; description?: string }>>>('/settings?prefix=app.')
     if (response.code !== 0 || !response.data) {
-      return this.getDefaultAppSettings()
+      return getDefaultAppSettings()
     }
     // 将 key-value 列表转换为 AppSettings 对象
     const settingsMap: Record<string, unknown> = {}
@@ -27,7 +31,7 @@ export class WebSettingsRepository implements ISettingsRepository {
         settingsMap[key] = item.value
       }
     }
-    return { ...this.getDefaultAppSettings(), ...settingsMap } as AppSettings
+    return { ...getDefaultAppSettings(), ...settingsMap } as AppSettings
   }
 
   async saveAppSettings(settings: AppSettings): Promise<void> {
@@ -52,7 +56,7 @@ export class WebSettingsRepository implements ISettingsRepository {
     // API: GET /settings?prefix=popup.
     const response = await this.apiClient.get<ApiResponse<Array<{ key: string; value: string; description?: string }>>>('/settings?prefix=popup.')
     if (response.code !== 0 || !response.data) {
-      return this.getDefaultPopupSettings()
+      return getDefaultPopupSettings()
     }
     // 将 key-value 列表转换为 PopupSettings 对象
     const settingsMap: Record<string, unknown> = {}
@@ -64,7 +68,7 @@ export class WebSettingsRepository implements ISettingsRepository {
         settingsMap[key] = item.value
       }
     }
-    return { ...this.getDefaultPopupSettings(), ...settingsMap } as PopupSettings
+    return { ...getDefaultPopupSettings(), ...settingsMap } as PopupSettings
   }
 
   async savePopupSettings(settings: PopupSettings): Promise<void> {
@@ -129,48 +133,5 @@ export class WebSettingsRepository implements ISettingsRepository {
   // Web 端无需 localStorage 迁移
   async migrateFromLocalStorage(): Promise<void> {
     // Web 端无本地数据库，无需迁移
-  }
-
-  private getDefaultAppSettings(): AppSettings {
-    return {
-      theme: 'auto',
-      defaultView: 'month',
-      firstDayOfWeek: 1,
-      defaultReminder: 15,
-      startMinimized: false,
-      autoStart: false,
-      autoUpdate: true,
-      showLunar: true,
-      showLunarFestival: true,
-      showSolarTerm: true,
-      showHoliday: true,
-      showMakeupDay: true,
-      showWeekend: true,
-      monthEventDisplayStyle: 'dot',
-      allDayReminderTime: 'morning',
-      allDayReminderHour: 9,
-      reminderMode: 'standard',
-      customReminderTitle: '',
-      customReminderBody: '',
-      clockHookEnabled: false,
-      clockHookBlockPopup: false,
-      proxyMode: 'none',
-      proxyHost: '',
-      proxyPort: 0,
-      proxyUsername: '',
-      proxyPassword: '',
-    }
-  }
-
-  private getDefaultPopupSettings(): PopupSettings {
-    return {
-      popupShowLunar: true,
-      popupShowLunarFestival: true,
-      popupShowSolarTerm: true,
-      popupShowHoliday: true,
-      popupShowEvents: true,
-      popupCalendarShowLunar: true,
-      popupWindowSize: 'medium',
-    }
   }
 }

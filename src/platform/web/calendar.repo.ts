@@ -7,8 +7,11 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 /** Web 日历 Repository 实现 */
 export class WebCalendarRepository implements ICalendarRepository {
   private readonly platform = 'web' as const
+  private readonly apiClient: WebApiClient
 
-  constructor(private readonly apiClient: WebApiClient) {}
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async getAll(): Promise<Calendar[]> {
     const response = await this.apiClient.get<ApiResponse<WebCalendar[]>>('/calendars')

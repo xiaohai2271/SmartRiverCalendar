@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import { createPinia, setActivePinia } from 'pinia'
-import type { IAuthRepository } from '@/platform/types/auth.repository'
 import type { PlatformCapabilities } from '@/platform/capabilities'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
@@ -10,7 +9,13 @@ const mockDetectSsoSession = vi.fn()
 const mockNotifySsoEvent = vi.fn()
 const mockSubscribeSsoEvents = vi.fn().mockReturnValue(() => {})
 const mockCheckAuthStatus = vi.fn().mockResolvedValue(false)
-const mockGetCurrentUser = vi.fn().mockResolvedValue(null)
+const mockGetCurrentUser = vi.fn().mockRejectedValue(
+  new RepositoryError({
+    code: RepoErrorCodes.NOT_FOUND,
+    message: '未找到当前用户',
+    platform: 'web',
+  })
+)
 const mockSetWasLoggedInGetter = vi.fn()
 
 let mockCapabilities: PlatformCapabilities
@@ -25,8 +30,7 @@ vi.mock('@/platform/provider', () => ({
       getCurrentUser: mockGetCurrentUser,
       refreshToken: vi.fn(),
       getPublicKey: vi.fn(),
-      oauthLogin: vi.fn(),
-      cancelOAuthLogin: vi.fn(),
+      loginWithOAuth: vi.fn(),
       detectSsoSession: mockDetectSsoSession,
       notifySsoEvent: mockNotifySsoEvent,
       subscribeSsoEvents: mockSubscribeSsoEvents,
@@ -85,14 +89,20 @@ describe('AuthStore SSO 集成', () => {
       hasAlwaysOnTop: false,
       hasMinimizeToTray: false,
       hasProxySettings: false,
-      hasOAuthLogin: false,
+      hasOAuthCallback: false,
       hasSsoLogin: true,
       hasBackgroundSync: false,
       hasIncrementalSync: false,
       hasClientConflictResolution: false,
     }
     mockCheckAuthStatus.mockResolvedValue(false)
-    mockGetCurrentUser.mockResolvedValue(null)
+    mockGetCurrentUser.mockRejectedValue(
+      new RepositoryError({
+        code: RepoErrorCodes.NOT_FOUND,
+        message: '未找到当前用户',
+        platform: 'web',
+      })
+    )
     mockDetectSsoSession.mockResolvedValue({ loggedIn: false })
   })
 

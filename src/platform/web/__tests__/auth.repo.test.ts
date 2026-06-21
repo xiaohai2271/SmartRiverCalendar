@@ -6,14 +6,14 @@ import type { SsoEvent } from '@/platform/types/auth.repository'
 
 // mock fetch
 const mockFetch = vi.fn()
-global.fetch = mockFetch
+globalThis.fetch = mockFetch
 
 // mock BroadcastChannel
 class MockBroadcastChannel {
   static instances: MockBroadcastChannel[] = []
   name: string
   onmessage: ((event: MessageEvent) => void) | null = null
-  private listeners: Array<(event: MessageEvent) => void> = []
+  listeners: Array<(event: MessageEvent) => void> = []
 
   constructor(name: string) {
     this.name = name
@@ -84,7 +84,7 @@ describe('WebAuthRepository SSO 方法', () => {
 
       const result = await authRepo.detectSsoSession()
       expect(result.loggedIn).toBe(true)
-      if (result.loggedIn) {
+      if (result.loggedIn && result.user) {
         expect(result.user.email).toBe('test@example.com')
       }
 

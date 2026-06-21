@@ -1,9 +1,34 @@
-import type { ISettingsRepository } from '../types/settings.repository'
 import type { ISyncRepository, ConnectResult, ExternalEventParams, ExternalCalendarInfo } from '../types/sync.repository'
-import type { CalendarEvent, ExternalAccount } from '@/types'
+import type { CalendarEvent, ExternalAccount, CalDavCalendarInfo as TauriCalDavCalendarInfo, AccountInfo } from '@/types'
 import { safeInvoke, safeInvokeWithResult } from '@/utils/tauri'
 import { transformAccount, transformEvent, type RawAccount, type RawEvent } from './transforms'
 import { RepositoryError, RepoErrorCodes } from '../errors'
+
+function mapTauriCalendarsToSyncRepo(cals: TauriCalDavCalendarInfo[] | undefined): ExternalCalendarInfo[] | undefined {
+  if (!cals) return undefined
+  return cals.map(cal => ({
+    id: cal.id,
+    name: cal.name,
+    color: cal.color,
+    url: cal.url,
+    readOnly: false,
+  }))
+}
+
+function mapTauriAccount(account: AccountInfo | undefined): ExternalAccount | undefined {
+  if (!account) return undefined
+  return {
+    id: String(account.id),
+    type: account.account_type,
+    serverUrl: account.server_url,
+    username: account.username,
+    encryptedPassword: account.encrypted_password,
+    displayName: account.display_name || undefined,
+    enabled: account.enabled,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
+}
 
 // 自动同步定时器
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null
@@ -17,16 +42,19 @@ export class TauriSyncRepository implements ISyncRepository {
       server_url: serverUrl,
       username,
       password,
-    })
-
-    if (result.account) {
-      return {
-        ...result,
-        account: transformAccount(result.account as unknown as RawAccount),
-      }
+    }) as unknown as {
+      success: boolean
+      error?: string
+      account?: AccountInfo
+      calendars?: TauriCalDavCalendarInfo[]
     }
 
-    return result
+    return {
+      success: result.success,
+      error: result.error,
+      account: mapTauriAccount(result.account),
+      calendars: mapTauriCalendarsToSyncRepo(result.calendars),
+    }
   }
 
   async connectCalDAV(serverUrl: string, username: string, password: string): Promise<ConnectResult> {
@@ -34,16 +62,19 @@ export class TauriSyncRepository implements ISyncRepository {
       serverUrl,
       username,
       password,
-    })
-
-    if (result.account) {
-      return {
-        ...result,
-        account: transformAccount(result.account as unknown as RawAccount),
-      }
+    }) as unknown as {
+      success: boolean
+      error?: string
+      account?: AccountInfo
+      calendars?: TauriCalDavCalendarInfo[]
     }
 
-    return result
+    return {
+      success: result.success,
+      error: result.error,
+      account: mapTauriAccount(result.account),
+      calendars: mapTauriCalendarsToSyncRepo(result.calendars),
+    }
   }
 
   async getAllAccounts(): Promise<ExternalAccount[]> {

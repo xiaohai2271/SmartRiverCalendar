@@ -1,6 +1,13 @@
 // Web API 客户端
 // 从 src/services/webApi.ts 迁移，为 Web 平台 Repository 提供统一的 API 调用能力
 
+import {
+  getStoredAccessToken,
+  getStoredRefreshToken,
+  storeTokens as secureStoreTokens,
+  clearStoredTokens as secureClearTokens,
+} from './secure-storage'
+
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1188/v1'
 
 let accessToken: string | null = null
@@ -8,26 +15,24 @@ let refreshTokenValue: string | null = null
 let isRefreshing = false
 let refreshWaiters: Array<(token: string) => void> = []
 
-/** 从 localStorage 恢复令牌 */
+/** 从 sessionStorage 恢复令牌到内存 */
 function getStoredTokens(): void {
-  accessToken = localStorage.getItem('access_token')
-  refreshTokenValue = localStorage.getItem('refresh_token')
+  accessToken = getStoredAccessToken()
+  refreshTokenValue = getStoredRefreshToken()
 }
 
-/** 存储令牌到内存和 localStorage */
+/** 存储令牌到内存和 sessionStorage */
 function storeTokens(access: string, refresh: string): void {
   accessToken = access
   refreshTokenValue = refresh
-  localStorage.setItem('access_token', access)
-  localStorage.setItem('refresh_token', refresh)
+  secureStoreTokens(access, refresh)
 }
 
 /** 清除令牌 */
 function clearTokens(): void {
   accessToken = null
   refreshTokenValue = null
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('refresh_token')
+  secureClearTokens()
 }
 
 /** 刷新访问令牌 */

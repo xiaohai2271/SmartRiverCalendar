@@ -1,7 +1,7 @@
 // 云端同步服务
 // 提供云同步触发、状态查询、自动同步等功能
+// 所有数据操作通过 syncRepo 完成，不再直接调用 Tauri API
 
-import { safeInvoke } from '../utils/tauri'
 import { useAuthStore } from '../stores/auth'
 import { useCapabilities } from '@/platform/provider'
 import { usePlatform } from '@/platform/provider'
@@ -35,22 +35,9 @@ export const cloudSyncService = {
    * 触发手动同步
    */
   async triggerSync(): Promise<boolean> {
-    const capabilities = useCapabilities()
-
-    if (!capabilities.hasOfflineMode) {
-      // Web 端：通过 syncRepo 同步
-      try {
-        const { syncRepo } = usePlatform()
-        const result = await syncRepo.triggerCloudSync()
-        return result
-      } catch (error) {
-        console.error('[cloudSync] Web 端同步失败:', error)
-        return false
-      }
-    }
-
-    // 桌面端：通过 Tauri invoke 同步
+    const { syncRepo } = usePlatform()
     const authStore = useAuthStore()
+
     if (!authStore.isAuthenticated) {
       console.warn('[cloudSync] 未登录，无法同步')
       return false
@@ -58,8 +45,8 @@ export const cloudSyncService = {
 
     try {
       authStore.syncStatus = 'syncing'
-      const result = await safeInvoke<{ success: boolean }>('cloud_sync_trigger')
-      if (result?.success) {
+      const result = await syncRepo.triggerCloudSync()
+      if (result) {
         authStore.syncStatus = 'success'
         authStore.lastSyncAt = Date.now()
 
@@ -84,7 +71,6 @@ export const cloudSyncService = {
       return false
     } catch (error) {
       console.error('[cloudSync] 同步失败:', error)
-      // 同步失败时标记为离线状态
       authStore.syncStatus = 'offline'
       return false
     }
@@ -94,15 +80,14 @@ export const cloudSyncService = {
    * 获取同步状态
    */
   async getSyncStatus(): Promise<SyncStatusResponse | null> {
-    const capabilities = useCapabilities()
-
-    if (!capabilities.hasOfflineMode) {
-      // Web 端暂不支持获取详细同步状态
-      return null
-    }
-
     try {
-      return await safeInvoke<SyncStatusResponse>('cloud_sync_get_status')
+      const { syncRepo } = usePlatform()
+      const result = await syncRepo.getSyncStatus()
+      return {
+        status: result.status as CloudSyncStatus,
+        lastSyncAt: result.lastSyncAt,
+        pendingChanges: result.pendingChanges,
+      }
     } catch (error) {
       console.error('[cloudSync] 获取同步状态失败:', error)
       return null
@@ -116,9 +101,10 @@ export const cloudSyncService = {
   startAutoSync(intervalMinutes: number = 5): void {
     this.stopAutoSync()
 
-    const capabilities = useCapabilities()
-    if (!capabilities.hasOfflineMode) return
+    const { syncRepo } = usePlatform()
+    syncRepo.startAutoSync(intervalMinutes)
 
+    // 同时启动本地定时器检查认证状态后触发同步
     const intervalMs = intervalMinutes * 60 * 1000
     autoSyncInterval = setInterval(async () => {
       const authStore = useAuthStore()
@@ -137,8 +123,14 @@ export const cloudSyncService = {
     if (autoSyncInterval) {
       clearInterval(autoSyncInterval)
       autoSyncInterval = null
-      console.log('[cloudSync] 自动同步已停止')
     }
+    try {
+      const { syncRepo } = usePlatform()
+      syncRepo.stopAutoSync()
+    } catch {
+      // Provider 未初始化时忽略
+    }
+    console.log('[cloudSync] 自动同步已停止')
   },
 
   /**
@@ -146,7 +138,7 @@ export const cloudSyncService = {
    */
   async initEventListeners(): Promise<void> {
     const capabilities = useCapabilities()
-    if (!capabilities.hasOfflineMode) return
+    if (!capabilities.hasBackgroundSync) return
 
     try {
       const { listen } = await import('@tauri-apps/api/event')

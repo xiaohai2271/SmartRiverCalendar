@@ -40,7 +40,6 @@ export const useAuthStore = defineStore('auth', () => {
       return
     }
 
-    // localStorage 恢复 wasLoggedIn
     const storedWasLoggedIn = localStorage.getItem('lastKnownLoggedIn')
     if (storedWasLoggedIn === 'true') {
       wasLoggedIn.value = true
@@ -51,15 +50,19 @@ export const useAuthStore = defineStore('auth', () => {
       const capabilities = useCapabilities()
       const isAuth = await authRepo.checkAuthStatus()
       if (isAuth) {
-        const currentUser = await authRepo.getCurrentUser()
-        if (currentUser) {
+        try {
+          const currentUser = await authRepo.getCurrentUser()
           user.value = currentUser
           isAuthenticated.value = true
           wasLoggedIn.value = true
           localStorage.setItem('lastKnownLoggedIn', 'true')
+        } catch (userError) {
+          // getCurrentUser 失败（NOT_FOUND），说明 token 无效，清除认证状态
+          console.warn('[AuthStore] 获取用户信息失败，清除认证状态:', userError)
+          user.value = null
+          isAuthenticated.value = false
         }
       } else if (capabilities.hasSsoLogin) {
-        // SSO 检测路径：checkAuthStatus 返回 false，但可能 SSO cookie 仍有效
         try {
           const ssoResult = await authRepo.detectSsoSession()
           if (ssoResult.loggedIn && ssoResult.user) {
@@ -77,7 +80,6 @@ export const useAuthStore = defineStore('auth', () => {
           }
         }
       }
-      // isAuth === false 且无 SSO: 合法的"未认证"，不做额外处理
     } catch (error) {
       if (error instanceof RepositoryError) {
         console.error('[AuthStore] 认证状态检查系统错误:', error.code, error.message)
@@ -97,39 +99,34 @@ export const useAuthStore = defineStore('auth', () => {
   async function login(credentials: LoginRequest): Promise<boolean> {
     try {
       const { authRepo } = usePlatform()
-      // 使用 RSA 加密密码
       const encryptedPassword = await encryptPassword(credentials.password)
-      if (!encryptedPassword) {
-        console.error('[AuthStore] 密码加密失败，无法登录')
+
+      await authRepo.login(credentials.username, encryptedPassword)
+
+      try {
+        const currentUser = await authRepo.getCurrentUser()
+        user.value = currentUser
+        isAuthenticated.value = true
+        wasLoggedIn.value = true
+        localStorage.setItem('lastKnownLoggedIn', 'true')
+
+        const { useCalendarStore } = await import('./calendar')
+        const calendarStore = useCalendarStore()
+        await calendarStore.loginTransition()
+
+        return true
+      } catch (userError) {
+        console.error('[AuthStore] 登录成功但获取用户信息失败，回滚认证状态:', userError)
+        user.value = null
+        isAuthenticated.value = false
         return false
       }
-
-      const result = await authRepo.login(credentials.username, encryptedPassword)
-      if (result) {
-        const currentUser = await authRepo.getCurrentUser()
-        if (currentUser) {
-          user.value = currentUser
-          isAuthenticated.value = true
-          wasLoggedIn.value = true
-          localStorage.setItem('lastKnownLoggedIn', 'true')
-
-          // 登录成功后，日历身份切换（local → online）
-          // 替代原有的 syncCalendarsFromServer()
-          const { useCalendarStore } = await import('./calendar')
-          const calendarStore = useCalendarStore()
-          await calendarStore.loginTransition()
-
-          return true
-        } else {
-          console.error('[AuthStore] 登录成功但获取用户信息失败，回滚认证状态')
-          user.value = null
-          isAuthenticated.value = false
-          return false
-        }
-      }
-      return false
     } catch (error) {
-      console.error('登录失败:', error)
+      if (error instanceof RepositoryError) {
+        console.error('[AuthStore] 登录失败:', error.code, error.message)
+      } else {
+        console.error('登录失败:', error)
+      }
       return false
     }
   }
@@ -141,37 +138,33 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const { authRepo } = usePlatform()
       const encryptedPassword = await encryptPassword(data.password)
-      if (!encryptedPassword) {
-        console.error('[AuthStore] 密码加密失败，无法注册')
+
+      await authRepo.register(data.email, encryptedPassword, data.username)
+
+      try {
+        const currentUser = await authRepo.getCurrentUser()
+        user.value = currentUser
+        isAuthenticated.value = true
+        wasLoggedIn.value = true
+        localStorage.setItem('lastKnownLoggedIn', 'true')
+
+        const { useCalendarStore } = await import('./calendar')
+        const calendarStore = useCalendarStore()
+        await calendarStore.loginTransition()
+
+        return true
+      } catch (userError) {
+        console.error('[AuthStore] 注册成功但获取用户信息失败，回滚认证状态:', userError)
+        user.value = null
+        isAuthenticated.value = false
         return false
       }
-
-      const result = await authRepo.register(data.email, encryptedPassword, data.username)
-      if (result) {
-        const currentUser = await authRepo.getCurrentUser()
-        if (currentUser) {
-          user.value = currentUser
-          isAuthenticated.value = true
-          wasLoggedIn.value = true
-          localStorage.setItem('lastKnownLoggedIn', 'true')
-
-          // 注册成功后，日历身份切换（local → online）
-          // 替代原有的 syncCalendarsFromServer()
-          const { useCalendarStore } = await import('./calendar')
-          const calendarStore = useCalendarStore()
-          await calendarStore.loginTransition()
-
-          return true
-        } else {
-          console.error('[AuthStore] 注册成功但获取用户信息失败，回滚认证状态')
-          user.value = null
-          isAuthenticated.value = false
-          return false
-        }
-      }
-      return false
     } catch (error) {
-      console.error('注册失败:', error)
+      if (error instanceof RepositoryError) {
+        console.error('[AuthStore] 注册失败:', error.code, error.message)
+      } else {
+        console.error('注册失败:', error)
+      }
       return false
     }
   }
@@ -187,26 +180,30 @@ export const useAuthStore = defineStore('auth', () => {
         return false
       }
 
-      // OAuth 通过 Tauri 平台的 safeInvoke 实现
-      const { safeInvoke } = await import('@/utils/tauri')
-      const response = await safeInvoke<{
-        user_id: number
-        access_token: string
-        refresh_token: string
-        expires_in: number
-      }>('auth_oauth_github', { clientId, redirectUri })
+      const authResult = await authRepo.loginWithOAuth({
+        provider: 'github',
+        clientId,
+        redirectUri,
+      })
 
-      if (response?.access_token) {
-        const currentUser = await authRepo.getCurrentUser()
-        if (currentUser) {
+      if (authResult?.accessToken) {
+        try {
+          const currentUser = await authRepo.getCurrentUser()
           user.value = currentUser
           isAuthenticated.value = true
           return true
+        } catch (userError) {
+          console.error('[AuthStore] GitHub 登录成功但获取用户信息失败:', userError)
+          return false
         }
       }
       return false
     } catch (error) {
-      console.error('GitHub 登录失败:', error)
+      if (error instanceof RepositoryError && error.code === RepoErrorCodes.UNSUPPORTED_OPERATION) {
+        console.warn('[AuthStore] GitHub OAuth 登录暂不支持当前平台')
+      } else {
+        console.error('GitHub 登录失败:', error)
+      }
       return false
     }
   }
@@ -278,13 +275,16 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const { authRepo } = usePlatform()
       const currentUser = await authRepo.getCurrentUser()
-      if (currentUser) {
-        user.value = currentUser
-        isAuthenticated.value = true
-        return true
-      }
-      return false
+      user.value = currentUser
+      isAuthenticated.value = true
+      return true
     } catch (error) {
+      if (error instanceof RepositoryError && error.code === RepoErrorCodes.NOT_FOUND) {
+        // 未登录，合法状态
+        user.value = null
+        isAuthenticated.value = false
+        return false
+      }
       console.error('检查认证状态失败:', error)
       user.value = null
       isAuthenticated.value = false

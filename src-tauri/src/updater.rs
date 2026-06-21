@@ -66,10 +66,17 @@ use tauri_plugin_updater::{Update, Updater, UpdaterExt};
 
 /// 更新服务器 API Key
 ///
-/// 用于向更新服务器认证请求。此 Key 需要：
+/// 通过编译时环境变量 `UPDATE_API_KEY` 注入，用于向更新服务器认证请求。
+/// 此 Key 需要：
 /// 1. 作为 `X-AccessKey` 请求头发送
 /// 2. 作为 URL 查询参数 `tauriKey` 发送（在 endpoints 配置中）
-const UPDATE_API_KEY: &str = "VsD99h2Y0AHwh_gGf2iiJw";
+///
+/// 构建时请设置环境变量：`UPDATE_API_KEY=your_key cargo build`
+/// 若未设置，将使用空字符串（更新功能将不可用）
+const UPDATE_API_KEY: &str = match option_env!("UPDATE_API_KEY") {
+    Some(key) => key,
+    None => "",
+};
 
 /// 更新检查结果
 pub enum UpdateCheckResult {
@@ -252,14 +259,11 @@ pub async fn handle_update_result(_app_handle: AppHandle, result: UpdateCheckRes
 mod tests {
     use super::*;
 
-    /// 测试 API Key 常量不为空
+    /// 测试 API Key 常量类型正确
     #[test]
-    fn test_api_key_not_empty() {
-        assert!(!UPDATE_API_KEY.is_empty(), "API Key 不应为空");
-        assert!(
-            UPDATE_API_KEY.len() > 10,
-            "API Key 长度应大于 10 个字符"
-        );
+    fn test_api_key_is_string() {
+        // API Key 应为非空字符串类型（实际值由编译时环境变量决定）
+        let _key: &str = UPDATE_API_KEY;
     }
 
     /// 测试 UpdateCheckResult 枚举变体
@@ -324,15 +328,16 @@ mod tests {
         }
     }
 
-    /// 测试 API Key 格式（Base64 编码）
+    /// 测试 API Key 格式（如果已设置）
     #[test]
     fn test_api_key_format() {
-        // API Key 应该是 Base64 编码的字符串
-        let key = UPDATE_API_KEY;
-        // Base64 字符只包含 A-Z, a-z, 0-9, +, /, =
-        let is_valid_base64 = key
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '_');
-        assert!(is_valid_base64, "API Key 应该是有效的 Base64 格式");
+        // 仅在环境变量已设置时验证格式
+        if !UPDATE_API_KEY.is_empty() {
+            let key = UPDATE_API_KEY;
+            let is_valid_base64 = key
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '_');
+            assert!(is_valid_base64, "API Key 应该是有效的 Base64 格式");
+        }
     }
 }

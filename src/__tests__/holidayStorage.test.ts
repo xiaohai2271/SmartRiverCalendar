@@ -11,23 +11,69 @@ import {
   importCustomHolidays,
 } from '../utils/holidayStorage'
 
-// 模拟 settingsService，使数据库不可用，测试 localStorage 降级路径
-vi.mock('@/services/settings', () => ({
-  isDatabaseAvailable: vi.fn().mockResolvedValue(false),
-  getAllUserHolidays: vi.fn().mockResolvedValue([]),
+// Mock capabilities（无本地数据库，测试 localStorage 降级路径）
+const mockCapabilities = {
+  hasLocalDatabase: false,
+  hasOfflineMode: false,
+  dataPriority: 'remote-first' as const,
+  hasReminderPopup: false,
+  hasSystemNotification: true,
+  hasSnoozeReminder: false,
+  hasSystemTray: false,
+  hasAutoStart: false,
+  hasClockHook: false,
+  hasMultiWindow: false,
+  hasAutoUpdate: false,
+  hasMinimizeToTray: false,
+  hasProxySettings: false,
+  hasOAuthCallback: false,
+  hasSsoLogin: false,
+  hasExchangeSupport: false,
+  hasCalDavSupport: false,
+  hasExternalSync: false,
+  hasAlwaysOnTop: false,
+  hasBackgroundSync: false,
+  hasIncrementalSync: false,
+  hasClientConflictResolution: false,
+}
+
+const mockSettingsRepo = {
+  getUserHolidays: vi.fn().mockResolvedValue([]),
   addUserHoliday: vi.fn().mockResolvedValue(undefined),
   removeUserHoliday: vi.fn().mockResolvedValue(false),
-  loadFromLocalStorage: vi.fn((key: string) => localStorage.getItem(key)),
+}
+
+vi.mock('@/platform/provider', () => ({
+  usePlatform: () => ({
+    capabilities: mockCapabilities,
+    settingsRepo: mockSettingsRepo,
+    authRepo: {},
+    calendarRepo: {},
+    eventRepo: {},
+    todoRepo: {},
+    syncRepo: {},
+  }),
+  useCapabilities: () => mockCapabilities,
+}))
+
+vi.mock('@/services/settings', () => ({
+  isDatabaseAvailable: () => mockCapabilities.hasLocalDatabase,
+  getUserHolidays: vi.fn(() => mockSettingsRepo.getUserHolidays()),
+  addUserHoliday: vi.fn((...args: unknown[]) => mockSettingsRepo.addUserHoliday(...args)),
+  removeUserHoliday: vi.fn((...args: unknown[]) => mockSettingsRepo.removeUserHoliday(...args)),
+  loadFromLocalStorage: vi.fn((key: string) => {
+    try { return localStorage.getItem(key) } catch { return null }
+  }),
 }))
 
 describe('holidayStorage', () => {
   beforeEach(() => {
-    // 清空 localStorage
     localStorage.clear()
+    vi.clearAllMocks()
+    mockCapabilities.hasLocalDatabase = false
   })
 
   afterEach(() => {
-    // 清空 localStorage
     localStorage.clear()
   })
 

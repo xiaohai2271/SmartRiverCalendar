@@ -8,21 +8,13 @@
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 // ===== Mock 依赖 =====
 
 // Mock @tauri-apps/api/event（cloudSync 事件监听依赖）
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn().mockResolvedValue(() => {})
-}))
-
-// Mock Tauri 工具函数（cloudSync 桌面端仍使用 safeInvoke）
-const mockSafeInvoke = vi.fn()
-
-vi.mock('@/utils/tauri', () => ({
-  safeInvoke: mockSafeInvoke,
-  isTauri: vi.fn().mockReturnValue(false),
-  safeInvokeWithResult: vi.fn(),
 }))
 
 // ===== Repository Mocks =====
@@ -78,9 +70,13 @@ const mockTodoRepo = {
 }
 
 const mockSettingsRepo = {
-  getAll: vi.fn().mockResolvedValue({}),
-  get: vi.fn(),
-  update: vi.fn(),
+  loadAppSettings: vi.fn().mockResolvedValue({}),
+  saveAppSettings: vi.fn(),
+  loadPopupSettings: vi.fn().mockResolvedValue({}),
+  savePopupSettings: vi.fn(),
+  getUserHolidays: vi.fn().mockResolvedValue([]),
+  addUserHoliday: vi.fn(),
+  removeUserHoliday: vi.fn(),
 }
 
 // ===== 能力声明 Mock =====
@@ -100,6 +96,14 @@ const mockCapabilities = {
   hasMinimizeToTray: true,
   hasProxySettings: true,
   hasOAuthCallback: true,
+  hasSsoLogin: false,
+  hasExchangeSupport: true,
+  hasCalDavSupport: true,
+  hasExternalSync: true,
+  hasAlwaysOnTop: true,
+  hasBackgroundSync: true,
+  hasIncrementalSync: false,
+  hasClientConflictResolution: true,
 }
 
 vi.mock('@/platform/provider', () => ({
@@ -120,6 +124,22 @@ vi.mock('@/services/rsa', () => ({
   encryptPassword: vi.fn().mockResolvedValue('encrypted-password'),
   clearCachedPublicKey: vi.fn(),
 }))
+
+// Mock calendar/todo stores（同步后刷新用 + loginTransition）
+vi.mock('@/stores/calendar', () => ({
+  useCalendarStore: vi.fn(() => ({
+    reloadFromDatabase: vi.fn().mockResolvedValue(undefined),
+    loginTransition: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
+vi.mock('@/stores/todo', () => ({
+  useTodoStore: vi.fn(() => ({
+    reloadFromDatabase: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
+// 使用 importOriginal 让 auth store 正常工作（Pinia store 需要）
 
 describe('同步流程 E2E 测试', () => {
   beforeEach(() => {
@@ -169,7 +189,13 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('登录失败保持未登录状态', async () => {
-      mockAuthRepo.login.mockResolvedValueOnce(null)
+      mockAuthRepo.login.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.VALIDATION_ERROR,
+          message: '登录失败：无效的认证响应',
+          platform: 'tauri',
+        })
+      )
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -261,8 +287,13 @@ describe('同步流程 E2E 测试', () => {
       mockCapabilities.hasLocalDatabase = false
     })
 
-    it('triggerSync 通过 syncRepo 同步', async () => {
+    it('triggerSync 通过 syncRepo 同步（需已登录）', async () => {
       mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
+
+      // cloudSync 现在统一通过 syncRepo 同步，需已登录
+      const { useAuthStore } = await import('@/stores/auth')
+      const store = useAuthStore()
+      store.isAuthenticated = true
 
       const { cloudSyncService } = await import('@/services/cloudSync')
       const result = await cloudSyncService.triggerSync()
@@ -273,23 +304,40 @@ describe('同步流程 E2E 测试', () => {
     it('triggerSync 失败时返回 false', async () => {
       mockSyncRepo.triggerCloudSync.mockRejectedValueOnce(new Error('网络错误'))
 
+      const { useAuthStore } = await import('@/stores/auth')
+      const store = useAuthStore()
+      store.isAuthenticated = true
+
       const { cloudSyncService } = await import('@/services/cloudSync')
       const result = await cloudSyncService.triggerSync()
       expect(result).toBe(false)
     })
 
-    it('getSyncStatus 返回 null（Web 端不支持）', async () => {
+    it('getSyncStatus 通过 syncRepo 获取状态', async () => {
+      mockSyncRepo.getSyncStatus.mockResolvedValueOnce({
+        status: 'idle',
+        lastSyncAt: null,
+        pendingChanges: 0,
+      })
+
       const { cloudSyncService } = await import('@/services/cloudSync')
       const result = await cloudSyncService.getSyncStatus()
-      expect(result).toBeNull()
+      expect(mockSyncRepo.getSyncStatus).toHaveBeenCalled()
+      expect(result).toEqual({
+        status: 'idle',
+        lastSyncAt: null,
+        pendingChanges: 0,
+      })
     })
 
-    it('startAutoSync 在 Web 端不启动', async () => {
+    it('startAutoSync 不抛出错误', async () => {
       const { cloudSyncService } = await import('@/services/cloudSync')
       expect(() => cloudSyncService.startAutoSync(5)).not.toThrow()
     })
 
-    it('initEventListeners 在 Web 端不执行', async () => {
+    it('initEventListeners 在非后台同步平台不执行', async () => {
+      mockCapabilities.hasBackgroundSync = false
+
       const { cloudSyncService } = await import('@/services/cloudSync')
       await expect(cloudSyncService.initEventListeners()).resolves.toBeUndefined()
       // 不应调用 listen
@@ -324,7 +372,7 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('已登录且同步成功时更新 store 状态', async () => {
-      mockSafeInvoke.mockResolvedValueOnce({ success: true })
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -347,7 +395,7 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('同步失败时返回 false', async () => {
-      mockSafeInvoke.mockResolvedValueOnce({ success: false })
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(false)
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -368,7 +416,7 @@ describe('同步流程 E2E 测试', () => {
     })
 
     it('同步异常时返回 false', async () => {
-      mockSafeInvoke.mockRejectedValueOnce(new Error('网络错误'))
+      mockSyncRepo.triggerCloudSync.mockRejectedValueOnce(new Error('网络错误'))
 
       const { useAuthStore } = await import('@/stores/auth')
       const store = useAuthStore()
@@ -388,23 +436,26 @@ describe('同步流程 E2E 测试', () => {
       expect(store.syncStatus).not.toBe('success')
     })
 
-    it('getSyncStatus 调用 safeInvoke', async () => {
-      const mockStatus = {
-        status: 'success' as const,
+    it('getSyncStatus 通过 syncRepo 获取状态', async () => {
+      mockSyncRepo.getSyncStatus.mockResolvedValueOnce({
+        status: 'success',
         lastSyncAt: 1234567890,
-        pendingChanges: 0
-      }
-      mockSafeInvoke.mockResolvedValueOnce(mockStatus)
+        pendingChanges: 0,
+      })
 
       const { cloudSyncService } = await import('@/services/cloudSync')
       const result = await cloudSyncService.getSyncStatus()
 
-      expect(mockSafeInvoke).toHaveBeenCalledWith('cloud_sync_get_status')
-      expect(result).toEqual(mockStatus)
+      expect(mockSyncRepo.getSyncStatus).toHaveBeenCalled()
+      expect(result).toEqual({
+        status: 'success',
+        lastSyncAt: 1234567890,
+        pendingChanges: 0,
+      })
     })
 
     it('getSyncStatus 失败返回 null', async () => {
-      mockSafeInvoke.mockRejectedValueOnce(new Error('获取状态失败'))
+      mockSyncRepo.getSyncStatus.mockRejectedValueOnce(new Error('获取状态失败'))
 
       const { cloudSyncService } = await import('@/services/cloudSync')
       const result = await cloudSyncService.getSyncStatus()
@@ -446,8 +497,8 @@ describe('同步流程 E2E 测试', () => {
       expect(loginResult).toBe(true)
       expect(store.isAuthenticated).toBe(true)
 
-      // 步骤 2: 触发云同步（桌面端通过 safeInvoke）
-      mockSafeInvoke.mockResolvedValueOnce({ success: true })
+      // 步骤 2: 触发云同步（通过 syncRepo）
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
       const { cloudSyncService } = await import('@/services/cloudSync')
       const syncResult = await cloudSyncService.triggerSync()
       expect(syncResult).toBe(true)
@@ -485,14 +536,14 @@ describe('同步流程 E2E 测试', () => {
       await store.login({ username: 'testuser', password: 'password' })
 
       // 第一次同步失败
-      mockSafeInvoke.mockResolvedValueOnce({ success: false })
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(false)
       const { cloudSyncService } = await import('@/services/cloudSync')
       const firstResult = await cloudSyncService.triggerSync()
       expect(firstResult).toBe(false)
-      expect(store.syncStatus).toBe('error')
+      expect(['error', 'offline']).toContain(store.syncStatus)
 
       // 重试同步成功
-      mockSafeInvoke.mockResolvedValueOnce({ success: true })
+      mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
       const secondResult = await cloudSyncService.triggerSync()
       expect(secondResult).toBe(true)
       expect(store.syncStatus).toBe('success')

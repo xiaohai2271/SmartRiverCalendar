@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
+import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 // Mock authRepo
 const mockAuthRepo = {
@@ -10,6 +11,7 @@ const mockAuthRepo = {
   checkAuthStatus: vi.fn(),
   refreshToken: vi.fn(),
   getPublicKey: vi.fn(),
+  loginWithOAuth: vi.fn(),
 }
 
 // Mock syncRepo
@@ -68,16 +70,10 @@ vi.mock('@/services/rsa', () => ({
   clearCachedPublicKey: vi.fn(),
 }))
 
-// Mock safeInvoke（OAuth 用）
-vi.mock('@/utils/tauri', () => ({
-  safeInvoke: vi.fn(),
-  isTauri: vi.fn(() => true),
-}))
-
 describe('auth Store', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
     setActivePinia(createPinia())
+    vi.clearAllMocks()
   })
 
   describe('初始状态', () => {
@@ -141,6 +137,26 @@ describe('auth Store', () => {
       expect(store.isInitialized).toBe(true)
     })
 
+    it('getCurrentUser 抛出 NOT_FOUND 时清除认证状态', async () => {
+      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(true)
+      mockAuthRepo.getCurrentUser.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.NOT_FOUND,
+          message: '未找到当前用户',
+          platform: 'tauri',
+        })
+      )
+
+      const { useAuthStore } = await import('../stores/auth')
+      const store = useAuthStore()
+
+      await store.initialize()
+
+      expect(store.isAuthenticated).toBe(false)
+      expect(store.user).toBeNull()
+      expect(store.isInitialized).toBe(true)
+    })
+
     it('只初始化一次', async () => {
       mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(false)
 
@@ -148,7 +164,7 @@ describe('auth Store', () => {
       const store = useAuthStore()
 
       await store.initialize()
-      await store.initialize() // 第二次调用
+      await store.initialize()
 
       expect(mockAuthRepo.checkAuthStatus).toHaveBeenCalledTimes(1)
     })
@@ -191,7 +207,13 @@ describe('auth Store', () => {
         refreshToken: 'refresh-token',
         expiresIn: 3600,
       })
-      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(null)
+      mockAuthRepo.getCurrentUser.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.NOT_FOUND,
+          message: '未找到当前用户',
+          platform: 'tauri',
+        })
+      )
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -205,7 +227,13 @@ describe('auth Store', () => {
 
     it('登录失败保持未登录状态', async () => {
       mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
-      mockAuthRepo.login.mockResolvedValueOnce(null)
+      mockAuthRepo.login.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.VALIDATION_ERROR,
+          message: '登录失败：无效的认证响应',
+          platform: 'tauri',
+        })
+      )
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -259,12 +287,11 @@ describe('auth Store', () => {
         displayName: 'GitHub 用户',
         provider: 'github' as const,
       }
-      const { safeInvoke } = await import('@/utils/tauri')
-      vi.mocked(safeInvoke).mockResolvedValueOnce({
-        user_id: 1,
-        access_token: 'access-token',
-        refresh_token: 'refresh-token',
-        expires_in: 3600,
+      mockAuthRepo.loginWithOAuth.mockResolvedValueOnce({
+        userId: 1,
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
       })
       mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
@@ -273,7 +300,8 @@ describe('auth Store', () => {
 
       const result = await store.loginWithGithub('client-id', 'http://localhost/callback')
 
-      expect(safeInvoke).toHaveBeenCalledWith('auth_oauth_github', {
+      expect(mockAuthRepo.loginWithOAuth).toHaveBeenCalledWith({
+        provider: 'github',
         clientId: 'client-id',
         redirectUri: 'http://localhost/callback',
       })
@@ -290,7 +318,6 @@ describe('auth Store', () => {
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
-      // 手动设置已登录状态
       store.user = {
         id: '1',
         email: 'test@example.com',
@@ -316,7 +343,6 @@ describe('auth Store', () => {
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
-      // 手动设置已登录状态
       store.user = {
         id: '1',
         email: 'test@example.com',
@@ -339,7 +365,6 @@ describe('auth Store', () => {
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
-      // 手动设置已登录状态
       store.user = {
         id: '1',
         email: 'test@example.com',
@@ -361,7 +386,6 @@ describe('auth Store', () => {
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
-      // 手动设置已登录状态
       store.user = {
         id: '1',
         email: 'test@example.com',
@@ -386,7 +410,6 @@ describe('auth Store', () => {
         displayName: '测试用户',
         provider: 'local' as const,
       }
-      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(true)
       mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
       const { useAuthStore } = await import('../stores/auth')
@@ -400,7 +423,13 @@ describe('auth Store', () => {
     })
 
     it('检查失败清除认证状态', async () => {
-      mockAuthRepo.checkAuthStatus.mockResolvedValueOnce(false)
+      mockAuthRepo.getCurrentUser.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.NOT_FOUND,
+          message: '未找到当前用户',
+          platform: 'tauri',
+        })
+      )
 
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
@@ -420,7 +449,6 @@ describe('auth Store', () => {
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
-      // 设置已登录状态
       store.isAuthenticated = true
 
       await store.startSync()
@@ -433,7 +461,6 @@ describe('auth Store', () => {
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
-      // 保持未登录状态
       store.isAuthenticated = false
 
       await store.startSync()
@@ -446,7 +473,6 @@ describe('auth Store', () => {
       const { useAuthStore } = await import('../stores/auth')
       const store = useAuthStore()
 
-      // 设置同步状态
       store.syncStatus = 'syncing'
 
       store.stopSync()

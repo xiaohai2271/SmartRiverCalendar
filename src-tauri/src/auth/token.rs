@@ -3,7 +3,7 @@
 //
 // 存储策略：SQLite + AES-256-GCM 加密
 // Token 以加密形式存储在 app_settings 表中，key 格式为 "auth_tokens:{user_id}"
-// 加密使用与项目一致的 AES-256-GCM 算法（crypto 模块），密钥由主机名派生
+// 加密使用与项目一致的 AES-256-GCM 算法（crypto 模块），密钥由 user_id + 随机盐值派生
 //
 // 历史原因：之前使用 keyring crate 存储到操作系统凭据管理器，
 // 但 keyring 在 Windows 上存在严重 bug：
@@ -14,6 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+use base64::Engine;
 
 /// Token 信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,8 +54,35 @@ impl TokenStore {
         let json = serde_json::to_string(tokens)
             .map_err(|e| TokenError::SerializeError(e.to_string()))?;
 
+        // 为每个用户生成或复用盐值
+        let salt_key = format!("auth_salt:{}", tokens.user_id);
+        let salt_b64: Option<String> = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                rusqlite::params![salt_key],
+                |row| row.get(0),
+            )
+            .ok()
+            .flatten();
+
+        let (salt, salt_b64_value) = if let Some(b64) = salt_b64 {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&b64)
+                .map_err(|e| TokenError::EncryptError(format!("盐值解码失败: {}", e)))?;
+            if bytes.len() < 16 {
+                return Err(TokenError::EncryptError(format!("盐值长度不足: {} < 16", bytes.len())));
+            }
+            let mut arr = [0u8; 16];
+            arr.copy_from_slice(&bytes[..16]);
+            (arr, b64)
+        } else {
+            let s = crate::crypto::generate_salt();
+            let b64 = base64::engine::general_purpose::STANDARD.encode(s);
+            (s, b64)
+        };
+
         // 加密 Token JSON
-        let encrypted = crate::crypto::encrypt_password(&json)
+        let encrypted = crate::crypto::encrypt_password(&json, tokens.user_id, &salt)
             .map_err(|e| TokenError::EncryptError(e))?;
 
         let key = Self::storage_key(tokens.user_id);
@@ -63,6 +91,13 @@ impl TokenStore {
         conn.execute(
             "INSERT OR REPLACE INTO app_settings (key, value, description, updated_at) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![key, encrypted, "加密存储的用户认证 Token", now],
+        )
+        .map_err(|e| TokenError::DbError(e.to_string()))?;
+
+        // 保存盐值
+        conn.execute(
+            "INSERT OR REPLACE INTO app_settings (key, value, description, updated_at) VALUES (?1, ?2, ?3, ?4)",
+            rusqlite::params![salt_key, salt_b64_value, "加密盐值", now],
         )
         .map_err(|e| TokenError::DbError(e.to_string()))?;
 
@@ -88,9 +123,44 @@ impl TokenStore {
 
         match encrypted {
             Some(enc) => {
-                // 解密
-                let json = crate::crypto::decrypt_password(&enc)
-                    .map_err(|e| TokenError::DecryptError(e))?;
+                // 读取盐值
+                let salt_key = format!("auth_salt:{}", user_id);
+                let salt_b64: Option<String> = conn
+                    .query_row(
+                        "SELECT value FROM app_settings WHERE key = ?1",
+                        rusqlite::params![salt_key],
+                        |row| row.get(0),
+                    )
+                    .ok()
+                    .flatten();
+
+                let json = if let Some(b64) = salt_b64 {
+                    // 新版：使用 user_id + 盐值解密
+                    let bytes = base64::engine::general_purpose::STANDARD
+                        .decode(&b64)
+                        .map_err(|e| TokenError::DecryptError(format!("盐值解码失败: {}", e)))?;
+                    if bytes.len() < 16 {
+                        return Err(TokenError::DecryptError(format!("盐值长度不足: {} < 16", bytes.len())));
+                    }
+                    let mut salt = [0u8; 16];
+                    salt.copy_from_slice(&bytes[..16]);
+                    crate::crypto::decrypt_password(&enc, user_id, &salt)
+                        .map_err(|e| TokenError::DecryptError(e))?
+                } else {
+                    // 旧版：使用旧版密钥解密，并自动迁移到新加密方式
+                    let plaintext = crate::crypto::decrypt_password_legacy(&enc)
+                        .map_err(|e| TokenError::DecryptError(e))?;
+                    // 自动迁移：用新密钥重新加密并保存
+                    let tokens: TokenInfo = serde_json::from_str(&plaintext)
+                        .map_err(|e| TokenError::DeserializeError(e.to_string()))?;
+                    if let Err(e) = self.save_tokens(conn, &tokens) {
+                        log::warn!("[load_tokens] 旧版 Token 自动迁移失败: {}", e);
+                    } else {
+                        log::info!("[load_tokens] 旧版 Token 已自动迁移到新加密方式 (user_id={})", user_id);
+                    }
+                    plaintext
+                };
+
                 let tokens: TokenInfo = serde_json::from_str(&json)
                     .map_err(|e| TokenError::DeserializeError(e.to_string()))?;
                 Ok(Some(tokens))
@@ -105,6 +175,13 @@ impl TokenStore {
         conn.execute(
             "DELETE FROM app_settings WHERE key = ?1",
             rusqlite::params![key],
+        )
+        .map_err(|e| TokenError::DbError(e.to_string()))?;
+        // 同时删除盐值
+        let salt_key = format!("auth_salt:{}", user_id);
+        conn.execute(
+            "DELETE FROM app_settings WHERE key = ?1",
+            rusqlite::params![salt_key],
         )
         .map_err(|e| TokenError::DbError(e.to_string()))?;
         Ok(())

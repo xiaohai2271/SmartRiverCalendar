@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 // Mock authRepo
 const mockAuthRepo = {
@@ -74,14 +75,12 @@ describe('AuthService', () => {
     it('应该调用 authRepo.login 并返回认证响应和用户信息', async () => {
       mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
 
-      // authRepo.login 返回
       mockAuthRepo.login.mockResolvedValueOnce({
         userId: 1,
         accessToken: 'access-token',
         refreshToken: 'refresh-token',
         expiresIn: 3600,
       })
-      // authRepo.getCurrentUser 返回
       mockAuthRepo.getCurrentUser.mockResolvedValueOnce({
         id: '1',
         email: 'test@example.com',
@@ -93,27 +92,34 @@ describe('AuthService', () => {
 
       expect(mockEncryptPassword).toHaveBeenCalledWith('password')
       expect(mockAuthRepo.login).toHaveBeenCalledWith('testuser', 'encrypted-password')
-      expect(result).not.toBeNull()
-      expect(result?.authResponse.userId).toBe(1)
-      expect(result?.user).not.toBeNull()
-      expect(result?.user?.email).toBe('test@example.com')
+      expect(result.authResponse.userId).toBe(1)
+      expect(result.user).not.toBeNull()
+      expect(result.user?.email).toBe('test@example.com')
     })
 
-    it('密码加密失败时返回 null', async () => {
-      mockEncryptPassword.mockResolvedValueOnce(null)
+    it('密码加密失败时抛出错误', async () => {
+      mockEncryptPassword.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
+          message: '获取 RSA 公钥失败',
+          platform: 'tauri',
+        })
+      )
 
-      const result = await authService.login('testuser', 'password')
-
-      expect(result).toBeNull()
+      await expect(authService.login('testuser', 'password')).rejects.toThrow(RepositoryError)
     })
 
-    it('登录失败返回 null', async () => {
+    it('登录失败抛出 RepositoryError', async () => {
       mockEncryptPassword.mockResolvedValueOnce('encrypted-password')
-      mockAuthRepo.login.mockResolvedValueOnce(null)
+      mockAuthRepo.login.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.VALIDATION_ERROR,
+          message: '登录失败：无效的认证响应',
+          platform: 'tauri',
+        })
+      )
 
-      const result = await authService.login('testuser', 'password')
-
-      expect(result).toBeNull()
+      await expect(authService.login('testuser', 'password')).rejects.toThrow(RepositoryError)
     })
   })
 
@@ -138,18 +144,21 @@ describe('AuthService', () => {
 
       expect(mockEncryptPassword).toHaveBeenCalledWith('password')
       expect(mockAuthRepo.register).toHaveBeenCalledWith('newuser@example.com', 'encrypted-password', 'newuser')
-      expect(result).not.toBeNull()
-      expect(result?.authResponse.userId).toBe(1)
-      expect(result?.user).not.toBeNull()
-      expect(result?.user?.email).toBe('newuser@example.com')
+      expect(result.authResponse.userId).toBe(1)
+      expect(result.user).not.toBeNull()
+      expect(result.user?.email).toBe('newuser@example.com')
     })
 
-    it('密码加密失败时返回 null', async () => {
-      mockEncryptPassword.mockResolvedValueOnce(null)
+    it('密码加密失败时抛出错误', async () => {
+      mockEncryptPassword.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
+          message: '获取 RSA 公钥失败',
+          platform: 'tauri',
+        })
+      )
 
-      const result = await authService.register('newuser', 'newuser@example.com', 'password')
-
-      expect(result).toBeNull()
+      await expect(authService.register('newuser', 'newuser@example.com', 'password')).rejects.toThrow(RepositoryError)
     })
   })
 
@@ -247,18 +256,21 @@ describe('AuthService', () => {
       const result = await authService.getCurrentUser()
 
       expect(mockAuthRepo.getCurrentUser).toHaveBeenCalled()
-      expect(result).not.toBeNull()
-      expect(result?.email).toBe('test@example.com')
-      expect(result?.displayName).toBe('测试用户')
-      expect(result?.id).toBe('1')
+      expect(result.email).toBe('test@example.com')
+      expect(result.displayName).toBe('测试用户')
+      expect(result.id).toBe('1')
     })
 
-    it('没有用户时返回 null', async () => {
-      mockAuthRepo.getCurrentUser.mockResolvedValueOnce(null)
+    it('未登录时抛出 RepositoryError', async () => {
+      mockAuthRepo.getCurrentUser.mockRejectedValueOnce(
+        new RepositoryError({
+          code: RepoErrorCodes.NOT_FOUND,
+          message: '未找到当前用户',
+          platform: 'tauri',
+        })
+      )
 
-      const result = await authService.getCurrentUser()
-
-      expect(result).toBeNull()
+      await expect(authService.getCurrentUser()).rejects.toThrow(RepositoryError)
     })
   })
 

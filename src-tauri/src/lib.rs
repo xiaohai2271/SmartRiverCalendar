@@ -14,6 +14,7 @@ pub mod sync_engine;
 mod sync;
 mod updater;
 mod log_buffer;
+pub mod xml_utils;
 
 #[cfg(target_os = "windows")]
 mod clock_hook;

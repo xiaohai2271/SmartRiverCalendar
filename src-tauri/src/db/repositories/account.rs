@@ -23,6 +23,8 @@ pub struct Account {
     pub username: String,
     /// 已加密的密码
     pub encrypted_password: String,
+    /// 密钥派生盐值（base64 编码）
+    pub key_salt: Option<String>,
     /// 显示名称
     pub display_name: Option<String>,
     /// 是否启用
@@ -46,6 +48,8 @@ pub struct CreateAccountParams {
     pub username: String,
     /// 已加密的密码
     pub encrypted_password: String,
+    /// 密钥派生盐值（base64 编码）
+    pub key_salt: Option<String>,
     /// 显示名称
     pub display_name: Option<String>,
     /// 是否启用
@@ -67,6 +71,8 @@ pub struct UpdateAccountParams {
     pub username: String,
     /// 已加密的密码
     pub encrypted_password: String,
+    /// 密钥派生盐值（base64 编码）
+    pub key_salt: Option<String>,
     /// 显示名称
     pub display_name: Option<String>,
     /// 是否启用
@@ -94,10 +100,11 @@ impl<'a> AccountRepository<'a> {
             server_url: row.get(2)?,
             username: row.get(3)?,
             encrypted_password: row.get(4)?,
-            display_name: row.get(5)?,
-            enabled: row.get::<_, i64>(6)? != 0,
-            created_at: row.get(7)?,
-            updated_at: row.get(8)?,
+            key_salt: row.get(5)?,
+            display_name: row.get(6)?,
+            enabled: row.get::<_, i64>(7)? != 0,
+            created_at: row.get(8)?,
+            updated_at: row.get(9)?,
         })
     }
 
@@ -114,14 +121,15 @@ impl<'a> AccountRepository<'a> {
         let id = self.db.execute_in_transaction(|tx| {
             tx.execute(
                 r#"
-                INSERT INTO accounts (type, server_url, username, encrypted_password, display_name, enabled, created_at, updated_at)
-                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                INSERT INTO accounts (type, server_url, username, encrypted_password, key_salt, display_name, enabled, created_at, updated_at)
+                VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                 "#,
                 params![
                     params.type_,
                     params.server_url,
                     params.username,
                     params.encrypted_password,
+                    params.key_salt,
                     params.display_name,
                     if params.enabled { 1i64 } else { 0i64 },
                     now,
@@ -146,7 +154,7 @@ impl<'a> AccountRepository<'a> {
         self.db.execute(|conn| {
             let mut stmt = conn.prepare(
                 r#"
-                SELECT id, type, server_url, username, encrypted_password, display_name, enabled, created_at, updated_at
+                SELECT id, type, server_url, username, encrypted_password, key_salt, display_name, enabled, created_at, updated_at
                 FROM accounts
                 ORDER BY created_at DESC
                 "#,
@@ -172,7 +180,7 @@ impl<'a> AccountRepository<'a> {
         self.db.execute(|conn| {
             let mut stmt = conn.prepare(
                 r#"
-                SELECT id, type, server_url, username, encrypted_password, display_name, enabled, created_at, updated_at
+                SELECT id, type, server_url, username, encrypted_password, key_salt, display_name, enabled, created_at, updated_at
                 FROM accounts
                 WHERE id = ?1
                 "#,
@@ -201,7 +209,7 @@ impl<'a> AccountRepository<'a> {
         self.db.execute(|conn| {
             let mut stmt = conn.prepare(
                 r#"
-                SELECT id, type, server_url, username, encrypted_password, display_name, enabled, created_at, updated_at
+                SELECT id, type, server_url, username, encrypted_password, key_salt, display_name, enabled, created_at, updated_at
                 FROM accounts
                 WHERE server_url = ?1 AND username = ?2
                 "#,
@@ -231,14 +239,15 @@ impl<'a> AccountRepository<'a> {
                 r#"
                 UPDATE accounts
                 SET type = ?1, server_url = ?2, username = ?3, encrypted_password = ?4,
-                    display_name = ?5, enabled = ?6, updated_at = ?7
-                WHERE id = ?8
+                    key_salt = ?5, display_name = ?6, enabled = ?7, updated_at = ?8
+                WHERE id = ?9
                 "#,
                 params![
                     params.type_,
                     params.server_url,
                     params.username,
                     params.encrypted_password,
+                    params.key_salt,
                     params.display_name,
                     if params.enabled { 1i64 } else { 0i64 },
                     now,
@@ -308,6 +317,7 @@ mod tests {
             server_url: server_url.to_string(),
             username: username.to_string(),
             encrypted_password: "encrypted_password_123".to_string(),
+            key_salt: None,
             display_name: Some(format!("{} Display", username)),
             enabled: true,
         }
@@ -445,6 +455,7 @@ mod tests {
             server_url: "https://new.server.com".to_string(),
             username: "newuser".to_string(),
             encrypted_password: "new_encrypted_password".to_string(),
+            key_salt: None,
             display_name: Some("New Display Name".to_string()),
             enabled: false,
         };
@@ -471,6 +482,7 @@ mod tests {
             server_url: "https://server.com".to_string(),
             username: "user".to_string(),
             encrypted_password: "password".to_string(),
+            key_salt: None,
             display_name: None,
             enabled: true,
         };
@@ -622,6 +634,7 @@ mod tests {
             server_url: created.server_url.clone(),
             username: created.username.clone(),
             encrypted_password: "updated_password".to_string(),
+            key_salt: None,
             display_name: created.display_name.clone(),
             enabled: created.enabled,
         };
