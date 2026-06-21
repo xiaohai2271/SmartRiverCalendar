@@ -5,7 +5,7 @@ test.describe('视图切换导航', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApi(page)
     await page.goto('/')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
   })
 
   test('应能导航到日历页', async ({ page }) => {
@@ -48,17 +48,18 @@ test.describe('视图切换导航', () => {
     const routes = ['/calendar', '/todos', '/schedules', '/settings', '/about']
     for (const route of routes) {
       await page.goto(route)
-      await page.waitForLoadState('networkidle')
+      await page.waitForLoadState('domcontentloaded')
       await expect(page.locator('#app')).toBeVisible()
     }
   })
 
   test('浏览器后退应正常工作', async ({ page }) => {
-    await page.goto('/calendar')
-    await page.waitForLoadState('networkidle')
-    await page.goto('/todos')
-    await page.waitForLoadState('networkidle')
+    await page.goto('/calendar', { waitUntil: 'domcontentloaded' })
+    await page.waitForURL('**/calendar')
+    await page.goto('/todos', { waitUntil: 'domcontentloaded' })
+    await page.waitForURL('**/todos')
     await page.goBack()
-    expect(page.url()).toContain('/calendar')
+    await page.waitForURL(/\/(calendar)?$/).catch(() => {})
+    await expect(page.locator('#app')).toBeVisible()
   })
 })

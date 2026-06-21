@@ -5,7 +5,7 @@ test.describe('待办 CRUD', () => {
   test.beforeEach(async ({ page }) => {
     await mockAllApi(page)
     await page.goto('/todos')
-    await page.waitForLoadState('networkidle')
+    await page.waitForLoadState('domcontentloaded')
   })
 
   test('应显示待办页面', async ({ page }) => {
@@ -13,26 +13,20 @@ test.describe('待办 CRUD', () => {
   })
 
   test('应能创建新待办', async ({ page }) => {
-    let createCaptured = false
     await page.route('**/v1/todos**', (route) => {
       if (route.request().method() === 'POST') {
-        createCaptured = true
         const body = route.request().postDataJSON()
         route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify({
-            code: 0,
-            data: {
-              id: `todo-${Date.now()}`,
-              ...body,
-              created_at: Date.now(),
-              updated_at: Date.now(),
-            },
-          }),
+          body: JSON.stringify({ code: 0, data: { id: `todo-${Date.now()}`, ...body } }),
         })
       } else {
-        route.continue()
+        route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ code: 0, data: [] }),
+        })
       }
     })
 
@@ -44,20 +38,14 @@ test.describe('待办 CRUD', () => {
         await titleInput.fill('E2E 测试待办')
       }
     }
-    expect(typeof createCaptured).toBe('boolean')
+    await expect(page.locator('#app')).toBeVisible()
   })
 
   test('应能完成待办', async ({ page }) => {
-    let updateCaptured = false
     await page.route('**/v1/todos/*', (route) => {
       if (route.request().method() === 'PUT') {
-        updateCaptured = true
         const body = route.request().postDataJSON()
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 0, data: body }),
-        })
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0, data: body }) })
       } else {
         route.continue()
       }
@@ -67,23 +55,17 @@ test.describe('待办 CRUD', () => {
     if (await checkbox.isVisible().catch(() => false)) {
       await checkbox.click()
     }
-    expect(typeof updateCaptured).toBe('boolean')
+    await expect(page.locator('#app')).toBeVisible()
   })
 
   test('应能删除待办', async ({ page }) => {
-    let deleteCaptured = false
     await page.route('**/v1/todos/*', (route) => {
       if (route.request().method() === 'DELETE') {
-        deleteCaptured = true
-        route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({ code: 0 }),
-        })
+        route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ code: 0 }) })
       } else {
         route.continue()
       }
     })
-    expect(typeof deleteCaptured).toBe('boolean')
+    await expect(page.locator('#app')).toBeVisible()
   })
 })
