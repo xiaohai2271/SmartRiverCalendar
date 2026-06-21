@@ -16,6 +16,14 @@ const mockEventRepo = {
   create: vi.fn(),
   update: vi.fn(),
   delete: vi.fn(),
+  getByTimeRangeAndCalendars: vi.fn(),
+  getCount: vi.fn(),
+  getUpcoming: vi.fn(),
+  search: vi.fn(),
+  createWithSync: vi.fn(),
+  updateWithSync: vi.fn(),
+  deleteWithSync: vi.fn(),
+  deleteByCalendarAndTimeRange: vi.fn(),
 }
 
 const mockSettingsRepo = {
@@ -32,6 +40,10 @@ const mockSyncRepo = {
   updateExternalEvent: vi.fn(),
   deleteExternalEvent: vi.fn(),
   triggerCloudSync: vi.fn(),
+  onExternalSyncComplete: vi.fn(),
+  onSyncComplete: vi.fn(),
+  onSyncError: vi.fn(),
+  onAuthTokenExpired: vi.fn(),
 }
 
 vi.mock('@/platform/provider', () => ({
@@ -96,6 +108,18 @@ function createMockEvent(overrides: Partial<CalendarEvent> = {}): CalendarEvent 
   }
 }
 
+function setupEventMocks(events: CalendarEvent[] = []) {
+  mockEventRepo.getByTimeRangeAndCalendars.mockResolvedValue(events)
+  mockEventRepo.getCount.mockResolvedValue(events.length)
+  mockEventRepo.createWithSync.mockImplementation((data: any) =>
+    Promise.resolve(createMockEvent({ id: '20', ...data }))
+  )
+  mockEventRepo.updateWithSync.mockImplementation((data: any) =>
+    Promise.resolve(createMockEvent(data))
+  )
+  mockEventRepo.deleteWithSync.mockResolvedValue(undefined)
+}
+
 describe('Calendar Store', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -111,7 +135,7 @@ describe('Calendar Store', () => {
     it('应在 local-first 平台日历为空时自动创建默认日历', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([])
       mockCalendarRepo.create.mockResolvedValue(createMockCalendar({ id: '1', name: '我的日历' }))
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
       mockSyncRepo.getAllAccounts.mockResolvedValue([])
 
       const store = useCalendarStore()
@@ -131,7 +155,7 @@ describe('Calendar Store', () => {
     it('应加载已有日历而不创建默认日历', async () => {
       const existingCalendar = createMockCalendar({ id: '5', name: '已有日历' })
       mockCalendarRepo.getAll.mockResolvedValue([existingCalendar])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -144,7 +168,7 @@ describe('Calendar Store', () => {
     it('应加载事件数据', async () => {
       const existingEvent = createMockEvent({ id: '100', title: '已有事件' })
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([existingEvent])
+      setupEventMocks([existingEvent])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -155,7 +179,7 @@ describe('Calendar Store', () => {
 
     it('不应重复初始化', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -177,8 +201,7 @@ describe('Calendar Store', () => {
   describe('addEvent', () => {
     it('应在本地日历创建事件', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([])
-      mockEventRepo.create.mockResolvedValue(createMockEvent({ id: '20' }))
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -191,7 +214,7 @@ describe('Calendar Store', () => {
         calendarId: '1',
       })
 
-      expect(mockEventRepo.create).toHaveBeenCalled()
+      expect(mockEventRepo.createWithSync).toHaveBeenCalled()
       expect(store.events).toHaveLength(1)
     })
 
@@ -202,7 +225,7 @@ describe('Calendar Store', () => {
         readOnly: true,
       })
       mockCalendarRepo.getAll.mockResolvedValue([readOnlyCalendar])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -215,12 +238,12 @@ describe('Calendar Store', () => {
         calendarId: '2',
       })
 
-      expect(mockEventRepo.create).not.toHaveBeenCalled()
+      expect(mockEventRepo.createWithSync).not.toHaveBeenCalled()
     })
 
     it('日历不存在时应直接返回', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar({ id: '1' })])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -233,7 +256,7 @@ describe('Calendar Store', () => {
         calendarId: '999',
       })
 
-      expect(mockEventRepo.create).not.toHaveBeenCalled()
+      expect(mockEventRepo.createWithSync).not.toHaveBeenCalled()
       expect(store.events).toHaveLength(0)
     })
   })
@@ -242,29 +265,29 @@ describe('Calendar Store', () => {
     it('应在本地日历更新事件', async () => {
       const existingEvent = createMockEvent({ id: '10' })
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([existingEvent])
+      setupEventMocks([existingEvent])
       const updatedEvent = { ...existingEvent, title: '更新后' }
-      mockEventRepo.update.mockResolvedValue(updatedEvent)
+      mockEventRepo.updateWithSync.mockResolvedValue(updatedEvent)
 
       const store = useCalendarStore()
       await store.initialize()
 
       await store.updateEvent('10', { title: '更新后' })
 
-      expect(mockEventRepo.update).toHaveBeenCalled()
+      expect(mockEventRepo.updateWithSync).toHaveBeenCalled()
       expect(store.events[0].title).toBe('更新后')
     })
 
     it('事件不存在时不应执行更新', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
 
       await store.updateEvent('999', { title: '不存在' })
 
-      expect(mockEventRepo.update).not.toHaveBeenCalled()
+      expect(mockEventRepo.updateWithSync).not.toHaveBeenCalled()
     })
   })
 
@@ -272,27 +295,27 @@ describe('Calendar Store', () => {
     it('应在本地日历删除事件', async () => {
       const existingEvent = createMockEvent({ id: '10' })
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([existingEvent])
+      setupEventMocks([existingEvent])
 
       const store = useCalendarStore()
       await store.initialize()
 
       await store.deleteEvent('10')
 
-      expect(mockEventRepo.delete).toHaveBeenCalledWith(10)
+      expect(mockEventRepo.deleteWithSync).toHaveBeenCalledWith(10)
       expect(store.events).toHaveLength(0)
     })
 
     it('事件不存在时应直接返回', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
 
       await store.deleteEvent('999')
 
-      expect(mockEventRepo.delete).not.toHaveBeenCalled()
+      expect(mockEventRepo.deleteWithSync).not.toHaveBeenCalled()
     })
   })
 
@@ -300,7 +323,7 @@ describe('Calendar Store', () => {
     it('应创建新日历并加入列表', async () => {
       const existingCalendar = createMockCalendar({ id: '1', name: '我的日历' })
       mockCalendarRepo.getAll.mockResolvedValue([existingCalendar])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
       mockCalendarRepo.create.mockResolvedValue(createMockCalendar({ id: '3', name: '工作日历' }))
 
       const store = useCalendarStore()
@@ -324,7 +347,7 @@ describe('Calendar Store', () => {
     it('应更新本地日历属性', async () => {
       const calendar = createMockCalendar({ id: '1' })
       mockCalendarRepo.getAll.mockResolvedValue([calendar])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
       mockCalendarRepo.update.mockResolvedValue({ ...calendar, name: '新名称' })
 
       const store = useCalendarStore()
@@ -338,7 +361,7 @@ describe('Calendar Store', () => {
 
     it('日历不存在时不应执行更新', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar({ id: '1' })])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -354,7 +377,7 @@ describe('Calendar Store', () => {
       const calendar = createMockCalendar({ id: '1' })
       const event = createMockEvent({ id: '10', calendarId: '1' })
       mockCalendarRepo.getAll.mockResolvedValue([calendar])
-      mockEventRepo.getAll.mockResolvedValue([event])
+      setupEventMocks([event])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -370,7 +393,7 @@ describe('Calendar Store', () => {
   describe('视图导航', () => {
     it('应切换当前视图', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -381,7 +404,7 @@ describe('Calendar Store', () => {
 
     it('应导航到指定日期', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -393,7 +416,7 @@ describe('Calendar Store', () => {
 
     it('goToToday 应设置当前日期和选中日期为今天', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar()])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -408,7 +431,7 @@ describe('Calendar Store', () => {
   describe('getValidCalendarId', () => {
     it('应返回有效的数字日历 ID', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar({ id: '3' })])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -419,7 +442,7 @@ describe('Calendar Store', () => {
 
     it('无效 ID 时应回退到本地日历', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([createMockCalendar({ id: '5' })])
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -431,7 +454,7 @@ describe('Calendar Store', () => {
     it('无可用日历时应返回 1 作为兜底', async () => {
       mockCalendarRepo.getAll.mockResolvedValue([])
       mockCalendarRepo.create.mockResolvedValue(createMockCalendar({ id: '1' }))
-      mockEventRepo.getAll.mockResolvedValue([])
+      setupEventMocks([])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -447,7 +470,7 @@ describe('Calendar Store', () => {
       const calendar = createMockCalendar()
       const event = createMockEvent()
       mockCalendarRepo.getAll.mockResolvedValue([calendar])
-      mockEventRepo.getAll.mockResolvedValue([event])
+      setupEventMocks([event])
 
       const store = useCalendarStore()
       await store.initialize()
@@ -455,7 +478,7 @@ describe('Calendar Store', () => {
       const newCalendar = createMockCalendar({ id: '2', name: '新日历' })
       const newEvent = createMockEvent({ id: '20', title: '新事件' })
       mockCalendarRepo.getAll.mockResolvedValue([calendar, newCalendar])
-      mockEventRepo.getAll.mockResolvedValue([event, newEvent])
+      setupEventMocks([event, newEvent])
 
       await store.reloadFromDatabase()
 
@@ -471,7 +494,7 @@ describe('Calendar Store', () => {
       const event1 = createMockEvent({ id: '10', calendarId: '1' })
       const event2 = createMockEvent({ id: '20', calendarId: '2' })
       mockCalendarRepo.getAll.mockResolvedValue([visibleCal, hiddenCal])
-      mockEventRepo.getAll.mockResolvedValue([event1, event2])
+      setupEventMocks([event1, event2])
 
       const store = useCalendarStore()
       await store.initialize()

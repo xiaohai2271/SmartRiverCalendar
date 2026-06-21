@@ -87,6 +87,15 @@ export interface ISyncRepository {
   /** 触发云同步 */
   triggerCloudSync(): Promise<boolean>
 
+  /** 触发外部日历同步（Rust 后端执行） */
+  triggerExternalSync(): Promise<boolean>
+
+  /** 启动外部日历定时同步（Rust 后端定时器） */
+  startExternalSync(intervalMinutes: number): Promise<boolean>
+
+  /** 停止外部日历定时同步 */
+  stopExternalSync(): Promise<boolean>
+
   /** 从服务端获取日历列表并同步到本地数据库 */
   syncCalendarsFromServer(): Promise<boolean>
 
@@ -127,4 +136,16 @@ export interface ISyncRepository {
    * - 自动同步定时器触发时
    */
   pushPendingChanges(): Promise<{ pushed: number; failed: number }>
+
+  /** 监听外部日历同步完成事件（Rust 后端 emit） */
+  onExternalSyncComplete(callback: () => void): Promise<() => void>
+
+  /** 监听云同步完成事件 */
+  onSyncComplete(callback: () => void): Promise<() => void>
+
+  /** 监听云同步错误事件 */
+  onSyncError(callback: () => void): Promise<() => void>
+
+  /** 监听 Token 过期事件 */
+  onAuthTokenExpired(callback: () => void): Promise<() => void>
 }

@@ -7,6 +7,7 @@ import { WebTodoRepository } from './todo.repo'
 import { WebSettingsRepository } from './settings.repo'
 import { WebAuthRepository } from './auth.repo'
 import { WebSyncRepository } from './sync.repo'
+import { WebReminderRepository } from './reminder.repo'
 
 /** 创建 Web 平台 Provider */
 export function createWebProvider(): PlatformProvider {
@@ -19,5 +20,6 @@ export function createWebProvider(): PlatformProvider {
     settingsRepo: new WebSettingsRepository(apiClient),
     authRepo: new WebAuthRepository(apiClient),
     syncRepo: new WebSyncRepository(apiClient),
+    reminderRepo: new WebReminderRepository(),
   }
 }

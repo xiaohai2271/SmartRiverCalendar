@@ -12,6 +12,7 @@ describe('Tauri 数据转换', () => {
         account_id: null,
         visible: true,
         sync_enabled: false,
+        read_only: false,
         created_at: 1700000000,
         updated_at: 1700000000,
       }
@@ -34,6 +35,7 @@ describe('Tauri 数据转换', () => {
         account_id: 10,
         visible: true,
         sync_enabled: true,
+        read_only: false,
         created_at: 1700000000,
         updated_at: 1700000000,
       }

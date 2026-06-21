@@ -1,7 +1,7 @@
 use log::{info, error, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{Manager, State};
 use base64::Engine;
 
 use crate::caldav;
@@ -845,6 +845,7 @@ pub fn create_calendar(
     account_id: Option<i64>,
     visible: Option<bool>,
     sync_enabled: Option<bool>,
+    read_only: Option<bool>,
     db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<DbCalendar, DatabaseError> {
     info!("[create_calendar] 创建日历: {}", name);
@@ -859,6 +860,7 @@ pub fn create_calendar(
         account_id,
         visible: visible.unwrap_or(true),
         sync_enabled: sync_enabled.unwrap_or(false),
+        read_only: read_only.unwrap_or(false),
         user_id: None,
         timezone: None,
     };
@@ -1091,7 +1093,6 @@ pub fn delete_event(
     let repo = EventRepository::new(&db);
     let result = repo.delete(id)?;
 
-    // 记录变更到 sync_log
     let user_id = get_current_user_id(&*db.get_connection());
     let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
     let payload = serde_json::json!({"id": id}).to_string();
@@ -1100,6 +1101,492 @@ pub fn delete_event(
     }
 
     Ok(result)
+}
+
+// ============================================================
+// 带同步语义的事件命令
+// ============================================================
+
+/// 带同步语义的事件创建
+///
+/// 内部完成 calendar type 路由：
+/// - exchange/caldav：只读检查 → 调外部 API → 写本地 + externalId
+/// - local：直接写本地
+/// - online：写本地 + 记录 sync_log
+#[tauri::command]
+pub async fn create_event_with_sync(
+    title: String,
+    description: Option<String>,
+    start_time: i64,
+    end_time: i64,
+    all_day: bool,
+    calendar_id: i64,
+    color: Option<String>,
+    reminder: Option<i32>,
+    repeat_rule: Option<String>,
+    location: Option<String>,
+    external_id: Option<String>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbEvent, String> {
+    info!("[create_event_with_sync] 创建事件（带同步）: calendar_id={}", calendar_id);
+
+    // 步骤1：获取锁 → 查询 calendar type + 关联 account → 释放锁
+    let calendar_info = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let cal_repo = CalendarRepository::new(&db_conn);
+        let calendar = cal_repo.get_by_id(calendar_id)
+            .map_err(|e| format!("日历不存在: {}", e))?;
+
+        let account_info = if calendar.type_ == "exchange" || calendar.type_ == "caldav" {
+            if calendar.read_only {
+                return Err("该日历为只读模式，不支持写入事件".to_string());
+            }
+            if let Some(acc_id) = calendar.account_id {
+                let acc_repo = AccountRepository::new(&db_conn);
+                let account = acc_repo.get_by_id(acc_id)
+                    .map_err(|e| format!("查询关联账户失败: {}", e))?
+                    .ok_or_else(|| "关联账户不存在".to_string())?;
+                Some((account, calendar.type_.clone()))
+            } else {
+                return Err("外部日历缺少关联账户信息".to_string());
+            }
+        } else {
+            None
+        };
+
+        (calendar.type_.clone(), account_info)
+    };
+
+    let (cal_type, account_info) = calendar_info;
+
+    // 步骤2：exchange/caldav → 调外部 API（无锁）
+    let mut resolved_external_id = external_id.clone();
+    if let Some((account, acc_type)) = &account_info {
+        let user_id = {
+            let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+            let uid = get_current_user_id(&*db_conn.get_connection())
+                .ok_or_else(|| "无法获取当前用户 ID".to_string())?;
+            uid
+        };
+
+        let salt = base64::engine::general_purpose::STANDARD
+            .decode(&account.key_salt.clone().unwrap_or_default())
+            .map_err(|e| format!("盐值解码失败: {}", e))?;
+        if salt.len() < 16 {
+            return Err(format!("盐值长度不足: {} < 16", salt.len()));
+        }
+        let password = crypto::decrypt_password(&account.encrypted_password, user_id, &salt)
+            .map_err(|e| format!("密码解密失败: {}", e))?;
+
+        let account_type_lower = acc_type.to_lowercase();
+        match account_type_lower.as_str() {
+            "caldav" => {
+                // 需要获取 calendar_url：查询 calendars 表的 account_id 关联的日历 URL
+                let calendar_url = {
+                    let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+                    let conn = db_conn.get_connection();
+                    conn.query_row(
+                        "SELECT calendar_url FROM external_calendar_urls WHERE calendar_id = ?1",
+                        rusqlite::params![calendar_id],
+                        |row| row.get::<_, String>(0),
+                    ).unwrap_or_default()
+                };
+
+                let client = caldav::CalDavClient::new(
+                    account.server_url.clone(),
+                    account.username.clone(),
+                    password,
+                );
+                let caldav_uid = uuid::Uuid::new_v4().to_string();
+                let event_info = caldav::EventInfo {
+                    id: caldav_uid,
+                    title: title.clone(),
+                    description: description.clone(),
+                    start_time: start_time / 1000,
+                    end_time: end_time / 1000,
+                    all_day,
+                    location: location.clone(),
+                };
+                let event_url = client.create_event(&calendar_url, &event_info).await?;
+                resolved_external_id = Some(event_url);
+            }
+            "exchange" => {
+                return Err("Exchange 暂不支持创建事件".to_string());
+            }
+            _ => return Err(format!("不支持的账号类型: {}", acc_type)),
+        }
+    }
+
+    // 步骤3：获取锁 → 写本地 DB → 释放锁
+    let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+    let repo = EventRepository::new(&db_conn);
+    let event = CreateEvent {
+        title,
+        description,
+        start_time,
+        end_time,
+        all_day,
+        calendar_id,
+        color,
+        reminder,
+        repeat_rule,
+        location,
+        external_id: resolved_external_id,
+        user_id: None,
+        timezone: None,
+    };
+    let created = repo.create(&event)
+        .map_err(|e| format!("创建事件失败: {}", e))?;
+
+    // online 类型记录 sync_log
+    if cal_type == "online" {
+        let user_id = get_current_user_id(&*db_conn.get_connection());
+        let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db_conn);
+        let payload = serde_json::to_string(&created).unwrap_or_default();
+        if let Err(e) = tracker.track_change(user_id, "event", created.id, "create", &payload) {
+            warn!("[create_event_with_sync] 记录变更日志失败: {}", e);
+        }
+    }
+
+    Ok(created)
+}
+
+/// 带同步语义的事件更新
+#[tauri::command]
+pub async fn update_event_with_sync(
+    id: i64,
+    title: String,
+    description: Option<String>,
+    start_time: i64,
+    end_time: i64,
+    all_day: bool,
+    calendar_id: i64,
+    color: Option<String>,
+    reminder: Option<i32>,
+    repeat_rule: Option<String>,
+    location: Option<String>,
+    external_id: Option<String>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbEvent, String> {
+    info!("[update_event_with_sync] 更新事件（带同步）: id={}", id);
+
+    // 步骤1：获取锁 → 查询 event 的 calendar type + external_id → 释放锁
+    let calendar_info = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let event_repo = EventRepository::new(&db_conn);
+        let existing_event = event_repo.get_by_id(id)
+            .map_err(|e| format!("事件不存在: {}", e))?;
+
+        let cal_repo = CalendarRepository::new(&db_conn);
+        let calendar = cal_repo.get_by_id(calendar_id)
+            .map_err(|e| format!("日历不存在: {}", e))?;
+
+        let account_info = if calendar.type_ == "exchange" || calendar.type_ == "caldav" {
+            if calendar.read_only {
+                return Err("该日历为只读模式，不支持更新事件".to_string());
+            }
+            if let Some(acc_id) = calendar.account_id {
+                let acc_repo = AccountRepository::new(&db_conn);
+                let account = acc_repo.get_by_id(acc_id)
+                    .map_err(|e| format!("查询关联账户失败: {}", e))?
+                    .ok_or_else(|| "关联账户不存在".to_string())?;
+                Some(account)
+            } else {
+                return Err("外部日历缺少关联账户信息".to_string());
+            }
+        } else {
+            None
+        };
+
+        (calendar.type_.clone(), account_info, existing_event.external_id.clone())
+    };
+
+    let (cal_type, account_info, existing_external_id) = calendar_info;
+
+    // 步骤2：exchange/caldav → 调外部 API（无锁）
+    let mut resolved_external_id = external_id.clone();
+    if let Some(account) = &account_info {
+        let user_id = {
+            let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+            let uid = get_current_user_id(&*db_conn.get_connection())
+                .ok_or_else(|| "无法获取当前用户 ID".to_string())?;
+            uid
+        };
+
+        let salt = base64::engine::general_purpose::STANDARD
+            .decode(&account.key_salt.clone().unwrap_or_default())
+            .map_err(|e| format!("盐值解码失败: {}", e))?;
+        if salt.len() < 16 {
+            return Err(format!("盐值长度不足: {} < 16", salt.len()));
+        }
+        let password = crypto::decrypt_password(&account.encrypted_password, user_id, &salt)
+            .map_err(|e| format!("密码解密失败: {}", e))?;
+
+        let cal_type_lower = cal_type.to_lowercase();
+        match cal_type_lower.as_str() {
+            "caldav" => {
+                let client = caldav::CalDavClient::new(
+                    account.server_url.clone(),
+                    account.username.clone(),
+                    password,
+                );
+                let ext_id = existing_external_id.as_deref().unwrap_or("");
+                let event_info = caldav::EventInfo {
+                    id: ext_id.to_string(),
+                    title: title.clone(),
+                    description: description.clone(),
+                    start_time: start_time / 1000,
+                    end_time: end_time / 1000,
+                    all_day,
+                    location: location.clone(),
+                };
+                client.update_event(ext_id, &event_info).await?;
+                resolved_external_id = Some(ext_id.to_string());
+            }
+            "exchange" => {
+                return Err("Exchange 暂不支持更新事件".to_string());
+            }
+            _ => return Err(format!("不支持的账号类型: {}", cal_type)),
+        }
+    }
+
+    // 步骤3：获取锁 → 写本地 DB → 释放锁
+    let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+    let repo = EventRepository::new(&db_conn);
+    let event = UpdateEvent {
+        id,
+        title,
+        description,
+        start_time,
+        end_time,
+        all_day,
+        calendar_id,
+        color,
+        reminder,
+        repeat_rule,
+        location,
+        external_id: resolved_external_id,
+    };
+    let updated = repo.update(&event)
+        .map_err(|e| format!("更新事件失败: {}", e))?;
+
+    if cal_type == "online" {
+        let user_id = get_current_user_id(&*db_conn.get_connection());
+        let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db_conn);
+        let payload = serde_json::to_string(&updated).unwrap_or_default();
+        if let Err(e) = tracker.track_change(user_id, "event", updated.id, "update", &payload) {
+            warn!("[update_event_with_sync] 记录变更日志失败: {}", e);
+        }
+    }
+
+    Ok(updated)
+}
+
+/// 带同步语义的事件删除
+#[tauri::command]
+pub async fn delete_event_with_sync(
+    id: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), String> {
+    info!("[delete_event_with_sync] 删除事件（带同步）: id={}", id);
+
+    // 步骤1：获取锁 → 查询 calendar type + external_id → 释放锁
+    let calendar_info = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let event_repo = EventRepository::new(&db_conn);
+        let existing_event = event_repo.get_by_id(id)
+            .map_err(|e| format!("事件不存在: {}", e))?;
+
+        let cal_repo = CalendarRepository::new(&db_conn);
+        let calendar = cal_repo.get_by_id(existing_event.calendar_id)
+            .map_err(|e| format!("日历不存在: {}", e))?;
+
+        let account_info = if calendar.type_ == "exchange" || calendar.type_ == "caldav" {
+            if calendar.read_only {
+                return Err("该日历为只读模式，不支持删除事件".to_string());
+            }
+            if let Some(acc_id) = calendar.account_id {
+                let acc_repo = AccountRepository::new(&db_conn);
+                let account = acc_repo.get_by_id(acc_id)
+                    .map_err(|e| format!("查询关联账户失败: {}", e))?
+                    .ok_or_else(|| "关联账户不存在".to_string())?;
+                Some(account)
+            } else {
+                return Err("外部日历缺少关联账户信息".to_string());
+            }
+        } else {
+            None
+        };
+
+        (calendar.type_.clone(), account_info, existing_event.external_id.clone())
+    };
+
+    let (cal_type, account_info, existing_external_id) = calendar_info;
+
+    // 步骤2：exchange/caldav → 调外部 API（无锁）
+    if let Some(account) = &account_info {
+        let user_id = {
+            let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+            let uid = get_current_user_id(&*db_conn.get_connection())
+                .ok_or_else(|| "无法获取当前用户 ID".to_string())?;
+            uid
+        };
+
+        let salt = base64::engine::general_purpose::STANDARD
+            .decode(&account.key_salt.clone().unwrap_or_default())
+            .map_err(|e| format!("盐值解码失败: {}", e))?;
+        if salt.len() < 16 {
+            return Err(format!("盐值长度不足: {} < 16", salt.len()));
+        }
+        let password = crypto::decrypt_password(&account.encrypted_password, user_id, &salt)
+            .map_err(|e| format!("密码解密失败: {}", e))?;
+
+        let cal_type_lower = cal_type.to_lowercase();
+        match cal_type_lower.as_str() {
+            "caldav" => {
+                let client = caldav::CalDavClient::new(
+                    account.server_url.clone(),
+                    account.username.clone(),
+                    password,
+                );
+                let ext_id = existing_external_id.as_deref().unwrap_or("");
+                client.delete_event(ext_id).await?;
+            }
+            "exchange" => {
+                return Err("Exchange 暂不支持删除事件".to_string());
+            }
+            _ => return Err(format!("不支持的账号类型: {}", cal_type)),
+        }
+    }
+
+    // 步骤3：获取锁 → 删本地 DB → 释放锁
+    let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+    let repo = EventRepository::new(&db_conn);
+    repo.delete(id)
+        .map_err(|e| format!("删除事件失败: {}", e))?;
+
+    if cal_type == "online" {
+        let user_id = get_current_user_id(&*db_conn.get_connection());
+        let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db_conn);
+        let payload = serde_json::json!({"id": id}).to_string();
+        if let Err(e) = tracker.track_change(user_id, "event", id, "delete", &payload) {
+            warn!("[delete_event_with_sync] 记录变更日志失败: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
+/// 按日历 ID 和时间范围批量软删除事件
+#[tauri::command]
+pub fn delete_events_by_calendar_and_time_range(
+    calendar_id: i64,
+    start_time: i64,
+    end_time: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<usize, DatabaseError> {
+    info!(
+        "[delete_events_by_calendar_and_time_range] calendar_id={}, start_time={}, end_time={}",
+        calendar_id, start_time, end_time
+    );
+    let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db_conn);
+    let count = repo.delete_by_calendar_and_time_range(calendar_id, start_time, end_time)?;
+    info!("[delete_events_by_calendar_and_time_range] 已软删除 {} 条事件", count);
+    Ok(count)
+}
+
+/// 按时间范围和日历 ID 获取事件
+#[tauri::command]
+pub fn get_events_by_time_range_and_calendars(
+    start_time: i64,
+    end_time: i64,
+    calendar_ids: Vec<i64>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbEvent>, DatabaseError> {
+    info!(
+        "[get_events_by_time_range_and_calendars] start_time={}, end_time={}, calendar_count={}",
+        start_time, end_time, calendar_ids.len()
+    );
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let uid = get_current_user_id(&*db_conn.get_connection()).unwrap_or(0);
+        uid
+    };
+    let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db_conn);
+    repo.get_by_time_range_and_calendars(start_time, end_time, &calendar_ids, user_id)
+}
+
+/// 获取事件数量
+#[tauri::command]
+pub fn get_event_count(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<i64, DatabaseError> {
+    info!("[get_event_count] 获取事件数量");
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let uid = get_current_user_id(&*db_conn.get_connection()).unwrap_or(0);
+        uid
+    };
+    let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db_conn);
+    repo.get_count(user_id)
+}
+
+/// 获取即将到来的事件
+#[tauri::command]
+pub fn get_upcoming_events(
+    limit: i64,
+    calendar_ids: Vec<i64>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbEvent>, DatabaseError> {
+    info!("[get_upcoming_events] limit={}, calendar_count={}", limit, calendar_ids.len());
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let uid = get_current_user_id(&*db_conn.get_connection()).unwrap_or(0);
+        uid
+    };
+    let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db_conn);
+    repo.get_upcoming(limit, user_id, &calendar_ids)
+}
+
+/// 搜索事件
+#[tauri::command]
+pub fn search_events(
+    query: String,
+    limit: i64,
+    calendar_ids: Vec<i64>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<Vec<DbEvent>, DatabaseError> {
+    info!("[search_events] query={}, limit={}, calendar_count={}", query, limit, calendar_ids.len());
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let uid = get_current_user_id(&*db_conn.get_connection()).unwrap_or(0);
+        uid
+    };
+    let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = EventRepository::new(&db_conn);
+    repo.search(&query, limit, user_id, &calendar_ids)
 }
 
 // ============================================================
@@ -3083,6 +3570,7 @@ pub async fn sync_calendars_from_server(
             account_id: server_cal.account_id,
             visible: server_cal.visible,
             sync_enabled: server_cal.sync_enabled,
+            read_only: server_cal.read_only,
             user_id: server_cal.user_id,
             timezone: None,
         };
@@ -3326,4 +3814,83 @@ pub async fn sync_push_pending(
         failed: pushed_count - succeeded,
         errors: vec![],
     })
+}
+
+// ============================================================
+// 外部日历同步命令
+// ============================================================
+
+/// 启动外部日历定时同步
+///
+/// 创建 SyncEngine 实例并启动 SyncTimer，
+/// 定时同步所有外部日历（Exchange/CalDAV）。
+/// 同步完成后通过 `external-sync-complete` 事件通知前端。
+#[tauri::command]
+pub async fn external_sync_start(
+    interval_minutes: Option<u64>,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    let minutes = interval_minutes.unwrap_or(15);
+    info!("[external_sync_start] 启动外部日历同步，间隔 {} 分钟", minutes);
+
+    let engine = crate::sync::SyncEngine::new(app.clone());
+    let timer = crate::sync::SyncTimer::new(std::sync::Arc::new(engine));
+
+    timer.start_timer(minutes).await;
+
+    app.manage(std::sync::Mutex::new(Some(timer)));
+
+    Ok(())
+}
+
+/// 手动触发一次外部日历同步
+///
+/// 立即触发同步所有外部日历账号。
+/// 同步完成后通过 `external-sync-complete` 事件通知前端。
+#[tauri::command]
+pub async fn external_sync_trigger(
+    app: tauri::AppHandle,
+) -> Result<serde_json::Value, String> {
+    info!("[external_sync_trigger] 手动触发外部日历同步");
+
+    let engine = crate::sync::SyncEngine::new(app.clone());
+    let results = engine.sync_all_accounts().await;
+
+    let summary: Vec<serde_json::Value> = results.iter().map(|r| {
+        serde_json::json!({
+            "accountId": r.account_id,
+            "success": r.success,
+            "added": r.added,
+            "updated": r.updated,
+            "deleted": r.deleted,
+            "errors": r.errors,
+        })
+    }).collect();
+
+    Ok(serde_json::json!({ "results": summary }))
+}
+
+/// 停止外部日历定时同步
+#[tauri::command]
+pub async fn external_sync_stop(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    info!("[external_sync_stop] 停止外部日历同步");
+
+    // 先取出 timer，再在锁外调用 stop_timer
+    let timer: Option<crate::sync::SyncTimer> = {
+        let timer_state = app.try_state::<std::sync::Mutex<Option<crate::sync::SyncTimer>>>();
+        if let Some(timer_mutex) = timer_state {
+            let mut guard = timer_mutex.lock().map_err(|e| format!("锁获取失败: {}", e))?;
+            guard.take()
+        } else {
+            None
+        }
+    };
+
+    if let Some(t) = timer {
+        t.stop_timer().await;
+    }
+
+    Ok(())
 }

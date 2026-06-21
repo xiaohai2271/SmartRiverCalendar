@@ -282,8 +282,7 @@ async function testConnection(): Promise<void> {
 async function addExternalCalendars(): Promise<void> {
   if (selectedCalendars.value.length === 0) return
 
-  // 刷新日历列表（从账号表读取账号，获取远程日历并添加）
-  await calendarStore.loadExternalCalendars()
+  await calendarStore.reloadFromDatabase()
   closeAddCalendarDialog()
 }
 

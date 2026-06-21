@@ -337,6 +337,157 @@ impl<'a> EventRepository<'a> {
         })
     }
 
+    /// 按日历 ID 和时间范围软删除事件
+    ///
+    /// 删除指定日历下、start_time 在 [start_time, end_time] 范围内的事件
+    pub fn delete_by_calendar_and_time_range(
+        &self,
+        calendar_id: i64,
+        start_time: i64,
+        end_time: i64,
+    ) -> DatabaseResult<usize> {
+        let now = chrono::Utc::now().timestamp_millis();
+
+        self.db.execute_in_transaction(|tx| {
+            let rows_affected = tx.execute(
+                "UPDATE events SET deleted_at = ?1 WHERE calendar_id = ?2 AND start_time >= ?3 AND start_time <= ?4 AND deleted_at IS NULL",
+                params![now, calendar_id, start_time, end_time],
+            )?;
+            Ok(rows_affected as usize)
+        })
+    }
+
+    /// 根据时间范围和日历 ID 获取事件（未软删除的）
+    ///
+    /// 返回所有与指定时间范围有重叠的事件，且属于指定日历列表和用户
+    pub fn get_by_time_range_and_calendars(
+        &self,
+        start_time: i64,
+        end_time: i64,
+        calendar_ids: &[i64],
+        user_id: i64,
+    ) -> DatabaseResult<Vec<Event>> {
+        if calendar_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        self.db.execute(|conn| {
+            // 动态构建 IN 子句占位符
+            let placeholders: Vec<String> = calendar_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 3)).collect();
+            let in_clause = placeholders.join(",");
+
+            let sql = format!(
+                "SELECT {EVENT_COLUMNS} FROM events WHERE start_time < ?1 AND end_time > ?2 AND user_id = ?{} AND calendar_id IN ({}) AND deleted_at IS NULL ORDER BY start_time ASC",
+                calendar_ids.len() + 3,
+                in_clause
+            );
+
+            let mut stmt = conn.prepare(&sql)?;
+
+            // 绑定参数：?1=end_time, ?2=start_time, ?3..=user_id+calendar_ids
+            let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            params_vec.push(Box::new(end_time));
+            params_vec.push(Box::new(start_time));
+            params_vec.push(Box::new(user_id));
+            for &cid in calendar_ids {
+                params_vec.push(Box::new(cid));
+            }
+
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+            let events = stmt.query_map(param_refs.as_slice(), Event::from_row)?.collect::<Result<Vec<_>, _>>()?;
+
+            Ok(events)
+        })
+    }
+
+    /// 获取事件总数（未软删除的）
+    ///
+    /// 按用户 ID 过滤
+    pub fn get_count(&self, user_id: i64) -> DatabaseResult<i64> {
+        self.db.execute(|conn| {
+            let count = conn.query_row(
+                "SELECT COUNT(*) FROM events WHERE deleted_at IS NULL AND user_id = ?1",
+                params![user_id],
+                |row| row.get(0),
+            )?;
+            Ok(count)
+        })
+    }
+
+    /// 获取即将到来的事件
+    ///
+    /// 返回开始时间在当前之后的事件，按用户和日历过滤
+    pub fn get_upcoming(&self, limit: i64, user_id: i64, calendar_ids: &[i64]) -> DatabaseResult<Vec<Event>> {
+        if calendar_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        self.db.execute(|conn| {
+            let placeholders: Vec<String> = calendar_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 4)).collect();
+            let in_clause = placeholders.join(",");
+
+            let sql = format!(
+                "SELECT {EVENT_COLUMNS} FROM events WHERE start_time > ?1 AND user_id = ?2 AND deleted_at IS NULL AND calendar_id IN ({}) ORDER BY start_time ASC LIMIT ?3",
+                in_clause
+            );
+
+            let mut stmt = conn.prepare(&sql)?;
+
+            let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            // 使用当前时间戳（毫秒）
+            let now = chrono::Utc::now().timestamp_millis();
+            params_vec.push(Box::new(now));
+            params_vec.push(Box::new(user_id));
+            params_vec.push(Box::new(limit));
+            for &cid in calendar_ids {
+                params_vec.push(Box::new(cid));
+            }
+
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+            let events = stmt.query_map(param_refs.as_slice(), Event::from_row)?.collect::<Result<Vec<_>, _>>()?;
+
+            Ok(events)
+        })
+    }
+
+    /// 搜索事件
+    ///
+    /// 在标题和描述中搜索，按用户和日历过滤
+    /// LIKE 通配符已在内部转义
+    pub fn search(&self, query: &str, limit: i64, user_id: i64, calendar_ids: &[i64]) -> DatabaseResult<Vec<Event>> {
+        if calendar_ids.is_empty() {
+            return Ok(vec![]);
+        }
+
+        // 转义 LIKE 通配符
+        let escaped_query = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+
+        self.db.execute(|conn| {
+            let placeholders: Vec<String> = calendar_ids.iter().enumerate().map(|(i, _)| format!("?{}", i + 4)).collect();
+            let in_clause = placeholders.join(",");
+
+            let sql = format!(
+                "SELECT {EVENT_COLUMNS} FROM events WHERE (title LIKE '%' || ?1 || '%' ESCAPE '\\' OR description LIKE '%' || ?1 || '%' ESCAPE '\\') AND user_id = ?2 AND deleted_at IS NULL AND calendar_id IN ({}) ORDER BY start_time DESC LIMIT ?3",
+                in_clause
+            );
+
+            let mut stmt = conn.prepare(&sql)?;
+
+            let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+            params_vec.push(Box::new(escaped_query));  // ?1
+            params_vec.push(Box::new(user_id));         // ?2
+            params_vec.push(Box::new(limit));           // ?3
+            for &cid in calendar_ids {
+                params_vec.push(Box::new(cid));          // ?4, ?5, ...
+            }
+
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec.iter().map(|p| p.as_ref()).collect();
+            let events = stmt.query_map(param_refs.as_slice(), Event::from_row)?.collect::<Result<Vec<_>, _>>()?;
+
+            Ok(events)
+        })
+    }
+
     /// 软删除事件
     ///
     /// 设置 deleted_at 时间戳而非物理删除

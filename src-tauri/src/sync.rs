@@ -4,39 +4,47 @@
 //! - SyncEngine: 同步引擎核心，负责执行同步逻辑
 //! - SyncTimer: 后台定时器，支持定时和手动触发同步
 //! - 通过 Tauri 事件系统通知前端同步状态
+//!
+//! 同步流程：
+//! 1. 从数据库读取账号信息（accounts 表）
+//! 2. 获取各日历的服务器端事件
+//! 3. 与本地事件 diff（新增/更新/删除）
+//! 4. 将差异写入 SQLite
+//! 5. 通过 app.emit 发送 `external-sync-complete` 事件通知前端刷新
 
-#![allow(dead_code)]
-
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tokio::time::{interval, Duration};
 use tokio::task::JoinHandle;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+use std::sync::Mutex;
 
+use crate::crypto;
 use crate::ews::EwsClient;
 use crate::caldav::CalDavClient;
+use crate::db::connection::DatabaseConnection;
+use crate::db::repositories::account::{AccountRepository, Account as DbAccount};
+use crate::db::repositories::calendar::{CalendarRepository, Calendar as DbCalendar};
+use crate::db::repositories::event::{EventRepository, Event as DbEvent, CreateEvent};
 
-/// 账号类型
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub enum AccountType {
-    #[serde(rename = "exchange")]
-    Exchange,
-    #[serde(rename = "caldav")]
-    CalDav,
+/// 同步配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncConfig {
+    pub past_days: i64,
+    pub future_days: i64,
+    pub interval_minutes: u64,
 }
 
-/// 账号信息
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AccountInfo {
-    pub id: String,
-    pub name: String,
-    pub account_type: AccountType,
-    pub server_url: String,
-    pub username: String,
-    pub password: String,
-    pub enabled: bool,
-    pub sync_token: Option<String>,
+impl Default for SyncConfig {
+    fn default() -> Self {
+        Self {
+            past_days: 30,
+            future_days: 90,
+            interval_minutes: 15,
+        }
+    }
 }
 
 /// 同步状态
@@ -61,10 +69,10 @@ pub struct SyncProgress {
     pub progress: f32,
 }
 
-/// 同步结果
+/// 单个账号的同步结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncResult {
-    pub account_id: String,
+pub struct AccountSyncResult {
+    pub account_id: i64,
     pub success: bool,
     pub added: usize,
     pub updated: usize,
@@ -72,45 +80,42 @@ pub struct SyncResult {
     pub errors: Vec<String>,
 }
 
-/// 同步配置
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncConfig {
-    /// 同步过去多少天的事件（默认 30 天）
-    pub past_days: i64,
-    /// 同步未来多少天的事件（默认 90 天）
-    pub future_days: i64,
-    /// 定时同步间隔（分钟，默认 15 分钟）
-    pub interval_minutes: u64,
+/// 同步事件数据（从服务器获取的规范化事件）
+#[derive(Debug, Clone)]
+struct SyncEventData {
+    external_id: String,
+    title: String,
+    description: Option<String>,
+    start_time: i64,
+    end_time: i64,
+    all_day: bool,
+    color: Option<String>,
+    reminder: Option<i32>,
+    repeat_rule: Option<String>,
+    location: Option<String>,
+    local_id: Option<i64>,
 }
 
-impl Default for SyncConfig {
-    fn default() -> Self {
-        Self {
-            past_days: 30,
-            future_days: 90,
-            interval_minutes: 15,
-        }
-    }
+/// diff 动作
+#[derive(Debug, Clone)]
+enum DiffAction {
+    Add(SyncEventData),
+    Update(SyncEventData),
+    Delete(i64),
 }
 
 /// 同步引擎
 ///
-/// 负责执行日历事件的同步逻辑，包括：
-/// - 从服务器获取事件
-/// - 对比本地和服务器事件差异
-/// - 处理冲突（服务器优先）
-/// - 通知前端同步状态
+/// 负责执行日历事件的同步逻辑。通过 AppHandle 访问数据库和发送事件。
+/// 所有数据库操作在同步代码块中完成（不跨 await 持有 MutexGuard），
+/// 网络请求在异步代码块中完成（不持有任何锁）。
 pub struct SyncEngine {
-    /// 应用句柄，用于发送事件通知
     app_handle: AppHandle,
-    /// 同步配置
     config: RwLock<SyncConfig>,
-    /// 当前同步状态
     status: RwLock<SyncStatus>,
 }
 
 impl SyncEngine {
-    /// 创建新的同步引擎实例
     pub fn new(app_handle: AppHandle) -> Self {
         Self {
             app_handle,
@@ -119,294 +124,113 @@ impl SyncEngine {
         }
     }
 
-    /// 获取当前同步状态
     pub async fn get_status(&self) -> SyncStatus {
-        let status = self.status.read().await;
-        status.clone()
+        self.status.read().await.clone()
     }
 
-    /// 更新同步配置
     pub async fn update_config(&self, config: SyncConfig) {
-        let mut current_config = self.config.write().await;
-        *current_config = config;
+        *self.config.write().await = config;
     }
 
-    /// 发送同步进度通知到前端
     fn emit_progress(&self, progress: SyncProgress) {
         let _ = self.app_handle.emit("sync-progress", progress);
     }
 
-    /// 发送同步结果通知到前端
-    fn emit_result(&self, result: SyncResult) {
+    fn emit_result(&self, result: &AccountSyncResult) {
         let _ = self.app_handle.emit("sync-result", result);
     }
 
-    /// 对单个账号执行同步
-    ///
-    /// # 参数
-    /// * `account` - 账号信息
-    ///
-    /// # 返回
-    /// * `Ok(SyncResult)` - 同步结果
-    /// * `Err(String)` - 同步失败，包含错误信息
-    pub async fn sync_account(&self, account: &AccountInfo) -> Result<SyncResult, String> {
+    fn emit_external_sync_complete(&self) {
+        let _ = self.app_handle.emit("external-sync-complete", serde_json::json!({
+            "timestamp": chrono::Utc::now().timestamp_millis(),
+        }));
+    }
+
+    fn get_current_user_id(conn: &rusqlite::Connection) -> Option<i64> {
+        conn.query_row(
+            "SELECT user_id FROM local_users WHERE is_current = 1 LIMIT 1",
+            [],
+            |row| row.get(0),
+        ).ok()
+    }
+
+    fn decrypt_account_password(account: &DbAccount, user_id: i64) -> Result<String, String> {
+        let salt = account.key_salt.as_deref()
+            .ok_or_else(|| format!("账号 {} 缺少密钥盐值", account.id))?;
+        let salt_bytes = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            salt,
+        ).map_err(|e| format!("盐值解码失败: {}", e))?;
+        if salt_bytes.len() < 16 {
+            return Err(format!("盐值长度不足: {} < 16", salt_bytes.len()));
+        }
+        crypto::decrypt_password(&account.encrypted_password, user_id, &salt_bytes)
+            .map_err(|e| format!("密码解密失败: {}", e))
+    }
+
+    /// 同步所有外部账号
+    pub async fn sync_all_accounts(&self) -> Vec<AccountSyncResult> {
         {
             let mut status = self.status.write().await;
             *status = SyncStatus::Syncing;
         }
 
-        self.emit_progress(SyncProgress {
-            account_id: account.id.clone(),
-            status: SyncStatus::Syncing,
-            message: format!("开始同步账号: {}", account.name),
-            progress: 0.0,
-        });
-
-        let config = self.config.read().await;
-        let now = chrono::Utc::now().timestamp();
-        let start_time = now - (config.past_days * 24 * 3600);
-        let end_time = now + (config.future_days * 24 * 3600);
-
-        let result = match account.account_type {
-            AccountType::Exchange => {
-                self.sync_exchange_account(account, start_time, end_time).await
-            }
-            AccountType::CalDav => {
-                self.sync_caldav_account(account, start_time, end_time).await
-            }
-        };
-
-        {
-            let mut status = self.status.write().await;
-            *status = if result.is_ok() {
-                SyncStatus::Completed
-            } else {
-                SyncStatus::Failed
-            };
-        }
-
-        result
-    }
-
-    /// 同步 Exchange 账号
-    async fn sync_exchange_account(
-        &self,
-        account: &AccountInfo,
-        start_time: i64,
-        end_time: i64,
-    ) -> Result<SyncResult, String> {
-        let client = EwsClient::new(
-            account.server_url.clone(),
-            account.username.clone(),
-            account.password.clone(),
-        );
-
-        self.emit_progress(SyncProgress {
-            account_id: account.id.clone(),
-            status: SyncStatus::Syncing,
-            message: "验证 Exchange 服务器连接...".to_string(),
-            progress: 10.0,
-        });
-
-        client.connect().await.map_err(|e| format!("Exchange 连接失败: {}", e))?;
-
-        self.emit_progress(SyncProgress {
-            account_id: account.id.clone(),
-            status: SyncStatus::Syncing,
-            message: "获取日历列表...".to_string(),
-            progress: 20.0,
-        });
-
-        let calendars = client.list_calendars().await
-            .map_err(|e| format!("获取日历列表失败: {}", e))?;
-
-        let mut result = SyncResult {
-            account_id: account.id.clone(),
-            success: true,
-            added: 0,
-            updated: 0,
-            deleted: 0,
-            errors: Vec::new(),
-        };
-
-        let total_calendars = calendars.len();
-        for (index, calendar) in calendars.iter().enumerate() {
-            let progress = 20.0 + (index as f32 / total_calendars as f32) * 70.0;
-
-            self.emit_progress(SyncProgress {
-                account_id: account.id.clone(),
-                status: SyncStatus::Syncing,
-                message: format!("同步日历: {}", calendar.name),
-                progress,
+        // 读取账号列表（同步块，不跨 await）
+        let accounts: Vec<DbAccount> = {
+            let db = self.app_handle.state::<Mutex<DatabaseConnection>>();
+            let db_conn = db.lock().unwrap_or_else(|e| {
+                log::error!("[SyncEngine] 数据库锁获取失败: {}", e);
+                panic!("数据库锁获取失败")
             });
-
-            match client.fetch_events(&calendar.id, start_time, end_time).await {
-                Ok(server_events) => {
-                    let _ = self.app_handle.emit("server-events-fetched", serde_json::json!({
-                        "account_id": account.id,
-                        "calendar_id": calendar.id,
-                        "calendar_name": calendar.name,
-                        "events": server_events,
-                    }));
-
-                    result.added += server_events.len();
-                }
-                Err(e) => {
-                    let error_msg = format!("获取日历 {} 事件失败: {}", calendar.name, e);
-                    log::error!("{}", error_msg);
-                    result.errors.push(error_msg);
-                }
-            }
-        }
-
-        self.emit_progress(SyncProgress {
-            account_id: account.id.clone(),
-            status: SyncStatus::Completed,
-            message: format!("同步完成: 新增 {}, 更新 {}, 删除 {}", result.added, result.updated, result.deleted),
-            progress: 100.0,
-        });
-
-        self.emit_result(result.clone());
-
-        Ok(result)
-    }
-
-    /// 同步 CalDAV 账号
-    async fn sync_caldav_account(
-        &self,
-        account: &AccountInfo,
-        start_time: i64,
-        end_time: i64,
-    ) -> Result<SyncResult, String> {
-        let client = CalDavClient::new(
-            account.server_url.clone(),
-            account.username.clone(),
-            account.password.clone(),
-        );
-
-        self.emit_progress(SyncProgress {
-            account_id: account.id.clone(),
-            status: SyncStatus::Syncing,
-            message: "验证 CalDAV 服务器连接...".to_string(),
-            progress: 10.0,
-        });
-
-        client.connect().await.map_err(|e| format!("CalDAV 连接失败: {}", e))?;
-
-        self.emit_progress(SyncProgress {
-            account_id: account.id.clone(),
-            status: SyncStatus::Syncing,
-            message: "获取日历列表...".to_string(),
-            progress: 20.0,
-        });
-
-        let calendars = client.list_calendars().await
-            .map_err(|e| format!("获取日历列表失败: {}", e))?;
-
-        let mut result = SyncResult {
-            account_id: account.id.clone(),
-            success: true,
-            added: 0,
-            updated: 0,
-            deleted: 0,
-            errors: Vec::new(),
+            let repo = AccountRepository::new(&db_conn);
+            repo.get_all()
+                .unwrap_or_else(|e| {
+                    log::error!("[SyncEngine] 读取账号列表失败: {}", e);
+                    vec![]
+                })
+                .into_iter()
+                .filter(|a| a.enabled && (a.type_ == "exchange" || a.type_ == "caldav"))
+                .collect()
+            // db_conn 在此 drop，不跨 await
         };
 
-        let total_calendars = calendars.len();
-        for (index, calendar) in calendars.iter().enumerate() {
-            let progress = 20.0 + (index as f32 / total_calendars as f32) * 70.0;
-
-            self.emit_progress(SyncProgress {
-                account_id: account.id.clone(),
-                status: SyncStatus::Syncing,
-                message: format!("同步日历: {}", calendar.name),
-                progress,
-            });
-
-            match client.fetch_events(&calendar.url, start_time, end_time).await {
-                Ok(server_events) => {
-                    let _ = self.app_handle.emit("server-events-fetched", serde_json::json!({
-                        "account_id": account.id,
-                        "calendar_id": calendar.id,
-                        "calendar_name": calendar.name,
-                        "calendar_url": calendar.url,
-                        "events": server_events,
-                    }));
-
-                    result.added += server_events.len();
-                }
-                Err(e) => {
-                    let error_msg = format!("获取日历 {} 事件失败: {}", calendar.name, e);
-                    log::error!("{}", error_msg);
-                    result.errors.push(error_msg);
-                }
-            }
+        if accounts.is_empty() {
+            log::info!("[SyncEngine] 没有启用的外部账号需要同步");
+            *self.status.write().await = SyncStatus::Completed;
+            return vec![];
         }
 
-        self.emit_progress(SyncProgress {
-            account_id: account.id.clone(),
-            status: SyncStatus::Completed,
-            message: format!("同步完成: 新增 {}, 更新 {}, 删除 {}", result.added, result.updated, result.deleted),
-            progress: 100.0,
-        });
-
-        self.emit_result(result.clone());
-
-        Ok(result)
-    }
-
-    /// 同步所有启用的账号
-    ///
-    /// # 参数
-    /// * `accounts` - 账号列表
-    ///
-    /// # 返回
-    /// * `Vec<SyncResult>` - 每个账号的同步结果
-    pub async fn sync_all_accounts(&self, accounts: &[AccountInfo]) -> Vec<SyncResult> {
-        let mut results = Vec::new();
-
-        let enabled_accounts: Vec<&AccountInfo> = accounts.iter()
-            .filter(|account| account.enabled)
-            .collect();
-
-        if enabled_accounts.is_empty() {
-            log::info!("没有启用的账号需要同步");
-            return results;
+        if accounts.is_empty() {
+            log::info!("[SyncEngine] 没有启用的外部账号需要同步");
+            *self.status.write().await = SyncStatus::Completed;
+            return vec![];
         }
 
         self.emit_progress(SyncProgress {
             account_id: "all".to_string(),
             status: SyncStatus::Syncing,
-            message: format!("开始同步 {} 个账号", enabled_accounts.len()),
+            message: format!("开始同步 {} 个账号", accounts.len()),
             progress: 0.0,
         });
 
-        let total_accounts = enabled_accounts.len();
-        for (index, account) in enabled_accounts.iter().enumerate() {
-            let progress = (index as f32 / total_accounts as f32) * 100.0;
+        let mut results = Vec::new();
+        let total = accounts.len();
 
+        for (index, account) in accounts.iter().enumerate() {
+            let progress = (index as f32 / total as f32) * 100.0;
             self.emit_progress(SyncProgress {
-                account_id: account.id.clone(),
+                account_id: account.id.to_string(),
                 status: SyncStatus::Syncing,
-                message: format!("同步账号 {}/{}: {}", index + 1, total_accounts, account.name),
+                message: format!("同步账号 {}/{}: {}", index + 1, total, account.username),
                 progress,
             });
 
-            match self.sync_account(account).await {
-                Ok(result) => results.push(result),
-                Err(e) => {
-                    log::error!("同步账号 {} 失败: {}", account.name, e);
-                    results.push(SyncResult {
-                        account_id: account.id.clone(),
-                        success: false,
-                        added: 0,
-                        updated: 0,
-                        deleted: 0,
-                        errors: vec![e],
-                    });
-                }
-            }
+            let result = self.sync_account(&account).await;
+            results.push(result);
         }
+
+        *self.status.write().await = SyncStatus::Completed;
+        self.emit_external_sync_complete();
 
         self.emit_progress(SyncProgress {
             account_id: "all".to_string(),
@@ -417,31 +241,385 @@ impl SyncEngine {
 
         results
     }
+
+    /// 对单个账号执行同步
+    ///
+    /// 严格遵循分步锁策略：外部 API 调用不持有任何锁。
+    pub async fn sync_account(&self, account: &DbAccount) -> AccountSyncResult {
+        let mut result = AccountSyncResult {
+            account_id: account.id,
+            success: true,
+            added: 0,
+            updated: 0,
+            deleted: 0,
+            errors: Vec::new(),
+        };
+
+        // 步骤1：获取锁 → 读取日历 + 用户 ID → 释放锁
+        let (calendars, user_id) = {
+            let db = self.app_handle.state::<Mutex<DatabaseConnection>>();
+            let db_conn = match db.lock() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    result.success = false;
+                    result.errors.push(format!("数据库锁获取失败: {}", e));
+                    return result;
+                }
+            };
+
+            let cal_repo = CalendarRepository::new(&db_conn);
+            let cals = match cal_repo.get_by_account_id(account.id) {
+                Ok(c) => c,
+                Err(e) => {
+                    result.success = false;
+                    result.errors.push(format!("读取账号日历失败: {}", e));
+                    return result;
+                }
+            };
+
+            let uid = Self::get_current_user_id(&db_conn.get_connection());
+            (cals, uid)
+        };
+
+        let user_id = match user_id {
+            Some(uid) => uid,
+            None => {
+                result.success = false;
+                result.errors.push("无法获取当前用户 ID".to_string());
+                return result;
+            }
+        };
+
+        // 步骤2：解密密码（无锁）
+        let password = match Self::decrypt_account_password(account, user_id) {
+            Ok(p) => p,
+            Err(e) => {
+                result.success = false;
+                result.errors.push(e);
+                return result;
+            }
+        };
+
+        let config = self.config.read().await;
+        let now = chrono::Utc::now().timestamp();
+        let start_time = now - (config.past_days * 24 * 3600);
+        let end_time = now + (config.future_days * 24 * 3600);
+        drop(config);
+
+        // 步骤3：获取服务器端事件（无锁，网络请求）
+        let server_events_by_calendar = match account.type_.as_str() {
+            "exchange" => {
+                match self.fetch_exchange_events(&account.server_url, &account.username, &password, &calendars, start_time, end_time).await {
+                    Ok(events) => events,
+                    Err(e) => {
+                        result.success = false;
+                        result.errors.push(format!("Exchange 同步失败: {}", e));
+                        self.emit_result(&result);
+                        return result;
+                    }
+                }
+            }
+            "caldav" => {
+                match self.fetch_caldav_events(&account.server_url, &account.username, &password, &calendars, start_time, end_time).await {
+                    Ok(events) => events,
+                    Err(e) => {
+                        result.success = false;
+                        result.errors.push(format!("CalDAV 同步失败: {}", e));
+                        self.emit_result(&result);
+                        return result;
+                    }
+                }
+            }
+            _ => {
+                result.success = false;
+                result.errors.push(format!("不支持的账号类型: {}", account.type_));
+                return result;
+            }
+        };
+
+        // 步骤4：获取锁 → 读取本地事件 → 释放锁
+        let local_events_by_calendar: HashMap<i64, Vec<DbEvent>> = {
+            let db = self.app_handle.state::<Mutex<DatabaseConnection>>();
+            let db_conn = match db.lock() {
+                Ok(conn) => conn,
+                Err(e) => {
+                    result.success = false;
+                    result.errors.push(format!("数据库锁获取失败: {}", e));
+                    return result;
+                }
+            };
+
+            let event_repo = EventRepository::new(&db_conn);
+            let mut map = HashMap::new();
+            for cal in &calendars {
+                match event_repo.get_by_calendar_id(cal.id) {
+                    Ok(events) => { map.insert(cal.id, events); }
+                    Err(e) => {
+                        log::warn!("[SyncEngine] 读取日历 {} 的本地事件失败: {}", cal.id, e);
+                        map.insert(cal.id, vec![]);
+                    }
+                }
+            }
+            map
+        };
+
+        // 步骤5+6：diff 计算 + 写入 SQLite
+        for cal in &calendars {
+            let server_events = server_events_by_calendar.get(&cal.id).cloned().unwrap_or_default();
+            let local_events = local_events_by_calendar.get(&cal.id).cloned().unwrap_or_default();
+
+            let diff = Self::compute_diff(&local_events, &server_events);
+
+            if !diff.is_empty() {
+                // 获取锁 → 写入 SQLite → 释放锁
+                let db = self.app_handle.state::<Mutex<DatabaseConnection>>();
+                let db_conn = match db.lock() {
+                    Ok(conn) => conn,
+                    Err(e) => {
+                        result.errors.push(format!("数据库锁获取失败: {}", e));
+                        continue;
+                    }
+                };
+
+                let event_repo = EventRepository::new(&db_conn);
+                for action in &diff {
+                    match action {
+                        DiffAction::Add(event_data) => {
+                            let create_event = CreateEvent {
+                                title: event_data.title.clone(),
+                                description: event_data.description.clone(),
+                                start_time: event_data.start_time,
+                                end_time: event_data.end_time,
+                                all_day: event_data.all_day,
+                                calendar_id: cal.id,
+                                color: event_data.color.clone().or_else(|| Some(cal.color.clone())),
+                                reminder: event_data.reminder,
+                                repeat_rule: event_data.repeat_rule.clone(),
+                                location: event_data.location.clone(),
+                                external_id: Some(event_data.external_id.clone()),
+                                user_id: None,
+                                timezone: None,
+                            };
+                            match event_repo.create(&create_event) {
+                                Ok(_) => result.added += 1,
+                                Err(e) => result.errors.push(format!("创建事件失败: {}", e)),
+                            }
+                        }
+                        DiffAction::Update(event_data) => {
+                            let local_id = match event_data.local_id {
+                                Some(id) => id,
+                                None => {
+                                    result.errors.push(format!("更新事件 {} 缺少本地 ID", event_data.external_id));
+                                    continue;
+                                }
+                            };
+                            let update_event = crate::db::repositories::event::UpdateEvent {
+                                id: local_id,
+                                title: event_data.title.clone(),
+                                description: event_data.description.clone(),
+                                start_time: event_data.start_time,
+                                end_time: event_data.end_time,
+                                all_day: event_data.all_day,
+                                calendar_id: cal.id,
+                                color: event_data.color.clone().or_else(|| Some(cal.color.clone())),
+                                reminder: event_data.reminder,
+                                repeat_rule: event_data.repeat_rule.clone(),
+                                location: event_data.location.clone(),
+                                external_id: Some(event_data.external_id.clone()),
+                            };
+                            match event_repo.update(&update_event) {
+                                Ok(_) => result.updated += 1,
+                                Err(e) => result.errors.push(format!("更新事件失败: {}", e)),
+                            }
+                        }
+                        DiffAction::Delete(local_id) => {
+                            match event_repo.delete(*local_id) {
+                                Ok(_) => result.deleted += 1,
+                                Err(e) => result.errors.push(format!("删除事件失败: {}", e)),
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        self.emit_result(&result);
+        result
+    }
+
+    async fn fetch_exchange_events(
+        &self,
+        server_url: &str,
+        username: &str,
+        password: &str,
+        calendars: &[DbCalendar],
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<HashMap<i64, Vec<SyncEventData>>, String> {
+        let client = EwsClient::new(server_url.to_string(), username.to_string(), password.to_string());
+
+        self.emit_progress(SyncProgress {
+            account_id: "exchange".to_string(),
+            status: SyncStatus::Syncing,
+            message: "验证 Exchange 服务器连接...".to_string(),
+            progress: 10.0,
+        });
+
+        client.connect().await.map_err(|e| format!("Exchange 连接失败: {}", e))?;
+
+        let mut events_map = HashMap::new();
+
+        for (index, cal) in calendars.iter().enumerate() {
+            let progress = 10.0 + (index as f32 / calendars.len().max(1) as f32) * 80.0;
+            self.emit_progress(SyncProgress {
+                account_id: "exchange".to_string(),
+                status: SyncStatus::Syncing,
+                message: format!("同步日历: {}", cal.name),
+                progress,
+            });
+
+            match client.fetch_events(&cal.id.to_string(), start_time, end_time).await {
+                Ok(server_events) => {
+                    let sync_events: Vec<SyncEventData> = server_events.iter().map(|e| SyncEventData {
+                        external_id: e.id.clone(),
+                        title: e.title.clone(),
+                        description: e.description.clone(),
+                        start_time: e.start_time * 1000,
+                        end_time: e.end_time * 1000,
+                        all_day: e.all_day,
+                        color: None,
+                        reminder: None,
+                        repeat_rule: None,
+                        location: e.location.clone(),
+                        local_id: None,
+                    }).collect();
+                    events_map.insert(cal.id, sync_events);
+                }
+                Err(e) => {
+                    log::error!("[SyncEngine] Exchange 获取日历 {} 事件失败: {}", cal.name, e);
+                }
+            }
+        }
+
+        Ok(events_map)
+    }
+
+    async fn fetch_caldav_events(
+        &self,
+        server_url: &str,
+        username: &str,
+        password: &str,
+        calendars: &[DbCalendar],
+        start_time: i64,
+        end_time: i64,
+    ) -> Result<HashMap<i64, Vec<SyncEventData>>, String> {
+        let client = CalDavClient::new(server_url.to_string(), username.to_string(), password.to_string());
+
+        let caldav_calendars = client.list_calendars().await
+            .map_err(|e| format!("CalDAV 获取日历列表失败: {}", e))?;
+
+        let mut events_map = HashMap::new();
+
+        for (index, cal) in calendars.iter().enumerate() {
+            let calendar_url = caldav_calendars.iter()
+                .find(|cc| cc.id == cal.id.to_string())
+                .map(|cc| cc.url.clone())
+                .unwrap_or_default();
+
+            if calendar_url.is_empty() {
+                log::warn!("[SyncEngine] 日历 {} 没有对应的 CalDAV URL，跳过", cal.name);
+                continue;
+            }
+
+            let progress = 10.0 + (index as f32 / calendars.len().max(1) as f32) * 80.0;
+            self.emit_progress(SyncProgress {
+                account_id: "caldav".to_string(),
+                status: SyncStatus::Syncing,
+                message: format!("同步日历: {}", cal.name),
+                progress,
+            });
+
+            match client.fetch_events(&calendar_url, start_time, end_time).await {
+                Ok(server_events) => {
+                    let sync_events: Vec<SyncEventData> = server_events.iter().map(|e| SyncEventData {
+                        external_id: e.id.clone(),
+                        title: e.title.clone(),
+                        description: e.description.clone(),
+                        start_time: e.start_time * 1000,
+                        end_time: e.end_time * 1000,
+                        all_day: e.all_day,
+                        color: None,
+                        reminder: None,
+                        repeat_rule: None,
+                        location: e.location.clone(),
+                        local_id: None,
+                    }).collect();
+                    events_map.insert(cal.id, sync_events);
+                }
+                Err(e) => {
+                    log::error!("[SyncEngine] CalDAV 获取日历 {} 事件失败: {}", cal.name, e);
+                }
+            }
+        }
+
+        Ok(events_map)
+    }
+
+    /// 计算本地事件与服务器事件的差异（服务器优先策略）
+    fn compute_diff(local_events: &[DbEvent], server_events: &[SyncEventData]) -> Vec<DiffAction> {
+        let mut actions = Vec::new();
+
+        let local_by_external: HashMap<&str, &DbEvent> = local_events.iter()
+            .filter_map(|e| e.external_id.as_ref().map(|eid| (eid.as_str(), e)))
+            .collect();
+
+        let server_by_external: HashMap<&str, &SyncEventData> = server_events.iter()
+            .map(|e| (e.external_id.as_str(), e))
+            .collect();
+
+        // 本地有但服务器没有 → 删除
+        for (external_id, local_event) in &local_by_external {
+            if !server_by_external.contains_key(external_id) {
+                actions.push(DiffAction::Delete(local_event.id));
+            }
+        }
+
+        // 服务器有但本地没有 → 新增；两边都有但内容不同 → 更新
+        for server_event in server_events {
+            if let Some(local_event) = local_by_external.get(server_event.external_id.as_str()) {
+                if local_event.title != server_event.title
+                    || local_event.start_time != server_event.start_time
+                    || local_event.end_time != server_event.end_time
+                    || local_event.all_day != server_event.all_day
+                    || local_event.description != server_event.description
+                    || local_event.location != server_event.location
+                {
+                    let mut update_data = server_event.clone();
+                    update_data.local_id = Some(local_event.id);
+                    actions.push(DiffAction::Update(update_data));
+                }
+            } else {
+                actions.push(DiffAction::Add(server_event.clone()));
+            }
+        }
+
+        actions
+    }
 }
 
 /// 同步定时器状态
 struct TimerState {
-    /// 定时器任务句柄
     handle: Option<JoinHandle<()>>,
-    /// 是否正在运行
     running: bool,
 }
 
 /// 同步定时器
-///
-/// 负责管理后台定时同步任务，支持：
-/// - 启动定时同步
-/// - 停止定时同步
-/// - 手动触发即时同步
 pub struct SyncTimer {
-    /// 同步引擎
     engine: Arc<SyncEngine>,
-    /// 定时器状态
     state: RwLock<TimerState>,
 }
 
 impl SyncTimer {
-    /// 创建新的同步定时器实例
     pub fn new(engine: Arc<SyncEngine>) -> Self {
         Self {
             engine,
@@ -452,16 +630,7 @@ impl SyncTimer {
         }
     }
 
-    /// 启动定时同步
-    ///
-    /// # 参数
-    /// * `interval_minutes` - 同步间隔（分钟）
-    /// * `get_accounts` - 获取账号列表的回调函数
-    pub async fn start_timer<F, Fut>(&self, interval_minutes: u64, get_accounts: F)
-    where
-        F: Fn() -> Fut + Send + Sync + 'static,
-        Fut: std::future::Future<Output = Vec<AccountInfo>> + Send,
-    {
+    pub async fn start_timer(&self, interval_minutes: u64) {
         let mut state = self.state.write().await;
 
         if state.running {
@@ -479,26 +648,19 @@ impl SyncTimer {
             loop {
                 interval.tick().await;
 
-                log::info!("定时同步触发");
-
-                let accounts = get_accounts().await;
-
-                let results = engine.sync_all_accounts(&accounts).await;
+                log::info!("[SyncTimer] 定时同步触发");
+                let results = engine.sync_all_accounts().await;
 
                 for result in results {
                     if result.success {
                         log::info!(
-                            "账号 {} 同步成功: 新增 {}, 更新 {}, 删除 {}",
-                            result.account_id,
-                            result.added,
-                            result.updated,
-                            result.deleted
+                            "[SyncTimer] 账号 {} 同步成功: 新增 {}, 更新 {}, 删除 {}",
+                            result.account_id, result.added, result.updated, result.deleted
                         );
                     } else {
                         log::error!(
-                            "账号 {} 同步失败: {:?}",
-                            result.account_id,
-                            result.errors
+                            "[SyncTimer] 账号 {} 同步失败: {:?}",
+                            result.account_id, result.errors
                         );
                     }
                 }
@@ -508,52 +670,18 @@ impl SyncTimer {
         state.handle = Some(handle);
         state.running = true;
 
-        log::info!("定时同步已启动，间隔: {} 分钟", interval_minutes);
+        log::info!("[SyncTimer] 定时同步已启动，间隔: {} 分钟", interval_minutes);
     }
 
-    /// 停止定时同步
     pub async fn stop_timer(&self) {
         let mut state = self.state.write().await;
-
         if let Some(handle) = state.handle.take() {
             let _ = handle.abort();
         }
-
         state.running = false;
-
-        log::info!("定时同步已停止");
+        log::info!("[SyncTimer] 定时同步已停止");
     }
 
-    /// 手动触发即时同步
-    ///
-    /// # 参数
-    /// * `accounts` - 账号列表
-    ///
-    /// # 返回
-    /// * `Vec<SyncResult>` - 同步结果
-    pub async fn trigger_manual_sync(&self, accounts: &[AccountInfo]) -> Vec<SyncResult> {
-        log::info!("手动触发同步");
-
-        self.engine.emit_progress(SyncProgress {
-            account_id: "manual".to_string(),
-            status: SyncStatus::Syncing,
-            message: "手动同步开始".to_string(),
-            progress: 0.0,
-        });
-
-        let results = self.engine.sync_all_accounts(accounts).await;
-
-        self.engine.emit_progress(SyncProgress {
-            account_id: "manual".to_string(),
-            status: SyncStatus::Completed,
-            message: "手动同步完成".to_string(),
-            progress: 100.0,
-        });
-
-        results
-    }
-
-    /// 检查定时器是否正在运行
     pub async fn is_running(&self) -> bool {
         self.state.read().await.running
     }
@@ -564,140 +692,167 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_account_type_serialization() {
-        let exchange = AccountType::Exchange;
-        let caldav = AccountType::CalDav;
-
-        let exchange_json = serde_json::to_string(&exchange).unwrap();
-        let caldav_json = serde_json::to_string(&caldav).unwrap();
-
-        assert_eq!(exchange_json, "\"exchange\"");
-        assert_eq!(caldav_json, "\"caldav\"");
-    }
-
-    #[test]
-    fn test_account_info_creation() {
-        let account = AccountInfo {
-            id: "test-123".to_string(),
-            name: "测试账号".to_string(),
-            account_type: AccountType::Exchange,
-            server_url: "https://mail.example.com/EWS/Exchange.asmx".to_string(),
-            username: "user@example.com".to_string(),
-            password: "encrypted_password".to_string(),
-            enabled: true,
-            sync_token: None,
-        };
-
-        assert_eq!(account.id, "test-123");
-        assert_eq!(account.name, "测试账号");
-        assert_eq!(account.account_type, AccountType::Exchange);
-        assert!(account.enabled);
-    }
-
-    #[test]
     fn test_sync_config_default() {
         let config = SyncConfig::default();
-
         assert_eq!(config.past_days, 30);
         assert_eq!(config.future_days, 90);
         assert_eq!(config.interval_minutes, 15);
     }
 
     #[test]
-    fn test_sync_config_custom() {
-        let config = SyncConfig {
-            past_days: 7,
-            future_days: 30,
-            interval_minutes: 5,
-        };
-
-        assert_eq!(config.past_days, 7);
-        assert_eq!(config.future_days, 30);
-        assert_eq!(config.interval_minutes, 5);
+    fn test_sync_status_serialization() {
+        assert_eq!(serde_json::to_string(&SyncStatus::Idle).unwrap(), "\"idle\"");
+        assert_eq!(serde_json::to_string(&SyncStatus::Syncing).unwrap(), "\"syncing\"");
+        assert_eq!(serde_json::to_string(&SyncStatus::Completed).unwrap(), "\"completed\"");
+        assert_eq!(serde_json::to_string(&SyncStatus::Failed).unwrap(), "\"failed\"");
     }
 
     #[test]
-    fn test_sync_result_creation() {
-        let result = SyncResult {
-            account_id: "test-456".to_string(),
+    fn test_account_sync_result_creation() {
+        let result = AccountSyncResult {
+            account_id: 1,
             success: true,
             added: 5,
             updated: 3,
             deleted: 1,
             errors: Vec::new(),
         };
-
-        assert_eq!(result.account_id, "test-456");
         assert!(result.success);
         assert_eq!(result.added, 5);
-        assert_eq!(result.updated, 3);
-        assert_eq!(result.deleted, 1);
-        assert!(result.errors.is_empty());
     }
 
     #[test]
-    fn test_sync_result_with_errors() {
-        let result = SyncResult {
-            account_id: "test-789".to_string(),
-            success: false,
-            added: 0,
-            updated: 0,
-            deleted: 0,
-            errors: vec!["错误1".to_string(), "错误2".to_string()],
-        };
-
-        assert!(!result.success);
-        assert_eq!(result.errors.len(), 2);
+    fn test_compute_diff_empty() {
+        let actions = SyncEngine::compute_diff(&[], &[]);
+        assert!(actions.is_empty());
     }
 
     #[test]
-    fn test_sync_progress_serialization() {
-        let progress = SyncProgress {
-            account_id: "test".to_string(),
-            status: SyncStatus::Syncing,
-            message: "正在同步...".to_string(),
-            progress: 50.0,
-        };
+    fn test_compute_diff_add_new() {
+        let server_events = vec![SyncEventData {
+            external_id: "ext-1".to_string(),
+            title: "新事件".to_string(),
+            description: None,
+            start_time: 1000,
+            end_time: 2000,
+            all_day: false,
+            color: None,
+            reminder: None,
+            repeat_rule: None,
+            location: None,
+            local_id: None,
+        }];
 
-        let json = serde_json::to_string(&progress).unwrap();
-        assert!(json.contains("test"));
-        assert!(json.contains("syncing"));
-        assert!(json.contains("正在同步..."));
+        let actions = SyncEngine::compute_diff(&[], &server_events);
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(&actions[0], DiffAction::Add(d) if d.external_id == "ext-1"));
     }
 
     #[test]
-    fn test_sync_status_variants() {
-        let idle = SyncStatus::Idle;
-        let syncing = SyncStatus::Syncing;
-        let completed = SyncStatus::Completed;
-        let failed = SyncStatus::Failed;
+    fn test_compute_diff_delete_local() {
+        let local_events = vec![DbEvent {
+            id: 42,
+            title: "旧事件".to_string(),
+            description: None,
+            start_time: 1000,
+            end_time: 2000,
+            all_day: false,
+            calendar_id: 1,
+            color: None,
+            reminder: None,
+            repeat_rule: None,
+            location: None,
+            external_id: Some("ext-1".to_string()),
+            user_id: None,
+            deleted_at: None,
+            timezone: "Asia/Shanghai".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        }];
 
-        assert_eq!(serde_json::to_string(&idle).unwrap(), "\"idle\"");
-        assert_eq!(serde_json::to_string(&syncing).unwrap(), "\"syncing\"");
-        assert_eq!(serde_json::to_string(&completed).unwrap(), "\"completed\"");
-        assert_eq!(serde_json::to_string(&failed).unwrap(), "\"failed\"");
+        let actions = SyncEngine::compute_diff(&local_events, &[]);
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(&actions[0], DiffAction::Delete(id) if *id == 42));
     }
 
     #[test]
-    fn test_account_info_serialization() {
-        let account = AccountInfo {
-            id: "acc-001".to_string(),
-            name: "工作邮箱".to_string(),
-            account_type: AccountType::CalDav,
-            server_url: "https://caldav.example.com".to_string(),
-            username: "user".to_string(),
-            password: "pass".to_string(),
-            enabled: false,
-            sync_token: Some("token123".to_string()),
-        };
+    fn test_compute_diff_update_changed() {
+        let local_events = vec![DbEvent {
+            id: 42,
+            title: "旧标题".to_string(),
+            description: None,
+            start_time: 1000,
+            end_time: 2000,
+            all_day: false,
+            calendar_id: 1,
+            color: None,
+            reminder: None,
+            repeat_rule: None,
+            location: None,
+            external_id: Some("ext-1".to_string()),
+            user_id: None,
+            deleted_at: None,
+            timezone: "Asia/Shanghai".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        }];
 
-        let json = serde_json::to_string(&account).unwrap();
-        let deserialized: AccountInfo = serde_json::from_str(&json).unwrap();
+        let server_events = vec![SyncEventData {
+            external_id: "ext-1".to_string(),
+            title: "新标题".to_string(),
+            description: None,
+            start_time: 1000,
+            end_time: 2000,
+            all_day: false,
+            color: None,
+            reminder: None,
+            repeat_rule: None,
+            location: None,
+            local_id: None,
+        }];
 
-        assert_eq!(deserialized.id, account.id);
-        assert_eq!(deserialized.name, account.name);
-        assert_eq!(deserialized.account_type, account.account_type);
-        assert_eq!(deserialized.enabled, account.enabled);
-        assert_eq!(deserialized.sync_token, account.sync_token);
+        let actions = SyncEngine::compute_diff(&local_events, &server_events);
+        assert_eq!(actions.len(), 1);
+        assert!(matches!(&actions[0], DiffAction::Update(d) if d.title == "新标题" && d.local_id == Some(42)));
+    }
+
+    #[test]
+    fn test_compute_diff_no_change() {
+        let local_events = vec![DbEvent {
+            id: 42,
+            title: "相同标题".to_string(),
+            description: Some("描述".to_string()),
+            start_time: 1000,
+            end_time: 2000,
+            all_day: false,
+            calendar_id: 1,
+            color: None,
+            reminder: None,
+            repeat_rule: None,
+            location: Some("地点".to_string()),
+            external_id: Some("ext-1".to_string()),
+            user_id: None,
+            deleted_at: None,
+            timezone: "Asia/Shanghai".to_string(),
+            created_at: 0,
+            updated_at: 0,
+        }];
+
+        let server_events = vec![SyncEventData {
+            external_id: "ext-1".to_string(),
+            title: "相同标题".to_string(),
+            description: Some("描述".to_string()),
+            start_time: 1000,
+            end_time: 2000,
+            all_day: false,
+            color: None,
+            reminder: None,
+            repeat_rule: None,
+            location: Some("地点".to_string()),
+            local_id: None,
+        }];
+
+        let actions = SyncEngine::compute_diff(&local_events, &server_events);
+        assert!(actions.is_empty());
     }
 }

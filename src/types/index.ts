@@ -167,6 +167,7 @@ export interface CalDavCalendarInfo {
   name: string
   color?: string
   url: string
+  readOnly?: boolean
 }
 
 // 账号信息（用于连接结果）

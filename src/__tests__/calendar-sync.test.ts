@@ -9,6 +9,17 @@ vi.mock('@/platform/provider', () => ({
       triggerCloudSync: vi.fn().mockResolvedValue(true),
       recordPendingChange: vi.fn().mockResolvedValue(undefined),
       pushPendingChanges: vi.fn().mockResolvedValue({ pushed: 0, failed: 0 }),
+      triggerExternalSync: vi.fn().mockResolvedValue(true),
+      startExternalSync: vi.fn().mockResolvedValue(true),
+      stopExternalSync: vi.fn().mockResolvedValue(true),
+      onExternalSyncComplete: vi.fn().mockResolvedValue(() => {}),
+      onSyncComplete: vi.fn().mockResolvedValue(() => {}),
+      onSyncError: vi.fn().mockResolvedValue(() => {}),
+      onAuthTokenExpired: vi.fn().mockResolvedValue(() => {}),
+      getAllAccounts: vi.fn().mockResolvedValue([]),
+      getSyncStatus: vi.fn().mockResolvedValue({ status: 'idle', lastSyncAt: null, pendingChanges: 0 }),
+      startAutoSync: vi.fn(),
+      stopAutoSync: vi.fn(),
     },
     calendarRepo: {
       getAll: vi.fn().mockResolvedValue([
@@ -20,6 +31,23 @@ vi.mock('@/platform/provider', () => ({
     },
     eventRepo: {
       getAll: vi.fn().mockResolvedValue([]),
+      getByTimeRangeAndCalendars: vi.fn().mockResolvedValue([]),
+      getCount: vi.fn().mockResolvedValue(0),
+      getUpcoming: vi.fn().mockResolvedValue([]),
+      search: vi.fn().mockResolvedValue([]),
+      create: vi.fn().mockResolvedValue({ id: '1', title: 'test', calendarId: '1', startTime: 0, endTime: 0, allDay: false, createdAt: 0, updatedAt: 0 }),
+      update: vi.fn().mockResolvedValue({ id: '1', title: 'test', calendarId: '1', startTime: 0, endTime: 0, allDay: false, createdAt: 0, updatedAt: 0 }),
+      delete: vi.fn().mockResolvedValue(undefined),
+      createWithSync: vi.fn().mockResolvedValue({ id: '1', title: 'test', calendarId: '1', startTime: 0, endTime: 0, allDay: false, createdAt: 0, updatedAt: 0 }),
+      updateWithSync: vi.fn().mockResolvedValue({ id: '1', title: 'test', calendarId: '1', startTime: 0, endTime: 0, allDay: false, createdAt: 0, updatedAt: 0 }),
+      deleteWithSync: vi.fn().mockResolvedValue(undefined),
+    },
+    todoRepo: {
+      getAll: vi.fn().mockResolvedValue([]),
+    },
+    settingsRepo: {
+      getSetting: vi.fn(),
+      setSetting: vi.fn(),
     },
     authRepo: {
       login: vi.fn().mockResolvedValue({ userId: 1, accessToken: 'token', refreshToken: 'refresh', expiresIn: 3600 }),
@@ -42,6 +70,10 @@ vi.mock('@/platform/provider', () => ({
     hasMinimizeToTray: false,
     hasProxySettings: false,
     hasOAuthCallback: false,
+    hasExternalSync: true,
+    hasBackgroundSync: true,
+    hasIncrementalSync: false,
+    hasClientConflictResolution: true,
   }),
 }))
 
@@ -57,24 +89,19 @@ describe('Calendar Sync', () => {
   })
 
   it('should sync calendars after login', async () => {
-    // 动态导入以避免循环依赖
     const { useAuthStore } = await import('@/stores/auth')
     const { useCalendarStore } = await import('@/stores/calendar')
 
     const authStore = useAuthStore()
     const calendarStore = useCalendarStore()
 
-    // 模拟登录成功
     await authStore.login({ username: 'test@example.com', password: 'password' })
 
-    // 验证日历同步触发
     expect(calendarStore.calendars.length).toBeGreaterThan(1)
 
-    // 验证本地日历保留
     const localCalendar = calendarStore.calendars.find(c => c.type === 'local')
     expect(localCalendar).toBeDefined()
 
-    // 验证服务端日历同步
     const serverCalendars = calendarStore.calendars.filter(c => c.type === 'online')
     expect(serverCalendars.length).toBeGreaterThan(0)
   })
@@ -83,10 +110,8 @@ describe('Calendar Sync', () => {
     const { useCalendarStore } = await import('@/stores/calendar')
     const calendarStore = useCalendarStore()
 
-    // 初始化日历
     await calendarStore.initialize()
 
-    // 测试 getValidCalendarId
     const validId = calendarStore.getValidCalendarId(undefined)
     expect(validId).toBeGreaterThan(0)
   })
@@ -95,10 +120,8 @@ describe('Calendar Sync', () => {
     const { useCalendarStore } = await import('@/stores/calendar')
     const calendarStore = useCalendarStore()
 
-    // 初始化日历
     await calendarStore.initialize()
 
-    // 测试 getValidCalendarId with specific ID
     const validId = calendarStore.getValidCalendarId('2')
     expect(validId).toBe(2)
   })

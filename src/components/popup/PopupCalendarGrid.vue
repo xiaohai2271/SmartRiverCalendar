@@ -205,7 +205,7 @@ function getBadgesForDay(day: Date): Array<{ type: string; text: string; title: 
 
 // 获取某天的事件列表
 function getEventsForDay(day: Date): CalendarEvent[] {
-  return calendarStore.events.filter(event => {
+  return calendarStore.eventsForCurrentView.filter(event => {
     const eventDate = new Date(event.startTime)
     return isSameDay(eventDate, day)
   })

@@ -1,6 +1,7 @@
 // 云端同步服务
 // 提供云同步触发、状态查询、自动同步等功能
 // 所有数据操作通过 syncRepo 完成，不再直接调用 Tauri API
+// 事件监听通过 syncRepo 封装，不在 platform 层外导入 @tauri-apps/*
 
 import { useAuthStore } from '../stores/auth'
 import { useCapabilities } from '@/platform/provider'
@@ -9,8 +10,8 @@ import { usePlatform } from '@/platform/provider'
 // 自动同步定时器
 let autoSyncInterval: ReturnType<typeof setInterval> | null = null
 
-// Tauri 事件监听器
-let tauriEventUnlisteners: (() => void)[] = []
+// syncRepo 事件取消监听函数
+let syncRepoUnlisteners: (() => void)[] = []
 
 // 网络状态监听器清理函数
 let networkListenerCleanup: (() => void) | null = null
@@ -134,17 +135,17 @@ export const cloudSyncService = {
   },
 
   /**
-   * 初始化 Tauri 事件监听（仅桌面端）
+   * 初始化 syncRepo 事件监听（替代直接使用 @tauri-apps/api/event）
    */
   async initEventListeners(): Promise<void> {
     const capabilities = useCapabilities()
     if (!capabilities.hasBackgroundSync) return
 
     try {
-      const { listen } = await import('@tauri-apps/api/event')
+      const { syncRepo } = usePlatform()
 
       // 监听同步完成事件
-      const unlisten1 = await listen('sync-complete', () => {
+      const unlisten1 = await syncRepo.onSyncComplete(() => {
         const authStore = useAuthStore()
         authStore.syncStatus = 'success'
         authStore.lastSyncAt = Date.now()
@@ -152,20 +153,20 @@ export const cloudSyncService = {
       })
 
       // 监听同步错误事件
-      const unlisten2 = await listen('sync-error', () => {
+      const unlisten2 = await syncRepo.onSyncError(() => {
         const authStore = useAuthStore()
         authStore.syncStatus = 'error'
         console.warn('[cloudSync] 同步出错')
       })
 
       // 监听 Token 过期事件
-      const unlisten3 = await listen('auth-token-expired', async () => {
+      const unlisten3 = await syncRepo.onAuthTokenExpired(async () => {
         const authStore = useAuthStore()
         await authStore.logout()
         console.warn('[cloudSync] Token 已过期，已退出登录')
       })
 
-      tauriEventUnlisteners.push(unlisten1, unlisten2, unlisten3)
+      syncRepoUnlisteners.push(unlisten1, unlisten2, unlisten3)
       console.log('[cloudSync] 事件监听已初始化')
     } catch (error) {
       console.error('[cloudSync] 事件监听初始化失败:', error)
@@ -176,8 +177,8 @@ export const cloudSyncService = {
    * 清理事件监听
    */
   cleanupEventListeners(): void {
-    tauriEventUnlisteners.forEach(unlisten => unlisten())
-    tauriEventUnlisteners = []
+    syncRepoUnlisteners.forEach(unlisten => unlisten())
+    syncRepoUnlisteners = []
   },
 
   /**

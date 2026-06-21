@@ -12,6 +12,7 @@ export interface ICalendarRepository {
     accountId?: number
     visible?: boolean
     syncEnabled?: boolean
+    readOnly?: boolean
   }): Promise<Calendar>
 
   /** 更新日历 */

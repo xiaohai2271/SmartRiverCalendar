@@ -6,6 +6,7 @@ import type {
   ISettingsRepository,
   IAuthRepository,
   ISyncRepository,
+  IReminderRepository,
 } from './types'
 
 /** 平台 Provider：聚合所有 Repository 实现和能力声明 */
@@ -17,6 +18,7 @@ export interface PlatformProvider {
   readonly settingsRepo: ISettingsRepository
   readonly authRepo: IAuthRepository
   readonly syncRepo: ISyncRepository
+  readonly reminderRepo: IReminderRepository
 }
 
 // 全局单例

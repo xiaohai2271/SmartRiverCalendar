@@ -134,7 +134,7 @@ const completedTodoCount = computed(() => todoStore.completedTodos.length)
 const totalTodoCount = computed(() => todoStore.todos.length)
 const todoCompletionRate = computed(() => totalTodoCount.value ? Math.round((completedTodoCount.value / totalTodoCount.value) * 100) : 0)
 
-const totalEventCount = computed(() => calendarStore.events.length)
+const totalEventCount = computed(() => calendarStore.totalEventCount)
 
 // 模拟以日程和待办体积增长的存储大小
 const storageUsedText = computed(() => {

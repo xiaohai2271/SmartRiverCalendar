@@ -234,6 +234,33 @@ export class TauriSyncRepository implements ISyncRepository {
     return result?.success ?? false
   }
 
+  async triggerExternalSync(): Promise<boolean> {
+    try {
+      await safeInvokeWithResult('external_sync_trigger', {})
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async startExternalSync(intervalMinutes: number): Promise<boolean> {
+    try {
+      await safeInvokeWithResult('external_sync_start', { interval_minutes: intervalMinutes })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async stopExternalSync(): Promise<boolean> {
+    try {
+      await safeInvokeWithResult('external_sync_stop', {})
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async syncCalendarsFromServer(): Promise<boolean> {
     try {
       const result = await safeInvoke<{ success: boolean }>('sync_calendars_from_server')
@@ -297,5 +324,25 @@ export class TauriSyncRepository implements ISyncRepository {
       return { pushed: 0, failed: 0 }
     }
     return result
+  }
+
+  async onExternalSyncComplete(callback: () => void): Promise<() => void> {
+    const { listen } = await import('@tauri-apps/api/event')
+    return listen('external-sync-complete', callback)
+  }
+
+  async onSyncComplete(callback: () => void): Promise<() => void> {
+    const { listen } = await import('@tauri-apps/api/event')
+    return listen('sync-complete', callback)
+  }
+
+  async onSyncError(callback: () => void): Promise<() => void> {
+    const { listen } = await import('@tauri-apps/api/event')
+    return listen('sync-error', callback)
+  }
+
+  async onAuthTokenExpired(callback: () => void): Promise<() => void> {
+    const { listen } = await import('@tauri-apps/api/event')
+    return listen('auth-token-expired', callback)
   }
 }

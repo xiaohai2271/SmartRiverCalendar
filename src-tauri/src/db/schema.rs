@@ -184,6 +184,8 @@ fn create_migration_indexes(conn: &Connection) -> Result<(), DatabaseError> {
         -- external_id 索引（依赖迁移列，必须在 ALTER TABLE 之后）
         CREATE INDEX IF NOT EXISTS idx_events_external_id ON events(external_id);
         CREATE INDEX IF NOT EXISTS idx_todos_external_id ON todos(external_id);
+        -- 复合索引（支持按日历+时间范围高效查询）
+        CREATE INDEX IF NOT EXISTS idx_events_cal_start ON events(calendar_id, start_time);
         "#,
     )?;
 
@@ -224,6 +226,7 @@ pub fn init_database(conn: &Connection) -> Result<(), DatabaseError> {
         "ALTER TABLE todos ADD COLUMN external_id TEXT",
         "ALTER TABLE events ADD COLUMN external_id TEXT",
         "ALTER TABLE accounts ADD COLUMN key_salt TEXT",
+        "ALTER TABLE calendars ADD COLUMN read_only INTEGER NOT NULL DEFAULT 0",
     ];
     for sql in &migrations {
         let _ = conn.execute(sql, []);

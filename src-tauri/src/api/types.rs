@@ -436,6 +436,9 @@ pub struct CalendarDTO {
     /// 是否启用同步
     #[serde(default)]
     pub sync_enabled: bool,
+    /// 是否只读
+    #[serde(default)]
+    pub read_only: bool,
     /// 日历描述
     pub description: Option<String>,
     /// 用户 ID

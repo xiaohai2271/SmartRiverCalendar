@@ -105,7 +105,7 @@ const formattedDate = computed(() => {
 })
 
 const dayEvents = computed(() => {
-  return calendarStore.events.filter(event =>
+  return calendarStore.eventsForCurrentView.filter(event =>
     isSameDay(new Date(event.startTime), calendarStore.currentDate)
   )
 })

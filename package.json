@@ -13,10 +13,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "e2e": "playwright test --config e2e/playwright.config.ts",
-    "e2e:headed": "playwright test --config e2e/playwright.config.ts --headed",
-    "e2e:ui": "playwright test --config e2e/playwright.config.ts --ui",
-    "e2e:tauri": "wdio run e2e/wdio.tauri.conf.ts"
+    "e2e": "npx playwright test --config e2e/playwright.config.ts"
   },
   "dependencies": {
     "@fluentui/web-components": "^2.6.1",
@@ -57,7 +54,6 @@
     "typescript": "~5.9.3",
     "vite": "^8.0.16",
     "vitest": "^4.1.0",
-    "vue-tsc": "^3.2.5",
-    "webdriverio": "^9.29.0"
+    "vue-tsc": "^3.2.5"
   }
 }

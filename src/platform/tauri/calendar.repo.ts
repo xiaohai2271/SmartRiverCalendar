@@ -27,6 +27,7 @@ export class TauriCalendarRepository implements ICalendarRepository {
     accountId?: number
     visible?: boolean
     syncEnabled?: boolean
+    readOnly?: boolean
   }): Promise<Calendar> {
     const result = await safeInvoke<RawCalendar>('create_calendar', {
       name: params.name,
@@ -35,6 +36,7 @@ export class TauriCalendarRepository implements ICalendarRepository {
       accountId: params.accountId ?? null,
       visible: params.visible ?? true,
       syncEnabled: params.syncEnabled ?? false,
+      readOnly: params.readOnly ?? false,
     })
     if (result === null) {
       throw new RepositoryError({

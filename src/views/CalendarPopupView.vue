@@ -58,11 +58,30 @@ const currentSize = ref(popupSettings.settings.popupWindowSize)
 // 今天日期（固定显示今天的信息，不受月份导航影响）
 const today = computed(() => new Date())
 
-// 当前日期是否有事件
+// 当前日期是否有事件（使用独立查询，不依赖 Store loadedRange）
+const popupEvents = ref<CalendarEvent[]>([])
+
+async function loadPopupEvents() {
+  const { eventRepo } = usePlatform()
+  const visibleCalendarIds = calendarStore.visibleCalendars.map(c => c.id)
+  if (visibleCalendarIds.length === 0) {
+    popupEvents.value = []
+    return
+  }
+  const d = currentDate.value
+  const monthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+  const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).getTime()
+  try {
+    popupEvents.value = await eventRepo.getByTimeRangeAndCalendars(monthStart, monthEnd, visibleCalendarIds)
+  } catch {
+    popupEvents.value = []
+  }
+}
+
 const hasEventsOnSelectedDate = computed(() => {
   if (!contextMenuDate.value) return false
   const dateStr = contextMenuDate.value
-  return calendarStore.events.some(event => {
+  return popupEvents.value.some(event => {
     const eventDate = new Date(event.startTime)
     return formatDateToString(eventDate) === dateStr
   })
@@ -116,6 +135,11 @@ watch(
     }
   }
 )
+
+// 监听当前月份变化，重新加载弹窗事件
+watch(currentDate, () => {
+  loadPopupEvents()
+}, { immediate: true })
 
 // ==================== 主题同步 ====================
 

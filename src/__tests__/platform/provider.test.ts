@@ -9,6 +9,7 @@ import type {
   ISettingsRepository,
   IAuthRepository,
   ISyncRepository,
+  IReminderRepository,
 } from '@/platform/types'
 
 // 测试用 mock
@@ -45,6 +46,7 @@ const mockProvider: PlatformProvider = {
   settingsRepo: {} as ISettingsRepository,
   authRepo: {} as IAuthRepository,
   syncRepo: {} as ISyncRepository,
+  reminderRepo: {} as IReminderRepository,
 }
 
 describe('PlatformProvider', () => {

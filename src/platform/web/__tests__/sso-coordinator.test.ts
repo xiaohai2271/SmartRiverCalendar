@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SsoCoordinator } from '@/platform/web/sso-coordinator'
-import type { IAuthRepository, SsoSessionResult, SsoEvent } from '@/platform/types/auth.repository'
+import type { IAuthRepository, SsoEvent, SsoSessionResult } from '@/platform/types/auth.repository'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 // 创建 mock authRepo

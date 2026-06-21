@@ -45,19 +45,22 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useAuthStore } from '../../stores/auth'
 
 // ==================== Store ====================
 const authStore = useAuthStore()
 
 // ==================== State ====================
+type OAuthStatus = 'idle' | 'pending' | 'authorizing' | 'failed' | 'expired' | 'timeout'
+const internalStatus = ref<OAuthStatus>('idle')
+const errorMessage = ref('')
 const isLoading = ref(false)
-const oauthStatus = ref<'idle' | 'pending' | 'authorizing' | 'failed' | 'expired' | 'timeout'>('idle')
-const oauthErrorMessage = ref('')
+const oauthStatus = computed(() => internalStatus.value)
+const oauthErrorMessage = computed(() => errorMessage.value)
 
 // ==================== Provider 配置 ====================
-const providers: { id: 'github'; name: string; icon: string }[] = [
+const providers: { id: string; name: string; icon: string }[] = [
   {
     id: 'github',
     name: 'GitHub',
@@ -66,37 +69,39 @@ const providers: { id: 'github'; name: string; icon: string }[] = [
 ]
 
 // ==================== Methods ====================
-async function handleLogin(_provider: 'github'): Promise<void> {
+async function handleLogin(provider: string): Promise<void> {
   if (isLoading.value) return
   isLoading.value = true
-  oauthStatus.value = 'pending'
-  oauthErrorMessage.value = ''
+  internalStatus.value = 'pending'
+  errorMessage.value = ''
   try {
-    const success = await authStore.loginWithGithub(
-      import.meta.env.VITE_GITHUB_CLIENT_ID || '',
-      import.meta.env.VITE_GITHUB_REDIRECT_URI || ''
-    )
-    if (success) {
-      oauthStatus.value = 'idle'
-    } else {
-      oauthStatus.value = 'failed'
-      oauthErrorMessage.value = '登录失败'
+    if (provider === 'github') {
+      const success = await authStore.loginWithGithub(
+        import.meta.env.VITE_GITHUB_CLIENT_ID || '',
+        import.meta.env.VITE_GITHUB_REDIRECT_URI || ''
+      )
+      if (!success) {
+        internalStatus.value = 'failed'
+        errorMessage.value = '登录失败'
+        return
+      }
     }
+    internalStatus.value = 'idle'
   } catch {
-    oauthStatus.value = 'failed'
-    oauthErrorMessage.value = '登录异常'
+    internalStatus.value = 'failed'
+    errorMessage.value = '登录异常'
   } finally {
     isLoading.value = false
   }
 }
 
 async function handleCancel(): Promise<void> {
-  oauthStatus.value = 'idle'
+  internalStatus.value = 'idle'
 }
 
 function resetStatus(): void {
-  oauthStatus.value = 'idle'
-  oauthErrorMessage.value = ''
+  internalStatus.value = 'idle'
+  errorMessage.value = ''
 }
 </script>
 

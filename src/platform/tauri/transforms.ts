@@ -12,6 +12,7 @@ export interface RawCalendar {
   account_id: number | null
   visible: boolean
   sync_enabled: boolean
+  read_only: boolean
   created_at: number
   updated_at: number
 }
@@ -71,6 +72,7 @@ export function transformCalendar(raw: RawCalendar): Calendar {
     accountId: raw.account_id != null ? String(raw.account_id) : undefined,
     visible: raw.visible,
     syncEnabled: raw.sync_enabled,
+    readOnly: raw.read_only,
   }
 }
 

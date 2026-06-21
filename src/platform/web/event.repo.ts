@@ -1,4 +1,4 @@
-import type { IEventRepository } from '../types/event.repository'
+import type { IEventRepository, EventCreateParams, EventUpdateParams } from '../types/event.repository'
 import type { CalendarEvent } from '@/types'
 import { WebApiClient } from './api-client'
 import { transformWebEvent, type ApiResponse, type PageResponse, type WebEvent } from './transforms'
@@ -49,20 +49,7 @@ export class WebEventRepository implements IEventRepository {
     return response.data.items.map(transformWebEvent)
   }
 
-  async create(params: {
-    title: string
-    description?: string
-    startTime: number
-    endTime: number
-    allDay: boolean
-    calendarId: number
-    color?: string
-    reminder?: number
-    repeatRule?: string
-    location?: string
-    externalId?: string
-    timezone?: string
-  }): Promise<CalendarEvent> {
+  async create(params: EventCreateParams): Promise<CalendarEvent> {
     const response = await this.apiClient.post<ApiResponse<WebEvent>>('/events', {
       title: params.title,
       description: params.description ?? null,
@@ -87,21 +74,7 @@ export class WebEventRepository implements IEventRepository {
     return transformWebEvent(response.data)
   }
 
-  async update(params: {
-    id: number
-    title: string
-    description?: string
-    startTime: number
-    endTime: number
-    allDay: boolean
-    calendarId: number
-    color?: string
-    reminder?: number
-    repeatRule?: string
-    location?: string
-    externalId?: string
-    timezone?: string
-  }): Promise<CalendarEvent> {
+  async update(params: EventUpdateParams): Promise<CalendarEvent> {
     const response = await this.apiClient.put<ApiResponse<WebEvent>>(`/events/${params.id}`, {
       title: params.title,
       description: params.description ?? null,
@@ -133,5 +106,113 @@ export class WebEventRepository implements IEventRepository {
         platform: this.platform,
       })
     }
+  }
+
+  async createWithSync(params: EventCreateParams): Promise<CalendarEvent> {
+    if (!navigator.onLine) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: '网络不可用，无法创建事件',
+        platform: this.platform,
+      })
+    }
+    return this.create(params)
+  }
+
+  async updateWithSync(params: EventUpdateParams): Promise<CalendarEvent> {
+    if (!navigator.onLine) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: '网络不可用，无法更新事件',
+        platform: this.platform,
+      })
+    }
+    return this.update(params)
+  }
+
+  async deleteWithSync(id: number): Promise<void> {
+    if (!navigator.onLine) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: '网络不可用，无法删除事件',
+        platform: this.platform,
+      })
+    }
+    return this.delete(id)
+  }
+
+  async deleteByCalendarAndTimeRange(calendarId: string, startTime: number, endTime: number): Promise<void> {
+    const calId = parseInt(calendarId)
+    if (isNaN(calId)) return
+    const response = await this.apiClient.delete<ApiResponse<null>>(
+      `/events?calendar_id=${calId}&start_time=${startTime}&end_time=${endTime}`
+    )
+    if (response.code !== 0) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: response.message || '无法按范围删除事件',
+        platform: this.platform,
+      })
+    }
+  }
+
+  async getByTimeRangeAndCalendars(startTime: number, endTime: number, calendarIds: string[]): Promise<CalendarEvent[]> {
+    if (calendarIds.length === 0) return []
+    const idsParam = calendarIds.join(',')
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(
+      `/events?start_time=${startTime}&end_time=${endTime}&calendar_ids=${idsParam}`
+    )
+    if (response.code !== 0 || !response.data) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: response.message || '无法获取时间范围和日历内的事件',
+        platform: this.platform,
+      })
+    }
+    return response.data.items.map(transformWebEvent)
+  }
+
+  async getCount(): Promise<number> {
+    const response = await this.apiClient.get<ApiResponse<{ count: number }>>('/events/count')
+    if (response.code !== 0 || !response.data) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: response.message || '无法获取事件数量',
+        platform: this.platform,
+      })
+    }
+    return response.data.count
+  }
+
+  async getUpcoming(limit: number, calendarIds: string[]): Promise<CalendarEvent[]> {
+    if (calendarIds.length === 0) return []
+    const idsParam = calendarIds.join(',')
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(
+      `/events/upcoming?limit=${limit}&calendar_ids=${idsParam}`
+    )
+    if (response.code !== 0 || !response.data) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: response.message || '无法获取即将到来的事件',
+        platform: this.platform,
+      })
+    }
+    return response.data.items.map(transformWebEvent)
+  }
+
+  async search(query: string, limit: number, calendarIds: string[]): Promise<CalendarEvent[]> {
+    if (calendarIds.length === 0) return []
+    const idsParam = calendarIds.join(',')
+    const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(
+      `/events/search?q=${encodeURIComponent(query)}&limit=${limit}&calendar_ids=${idsParam}`
+    )
+    if (response.code !== 0 || !response.data) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.NETWORK_ERROR,
+        message: response.message || '无法搜索事件',
+        platform: this.platform,
+      })
+    }
+    return response.data.items.map(transformWebEvent)
   }
 }

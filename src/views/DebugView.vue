@@ -497,7 +497,12 @@ async function exportLogs() {
       URL.revokeObjectURL(url)
     }
   } catch (error) {
-    console.error('导出日志失败:', error)
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('scope') || msg.includes('Forbidden') || msg.includes('路径') || msg.includes('permission')) {
+      alert('所选路径不在允许的目录范围内（桌面/文档/下载）')
+    } else {
+      alert(`导出失败：${msg}`)
+    }
   } finally {
     exporting.value = false
   }
@@ -747,7 +752,12 @@ async function exportTableData() {
       URL.revokeObjectURL(url)
     }
   } catch (error) {
-    console.error('导出数据失败:', error)
+    const msg = error instanceof Error ? error.message : String(error)
+    if (msg.includes('scope') || msg.includes('Forbidden') || msg.includes('路径') || msg.includes('permission')) {
+      alert('所选路径不在允许的目录范围内（桌面/文档/下载）')
+    } else {
+      alert(`导出失败：${msg}`)
+    }
   }
 }
 

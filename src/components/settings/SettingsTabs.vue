@@ -86,7 +86,7 @@ defineEmits<{
 
 // ==================== 智能测试环境检测 ====================
 const isTestEnv = computed(() => {
-  return import.meta.env?.MODE === 'test'
+  return typeof import.meta !== 'undefined' && import.meta.env?.MODE === 'test'
 })
 </script>
 

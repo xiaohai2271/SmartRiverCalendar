@@ -6,7 +6,7 @@ import type { SsoEvent } from '@/platform/types/auth.repository'
 
 // mock fetch
 const mockFetch = vi.fn()
-globalThis.fetch = mockFetch
+;(globalThis as any).fetch = mockFetch
 
 // mock BroadcastChannel
 class MockBroadcastChannel {
@@ -84,9 +84,7 @@ describe('WebAuthRepository SSO 方法', () => {
 
       const result = await authRepo.detectSsoSession()
       expect(result.loggedIn).toBe(true)
-      if (result.loggedIn && result.user) {
-        expect(result.user.email).toBe('test@example.com')
-      }
+      expect(result.user!.email).toBe('test@example.com')
 
       // 验证请求携带 credentials: 'include'
       expect(mockFetch).toHaveBeenCalledWith(
