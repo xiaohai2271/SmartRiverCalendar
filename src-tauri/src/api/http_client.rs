@@ -46,7 +46,10 @@ impl HttpClient {
             .timeout(Duration::from_secs(30))
             .connect_timeout(Duration::from_secs(10))
             .build()
-            .expect("创建 HTTP 客户端失败");
+            .unwrap_or_else(|e| {
+                log::error!("创建 HTTP 客户端失败: {}", e);
+                panic!("创建 HTTP 客户端失败: {}", e)
+            });
 
         Self {
             client,

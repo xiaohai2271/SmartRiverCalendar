@@ -22,7 +22,7 @@ describe('PlatformCapabilities', () => {
       hasMinimizeToTray: true,
       hasProxySettings: true,
       hasOAuthCallback: true,
-      hasSsoLogin: false,
+      hasSsoLogin: true,
       hasBackgroundSync: true,
       hasIncrementalSync: false,
       hasClientConflictResolution: true,

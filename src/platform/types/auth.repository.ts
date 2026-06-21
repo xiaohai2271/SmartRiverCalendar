@@ -16,6 +16,12 @@ export type SsoEvent =
   | { type: 'logout' }
   | { type: 'login'; userId: number }
 
+export interface OAuthParams {
+  provider: 'github'
+  clientId: string
+  redirectUri: string
+}
+
 export interface IAuthRepository {
   /** 登录，失败抛出 RepositoryError */
   login(email: string, encryptedPassword: string): Promise<AuthResult>
@@ -46,4 +52,7 @@ export interface IAuthRepository {
 
   /** 订阅 SSO 事件（Web 端通过 BroadcastChannel 监听，桌面端 no-op） */
   subscribeSsoEvents(callback: (event: SsoEvent) => void): () => void
+
+  /** OAuth 第三方登录（仅桌面端支持） */
+  loginWithOAuth(params: OAuthParams): Promise<AuthResult>
 }

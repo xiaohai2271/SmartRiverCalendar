@@ -180,15 +180,13 @@ export const useAuthStore = defineStore('auth', () => {
         return false
       }
 
-      const { safeInvoke } = await import('@/utils/tauri')
-      const response = await safeInvoke<{
-        user_id: number
-        access_token: string
-        refresh_token: string
-        expires_in: number
-      }>('auth_oauth_github', { clientId, redirectUri })
+      const authResult = await authRepo.loginWithOAuth({
+        provider: 'github',
+        clientId,
+        redirectUri,
+      })
 
-      if (response?.access_token) {
+      if (authResult?.accessToken) {
         try {
           const currentUser = await authRepo.getCurrentUser()
           user.value = currentUser
@@ -201,7 +199,11 @@ export const useAuthStore = defineStore('auth', () => {
       }
       return false
     } catch (error) {
-      console.error('GitHub 登录失败:', error)
+      if (error instanceof RepositoryError && error.code === RepoErrorCodes.UNSUPPORTED_OPERATION) {
+        console.warn('[AuthStore] GitHub OAuth 登录暂不支持当前平台')
+      } else {
+        console.error('GitHub 登录失败:', error)
+      }
       return false
     }
   }

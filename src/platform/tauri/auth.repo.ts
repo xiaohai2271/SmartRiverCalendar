@@ -1,4 +1,4 @@
-import type { IAuthRepository, AuthResult, SsoSessionResult, SsoEvent } from '../types/auth.repository'
+import type { IAuthRepository, AuthResult, SsoSessionResult, SsoEvent, OAuthParams } from '../types/auth.repository'
 import type { User } from '@/types/auth'
 import { safeInvoke } from '@/utils/tauri'
 import { RepositoryError, RepoErrorCodes } from '../errors'
@@ -189,5 +189,32 @@ export class TauriAuthRepository implements IAuthRepository {
 
   subscribeSsoEvents(_callback: (event: SsoEvent) => void): () => void {
     return () => {}
+  }
+
+  async loginWithOAuth(params: OAuthParams): Promise<AuthResult> {
+    const response = await safeInvoke<{
+      user_id: number
+      access_token: string
+      refresh_token: string
+      expires_in: number
+    }>('auth_oauth_github', {
+      clientId: params.clientId,
+      redirectUri: params.redirectUri,
+    })
+
+    if (!response?.access_token) {
+      throw new RepositoryError({
+        code: RepoErrorCodes.VALIDATION_ERROR,
+        message: 'GitHub OAuth 登录失败',
+        platform: this.platform,
+      })
+    }
+
+    return {
+      userId: response.user_id,
+      accessToken: response.access_token,
+      refreshToken: response.refresh_token,
+      expiresIn: response.expires_in,
+    }
   }
 }

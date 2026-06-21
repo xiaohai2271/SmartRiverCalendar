@@ -32,10 +32,10 @@ const mockCaps: PlatformCapabilities = {
   hasMinimizeToTray: false,
   hasProxySettings: false,
   hasOAuthCallback: false,
+  hasSsoLogin: false,
   hasBackgroundSync: false,
   hasIncrementalSync: false,
   hasClientConflictResolution: false,
-  hasSsoLogin: false,
 }
 
 const mockProvider: PlatformProvider = {

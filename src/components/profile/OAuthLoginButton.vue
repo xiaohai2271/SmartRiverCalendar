@@ -73,19 +73,23 @@ async function handleLogin(provider: string): Promise<void> {
   if (isLoading.value) return
   isLoading.value = true
   internalStatus.value = 'pending'
+  errorMessage.value = ''
   try {
     if (provider === 'github') {
-      const success = await authStore.loginWithGithub('', '')
+      const success = await authStore.loginWithGithub(
+        import.meta.env.VITE_GITHUB_CLIENT_ID || '',
+        import.meta.env.VITE_GITHUB_REDIRECT_URI || ''
+      )
       if (!success) {
         internalStatus.value = 'failed'
-        errorMessage.value = '登录失败，请重试'
+        errorMessage.value = '登录失败'
         return
       }
     }
     internalStatus.value = 'idle'
   } catch {
     internalStatus.value = 'failed'
-    errorMessage.value = '登录失败，请重试'
+    errorMessage.value = '登录异常'
   } finally {
     isLoading.value = false
   }

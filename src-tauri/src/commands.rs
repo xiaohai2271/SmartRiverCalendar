@@ -2289,6 +2289,44 @@ pub async fn auth_oauth_github(
     serde_json::to_value(&response).map_err(|e| format!("序列化失败: {}", e))
 }
 
+/// 启动桌面端 Session 中转 OAuth 登录
+#[tauri::command]
+pub async fn auth_oauth_start(
+    provider: String,
+    app: tauri::AppHandle,
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<String, String> {
+    info!("[auth_oauth_start] 启动桌面端 OAuth 登录, provider: {}", provider);
+
+    // 获取 API 接口地址和平台地址
+    let (api_base_url, platform_url) = if let Some(proxy) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+    {
+        (proxy.get_base_url(), proxy.get_platform_url())
+    } else if let Some(real_client) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::RealApiClient>()
+    {
+        (real_client.base_url().to_string(), real_client.base_url().to_string())
+    } else {
+        return Err("无法获取 API 配置".to_string());
+    };
+
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
+    crate::auth::desktop_oauth::start_oauth(
+        &provider,
+        &api_base_url,
+        &platform_url,
+        app,
+        cancel_token,
+    )
+    .await
+}
+
 /// 退出登录
 #[tauri::command]
 pub async fn auth_logout(
@@ -2354,12 +2392,6 @@ pub async fn auth_get_profile(
 ) -> Result<serde_json::Value, String> {
     info!("[auth_get_profile] 获取用户资料");
     
-    // 调试：检查 Token 状态
-    if let Some(proxy) = api_client.as_ref().as_any().downcast_ref::<crate::api::ProxyApiClient>() {
-        let config = proxy.get_config();
-        info!("[auth_get_profile] API 模式: {:?}, base_url: {}", config.mode, config.base_url);
-    }
-    
     let profile = api_client
         .get_profile()
         .await
@@ -2396,21 +2428,13 @@ pub async fn auth_get_public_key(
     api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
 ) -> Result<serde_json::Value, String> {
     info!("[auth_get_public_key] 获取 RSA 公钥");
-    // 优先检查 ProxyApiClient（运行时切换模式），fallback 到 RealApiClient（直接模式）
+    // 获取 API 接口地址
     let base_url = if let Some(proxy) = api_client
         .as_ref()
         .as_any()
         .downcast_ref::<crate::api::ProxyApiClient>()
     {
-        match proxy.get_base_url() {
-            Some(url) => url,
-            None => {
-                // Mock 模式返回模拟公钥
-                return Ok(serde_json::json!({
-                    "public_key": "mock_rsa_public_key"
-                }));
-            }
-        }
+        proxy.get_base_url()
     } else if let Some(real_client) = api_client
         .as_ref()
         .as_any()
@@ -2418,10 +2442,7 @@ pub async fn auth_get_public_key(
     {
         real_client.base_url().to_string()
     } else {
-        // 未知客户端类型，返回模拟公钥
-        return Ok(serde_json::json!({
-            "public_key": "mock_rsa_public_key"
-        }));
+        return Err("无法获取 API 接口地址".to_string());
     };
 
     let response = reqwest::get(&format!("{}/auth/public-key", base_url))
@@ -2676,12 +2697,7 @@ pub async fn get_api_config(
         .ok_or("API 客户端不支持运行时配置查询")?;
 
     let config = proxy.get_config();
-
-    serde_json::to_value(serde_json::json!({
-        "mode": format!("{:?}", config.mode).to_lowercase(),
-        "baseUrl": config.base_url,
-    }))
-    .map_err(|e| format!("序列化失败: {}", e))
+    serde_json::to_value(config).map_err(|e| format!("序列化失败: {}", e))
 }
 
 /// 切换 API 配置
@@ -2693,19 +2709,12 @@ pub async fn get_api_config(
 /// 4. 持久化新配置到数据库
 #[tauri::command]
 pub async fn switch_api_config(
-    mode: String,
-    base_url: String,
+    api_url: String,
+    platform_url: String,
     api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
     db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<serde_json::Value, String> {
-    info!("[switch_api_config] 切换 API 配置: mode={}, base_url={}", mode, base_url);
-
-    // 解析模式
-    let api_mode = match mode.to_lowercase().as_str() {
-        "mock" => crate::api::ApiMode::Mock,
-        "real" => crate::api::ApiMode::Real,
-        _ => return Err(format!("无效的 API 模式: {}，仅支持 mock/real", mode)),
-    };
+    info!("[switch_api_config] 切换 API 配置: api_url={}, platform_url={}", api_url, platform_url);
 
     // 获取代理客户端
     let proxy = api_client
@@ -2716,8 +2725,8 @@ pub async fn switch_api_config(
 
     // 构建新配置
     let new_config = crate::api::ApiConfig {
-        mode: api_mode,
-        base_url: base_url.clone(),
+        api_url: api_url.clone(),
+        platform_url: platform_url.clone(),
         github_client_id: crate::api::ApiConfig::from_env().github_client_id,
     };
 
@@ -2735,12 +2744,12 @@ pub async fn switch_api_config(
         let _ = new_config.save_to_db(&conn);
     }
 
-    info!("[switch_api_config] API 配置切换完成: mode={:?}", api_mode);
+    info!("[switch_api_config] API 配置切换完成: api_url={}", api_url);
 
     serde_json::to_value(serde_json::json!({
         "success": true,
-        "mode": format!("{:?}", api_mode).to_lowercase(),
-        "baseUrl": base_url,
+        "apiUrl": api_url,
+        "platformUrl": platform_url,
     }))
     .map_err(|e| format!("序列化失败: {}", e))
 }

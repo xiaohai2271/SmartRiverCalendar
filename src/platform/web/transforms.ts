@@ -44,6 +44,8 @@ export interface WebEvent {
   repeat_rule: string | null
   location: string | null
   external_id: string | null
+  created_at?: number | string
+  updated_at?: number | string
 }
 
 /** Web API 待办原始数据 */
@@ -69,6 +71,8 @@ export interface WebAccount {
   encrypted_password: string
   display_name: string | null
   enabled: boolean
+  created_at?: number | string
+  updated_at?: number | string
 }
 
 /** Web API 用户资料原始数据 */
@@ -117,8 +121,8 @@ export function transformWebEvent(raw: WebEvent): CalendarEvent {
     repeatRule,
     location: raw.location ?? undefined,
     externalId: raw.external_id ?? undefined,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: raw.created_at != null ? Number(raw.created_at) : Date.now(),
+    updatedAt: raw.updated_at != null ? Number(raw.updated_at) : Date.now(),
   }
 }
 
@@ -148,8 +152,8 @@ export function transformWebAccount(raw: WebAccount): ExternalAccount {
     encryptedPassword: raw.encrypted_password,
     displayName: raw.display_name ?? undefined,
     enabled: raw.enabled,
-    createdAt: Date.now(),
-    updatedAt: Date.now(),
+    createdAt: raw.created_at != null ? Number(raw.created_at) : Date.now(),
+    updatedAt: raw.updated_at != null ? Number(raw.updated_at) : Date.now(),
   }
 }
 

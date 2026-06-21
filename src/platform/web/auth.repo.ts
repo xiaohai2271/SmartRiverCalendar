@@ -1,4 +1,4 @@
-import type { IAuthRepository, AuthResult, SsoSessionResult, SsoEvent } from '../types/auth.repository'
+import type { IAuthRepository, AuthResult, SsoSessionResult, SsoEvent, OAuthParams } from '../types/auth.repository'
 import type { User } from '@/types/auth'
 import { WebApiClient } from './api-client'
 import { transformWebUser, type ApiResponse, type WebUserProfile } from './transforms'
@@ -7,9 +7,11 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 /** Web 认证 Repository 实现 */
 export class WebAuthRepository implements IAuthRepository {
   private readonly platform = 'web' as const
-
   private readonly apiClient: WebApiClient
-  constructor(apiClient: WebApiClient) { this.apiClient = apiClient }
+
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async login(email: string, encryptedPassword: string): Promise<AuthResult> {
     const data = await this.apiClient.post<
@@ -188,5 +190,13 @@ export class WebAuthRepository implements IAuthRepository {
     return () => {
       this.ssoChannel?.removeEventListener('message', handler)
     }
+  }
+
+  async loginWithOAuth(_params: OAuthParams): Promise<AuthResult> {
+    throw new RepositoryError({
+      code: RepoErrorCodes.UNSUPPORTED_OPERATION,
+      message: 'Web 端不支持 OAuth 登录',
+      platform: this.platform,
+    })
   }
 }

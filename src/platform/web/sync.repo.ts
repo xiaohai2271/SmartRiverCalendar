@@ -10,9 +10,11 @@ let autoSyncInterval: ReturnType<typeof setInterval> | null = null
 /** Web 同步 Repository 实现 — 外部日历操作通过远端 API 代理 */
 export class WebSyncRepository implements ISyncRepository {
   private readonly platform = 'web' as const
-
   private readonly apiClient: WebApiClient
-  constructor(apiClient: WebApiClient) { this.apiClient = apiClient }
+
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async connectExchange(serverUrl: string | null, username: string, password: string): Promise<ConnectResult> {
     const response = await this.apiClient.post<ApiResponse<ConnectResult>>('/accounts/connect', {
@@ -65,7 +67,7 @@ export class WebSyncRepository implements ISyncRepository {
 
   async getExternalCalendars(params: ExternalEventParams): Promise<ExternalCalendarInfo[]> {
     const response = await this.apiClient.post<
-      ApiResponse<Array<{ id: string; name: string; color?: string; url: string; read_only?: boolean }>>
+      ApiResponse<Array<{ id: string; name: string; color?: string; url: string; read_only?: boolean; readOnly?: boolean }>>
     >('/sync/external-calendars', {
       account_id: params.accountId,
     })
@@ -77,7 +79,7 @@ export class WebSyncRepository implements ISyncRepository {
       name: cal.name,
       color: cal.color,
       url: cal.url,
-      readOnly: cal.read_only ?? false,
+      readOnly: cal.read_only ?? cal.readOnly ?? false,
     }))
   }
 

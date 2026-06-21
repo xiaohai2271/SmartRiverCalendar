@@ -2,6 +2,7 @@ import type { ISettingsRepository } from '../types/settings.repository'
 import type { AppSettings, PopupSettings, UserHolidayEntry } from '@/types'
 import { safeInvoke } from '@/utils/tauri'
 import { RepositoryError, RepoErrorCodes } from '../errors'
+import { getDefaultAppSettings, getDefaultPopupSettings } from '../shared/defaults'
 
 /** Tauri 设置 Repository 实现 */
 export class TauriSettingsRepository implements ISettingsRepository {
@@ -11,7 +12,7 @@ export class TauriSettingsRepository implements ISettingsRepository {
   private dbAvailableCache: boolean | null = null
 
   async loadAppSettings(): Promise<AppSettings> {
-    return this.loadSettings<AppSettings>('app.', this.getDefaultAppSettings())
+    return this.loadSettings<AppSettings>('app.', getDefaultAppSettings())
   }
 
   async saveAppSettings(settings: AppSettings): Promise<void> {
@@ -19,7 +20,7 @@ export class TauriSettingsRepository implements ISettingsRepository {
   }
 
   async loadPopupSettings(): Promise<PopupSettings> {
-    return this.loadSettings<PopupSettings>('popup.', this.getDefaultPopupSettings())
+    return this.loadSettings<PopupSettings>('popup.', getDefaultPopupSettings())
   }
 
   async savePopupSettings(settings: PopupSettings): Promise<void> {
@@ -196,51 +197,6 @@ export class TauriSettingsRepository implements ISettingsRepository {
       return localStorage.getItem(key)
     } catch {
       return null
-    }
-  }
-
-  /** 获取默认应用设置 */
-  private getDefaultAppSettings(): AppSettings {
-    return {
-      theme: 'auto',
-      defaultView: 'month',
-      firstDayOfWeek: 1,
-      defaultReminder: 15,
-      startMinimized: false,
-      autoStart: false,
-      autoUpdate: true,
-      showLunar: true,
-      showLunarFestival: true,
-      showSolarTerm: true,
-      showHoliday: true,
-      showMakeupDay: true,
-      showWeekend: true,
-      monthEventDisplayStyle: 'dot',
-      allDayReminderTime: 'morning',
-      allDayReminderHour: 9,
-      reminderMode: 'standard',
-      customReminderTitle: '',
-      customReminderBody: '',
-      clockHookEnabled: false,
-      clockHookBlockPopup: false,
-      proxyMode: 'none',
-      proxyHost: '',
-      proxyPort: 0,
-      proxyUsername: '',
-      proxyPassword: '',
-    }
-  }
-
-  /** 获取默认弹出面板设置 */
-  private getDefaultPopupSettings(): PopupSettings {
-    return {
-      popupShowLunar: true,
-      popupShowLunarFestival: true,
-      popupShowSolarTerm: true,
-      popupShowHoliday: true,
-      popupShowEvents: true,
-      popupCalendarShowLunar: true,
-      popupWindowSize: 'medium',
     }
   }
 }

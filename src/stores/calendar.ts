@@ -5,6 +5,7 @@ import { usePlatform, useCapabilities } from '@/platform/provider'
 import { cloudSyncService } from '../services/cloudSync'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '@/utils/date'
 import { debounce } from '@/utils/helpers'
+import { getValidCalendarId } from '@/utils/calendar-helpers'
 
 const DAY_MS = 86400000
 
@@ -102,16 +103,17 @@ export const useCalendarStore = defineStore('calendar', () => {
     try {
       const { calendarRepo, eventRepo } = usePlatform()
 
+
+      // 通过 settingsStore 获取默认视图设置
       try {
-        const storedSettings = localStorage.getItem('app-settings')
-        if (storedSettings) {
-          const settings = JSON.parse(storedSettings)
-          if (settings.defaultView) {
-            currentView.value = settings.defaultView
-          }
+        const { useSettingsStore } = await import('./settings')
+        const settingsStore = useSettingsStore()
+        const defaultView = settingsStore.settings?.defaultView
+        if (defaultView) {
+          currentView.value = defaultView
         }
       } catch (e) {
-        console.error('Failed to load default view setting:', e)
+        console.warn('[CalendarStore] 无法加载默认视图设置:', e)
       }
 
       const loadedCalendars = await calendarRepo.getAll()
@@ -182,6 +184,207 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
   }
 
+
+  // 加载外部日历
+  async function loadExternalCalendars() {
+    try {
+      const { syncRepo, calendarRepo } = usePlatform()
+      const accounts = await syncRepo.getAllAccounts()
+      if (!accounts || accounts.length === 0) return
+
+      for (const account of accounts) {
+        try {
+          await syncRepo.getExternalEvents({
+            accountId: account.id,
+            accountType: account.type,
+            serverUrl: account.serverUrl,
+            username: account.username,
+            encryptedPassword: account.encryptedPassword || '',
+            calendarUrl: '',
+            calendarId: '',
+            startTime: 0,
+            endTime: Date.now() * 2,
+          })
+
+          const calList = await syncRepo.getExternalCalendars({
+            accountId: account.id,
+            accountType: account.type,
+            serverUrl: account.serverUrl,
+            username: account.username,
+            encryptedPassword: account.encryptedPassword || '',
+            calendarUrl: '',
+          })
+
+          if (!calList || calList.length === 0) {
+            console.warn(`[CalendarStore] No calendars found for account: ${account.username} (${account.id})`)
+            continue
+          }
+
+          for (const cal of calList) {
+            const calendarId = `ext_${account.id}_${cal.id}`
+            const existingIndex = calendars.value.findIndex(c => 
+              c.id === calendarId ||
+              (c.accountId === String(account.id) && c.type === account.type)
+            )
+
+            if (existingIndex === -1) {
+              const newCal: Calendar = {
+                id: calendarId,
+                name: cal.name,
+                color: cal.color || '#6B7280',
+                type: account.type,
+                accountId: account.id,
+                accountType: account.type,
+                serverUrl: account.serverUrl,
+                username: account.username,
+                encryptedPassword: account.encryptedPassword,
+                calendarUrl: cal.url,
+                readOnly: cal.readOnly,
+                visible: true,
+                syncEnabled: true
+              }
+              calendars.value.push(newCal)
+
+              const capabilities = useCapabilities()
+              if (capabilities.dataPriority === 'local-first') {
+                try {
+                  const created = await calendarRepo.create({
+                    name: newCal.name,
+                    color: newCal.color,
+                    type: newCal.type,
+                    accountId: parseInt(account.id),
+                    visible: newCal.visible,
+                    syncEnabled: newCal.syncEnabled
+                  })
+                  newCal.id = String(created.id)
+                  console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库，回填 ID: ${created.id}`)
+                } catch (dbError) {
+                  console.error(`保存外部日历 ${cal.name} 失败:`, dbError)
+                }
+              }
+            } else {
+              calendars.value[existingIndex] = {
+                ...calendars.value[existingIndex],
+                accountType: account.type,
+                serverUrl: account.serverUrl,
+                username: account.username,
+                encryptedPassword: account.encryptedPassword,
+                calendarUrl: cal.url,
+                readOnly: cal.readOnly,
+              }
+
+              const capabilities = useCapabilities()
+              if (capabilities.dataPriority === 'local-first') {
+                const calId = parseInt(calendars.value[existingIndex].id)
+                if (!isNaN(calId)) {
+                  try {
+                    await calendarRepo.update({
+                      id: calId,
+                      visible: calendars.value[existingIndex].visible,
+                      syncEnabled: calendars.value[existingIndex].syncEnabled
+                    })
+                  } catch (dbError) {
+                    console.error(`更新外部日历 ${cal.name} 到数据库失败:`, dbError)
+                  }
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.error(`加载账号 ${account.username} 的外部日历失败:`, error)
+        }
+      }
+    } catch (error) {
+      console.error('加载外部日历发生严重错误:', error)
+    }
+  }
+
+  // 加载外部事件并与本地数据库进行协调同步
+  async function loadExternalEvents(startTime: number, endTime: number) {
+    try {
+      const { syncRepo, eventRepo } = usePlatform()
+
+      const externalCalendars = calendars.value.filter(c => c.type === 'exchange' || c.type === 'caldav')
+
+      for (const calendar of externalCalendars) {
+        if (!calendar.accountId) continue
+
+        const fetchedEvents = await syncRepo.getExternalEvents({
+          accountId: calendar.accountId,
+          accountType: calendar.accountType || calendar.type,
+          serverUrl: calendar.serverUrl || '',
+          username: calendar.username || '',
+          encryptedPassword: calendar.encryptedPassword || '',
+          calendarUrl: calendar.calendarUrl || '',
+          calendarId: calendar.id,
+          startTime,
+          endTime,
+        })
+
+        if (fetchedEvents && fetchedEvents.length > 0) {
+          const oldEvents = events.value.filter(e =>
+            e.calendarId === calendar.id &&
+            e.startTime >= startTime &&
+            e.startTime <= endTime
+          )
+
+          const fetchedIds = new Set(fetchedEvents.map(e => e.id))
+
+          for (const old of oldEvents) {
+            if (!fetchedIds.has(old.id)) {
+              const oldId = parseInt(old.id)
+              if (!isNaN(oldId)) {
+                await eventRepo.delete(oldId)
+              }
+            }
+          }
+
+          for (const newEv of fetchedEvents) {
+            const existingEvent = events.value.find(e => e.id === newEv.id)
+            const eventId = parseInt(newEv.id)
+
+            if (existingEvent && !isNaN(eventId)) {
+              await eventRepo.update({
+                id: eventId,
+                title: newEv.title,
+                description: newEv.description,
+                startTime: newEv.startTime,
+                endTime: newEv.endTime,
+                allDay: newEv.allDay,
+                calendarId: parseInt(newEv.calendarId) || 1,
+                color: newEv.color,
+                reminder: newEv.reminder,
+                repeatRule: newEv.repeatRule ? JSON.stringify(newEv.repeatRule) : undefined,
+                location: newEv.location,
+                externalId: newEv.externalId
+              })
+            } else if (!isNaN(eventId)) {
+              await eventRepo.create({
+                title: newEv.title,
+                description: newEv.description,
+                startTime: newEv.startTime,
+                endTime: newEv.endTime,
+                allDay: newEv.allDay,
+                calendarId: parseInt(newEv.calendarId) || 1,
+                color: newEv.color,
+                reminder: newEv.reminder,
+                repeatRule: newEv.repeatRule ? JSON.stringify(newEv.repeatRule) : undefined,
+                location: newEv.location,
+                externalId: newEv.externalId
+              })
+            }
+          }
+
+          events.value = events.value.filter(e => !(e.calendarId === calendar.id && e.startTime >= startTime && e.startTime <= endTime))
+          events.value.push(...fetchedEvents)
+        }
+      }
+    } catch (error) {
+      console.error('[loadExternalEvents] 加载外部事件失败:', error)
+    }
+  }
+
+  // Getters
   const visibleCalendars = computed(() => calendars.value.filter(c => c.visible))
 
   const visibleEvents = computed(() => {
@@ -218,32 +421,11 @@ export const useCalendarStore = defineStore('calendar', () => {
     })
   })
 
-  function getValidCalendarId(calendarId: string | undefined): number {
-    if (calendarId) {
-      const parsed = parseInt(calendarId)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
+  // Actions
 
-    const localCalendar = calendars.value.find(c => c.type === 'local')
-    if (localCalendar) {
-      const parsed = parseInt(localCalendar.id)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-
-    const firstCalendar = calendars.value[0]
-    if (firstCalendar) {
-      const parsed = parseInt(firstCalendar.id)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-
-    console.warn('[CalendarStore] 无法获取有效的日历 ID，使用默认值 1')
-    return 1
+  /** 获取有效的日历 ID（封装共享函数，自动传入当前日历列表） */
+  function getValidCalendarIdWrapper(calendarId: string | undefined): number {
+    return getValidCalendarId(calendarId, calendars.value)
   }
 
   async function addCalendar(calendar: Omit<Calendar, 'id'>) {
@@ -294,6 +476,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function addEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) {
+    const targetCalendar = calendars.value.find(c => c.id === event.calendarId)
+    if (!targetCalendar) return
+    if (targetCalendar.readOnly) return
+
     const { eventRepo } = usePlatform()
     const capabilities = useCapabilities()
 
@@ -303,7 +489,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       startTime: event.startTime,
       endTime: event.endTime,
       allDay: event.allDay,
-      calendarId: getValidCalendarId(event.calendarId),
+      calendarId: getValidCalendarIdWrapper(event.calendarId),
       color: event.color,
       reminder: event.reminder,
       repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
@@ -318,8 +504,7 @@ export const useCalendarStore = defineStore('calendar', () => {
     }
     totalEventCount.value++
 
-    const targetCalendar = calendars.value.find(c => c.id === event.calendarId)
-    if (targetCalendar?.type === 'online' && capabilities.dataPriority === 'local-first') {
+    if (targetCalendar.type === 'online' && capabilities.dataPriority === 'local-first') {
       await cloudSyncService.triggerSync()
     }
 
@@ -590,6 +775,8 @@ export const useCalendarStore = defineStore('calendar', () => {
     totalEventCount,
     initialize,
     reloadFromDatabase,
+    loadExternalCalendars,
+    loadExternalEvents,
     addCalendar,
     updateCalendar,
     deleteCalendar,
@@ -608,6 +795,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     visibleEvents,
     currentDateRange,
     eventsForCurrentView,
-    getValidCalendarId
+    getValidCalendarId: getValidCalendarIdWrapper
   }
 })

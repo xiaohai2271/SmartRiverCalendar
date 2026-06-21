@@ -73,7 +73,10 @@ impl OAuthService {
         let listener = TokioTcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|e| OAuthError::ListenerError(e.to_string()))?;
-        let port = listener.local_addr().unwrap().port();
+        let port = listener
+            .local_addr()
+            .map(|addr| addr.port())
+            .map_err(|e| OAuthError::ListenerError(format!("获取监听地址失败: {}", e)))?;
 
         log::info!("OAuth 回调服务器已启动，监听端口: {}", port);
 

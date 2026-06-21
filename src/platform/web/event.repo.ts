@@ -7,9 +7,11 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 /** Web 事件 Repository 实现 */
 export class WebEventRepository implements IEventRepository {
   private readonly platform = 'web' as const
-
   private readonly apiClient: WebApiClient
-  constructor(apiClient: WebApiClient) { this.apiClient = apiClient }
+
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async getAll(): Promise<CalendarEvent[]> {
     const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>('/events')

@@ -7,9 +7,11 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 /** Web 待办 Repository 实现 */
 export class WebTodoRepository implements ITodoRepository {
   private readonly platform = 'web' as const
-
   private readonly apiClient: WebApiClient
-  constructor(apiClient: WebApiClient) { this.apiClient = apiClient }
+
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async getAll(): Promise<Todo[]> {
     const response = await this.apiClient.get<ApiResponse<PageResponse<WebTodo>>>('/todos')
