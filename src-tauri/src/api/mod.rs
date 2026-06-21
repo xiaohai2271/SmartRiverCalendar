@@ -1,17 +1,18 @@
 // API 模块
-// 提供 HTTP API 客户端、Mock API 实现、API 配置管理
+// 提供 HTTP API 客户端、API 配置管理
 // 支持认证、同步、CRUD 等远程服务操作
 
 pub mod config;
 pub mod errors;
 pub mod http_client;
 pub mod types;
+#[cfg(test)]
 pub mod mock;
 pub mod client;
 pub mod proxy;
 
 // 重导出关键类型
-pub use config::{ApiConfig, ApiMode};
+pub use config::ApiConfig;
 pub use errors::{ApiError, ApiResult};
 pub use types::{
     LoginRequest, RegisterRequest, AuthResponse, RefreshTokenResponse,
@@ -20,6 +21,7 @@ pub use types::{
     CalendarDTO, EventDTO, TodoDTO, ApiResponse, PaginatedResponse,
 };
 pub use http_client::HttpClient;
+#[cfg(test)]
 pub use mock::MockApiClient;
 pub use client::RealApiClient;
 pub use proxy::ProxyApiClient;
@@ -28,17 +30,9 @@ use std::sync::Arc;
 
 /// 创建 API 客户端
 ///
-/// 根据配置选择 Mock 或 Real API 客户端
-/// # 参数
-/// - `config`: API 配置
-/// # 返回
-/// - `MockApiClient`: Mock 模式，用于开发和测试
-/// - `RealApiClient`: Real 模式，连接真实后端服务
+/// 直接创建 RealApiClient，连接真实后端服务
 pub fn create_api_client(config: &ApiConfig) -> Arc<dyn CalendarApi> {
-    match config.mode {
-        ApiMode::Mock => Arc::new(MockApiClient::new()),
-        ApiMode::Real => Arc::new(RealApiClient::new(config.base_url.clone())),
-    }
+    Arc::new(RealApiClient::new(config.api_url.clone()))
 }
 
 /// Calendar API Trait — 扩展版本

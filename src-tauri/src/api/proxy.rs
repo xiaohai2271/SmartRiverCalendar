@@ -1,18 +1,18 @@
 // 代理 API 客户端模块
-// 支持运行时切换 Mock/Real 模式
+// 支持运行时切换 API 接口地址和平台地址
 
 use async_trait::async_trait;
 use std::sync::{Arc, RwLock};
 
 use crate::api::{
-    ApiConfig, ApiMode, CalendarApi,
+    ApiConfig, CalendarApi,
     LoginRequest, RegisterRequest, AuthResponse, RefreshTokenResponse,
     UserProfile, SyncUploadRequest, SyncDownloadResponse,
     CalendarDTO, EventDTO, TodoDTO, ApiResult,
-    MockApiClient, RealApiClient,
+    RealApiClient,
 };
 
-/// 代理 API 客户端 — 支持运行时切换 Mock/Real 模式
+/// 代理 API 客户端 — 支持运行时切换 API 配置
 ///
 /// 实现 CalendarApi trait，内部通过 RwLock 持有实际的 API 客户端，
 /// 切换时仅替换内部指针，对调用方透明
@@ -38,13 +38,17 @@ impl ProxyApiClient {
         self.config.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// 获取当前 base_url（仅 Real 模式有值）
-    pub fn get_base_url(&self) -> Option<String> {
+    /// 获取当前 API 接口地址
+    pub fn get_base_url(&self) -> String {
         let config = self.config.read().unwrap_or_else(|e| e.into_inner());
-        match config.mode {
-            ApiMode::Real => Some(config.base_url.clone()),
-            ApiMode::Mock => None,
-        }
+        config.api_url.clone()
+    }
+
+    /// 获取当前平台地址（OAuth 跳转使用）
+    pub fn get_platform_url(&self) -> String {
+        let config = self.config.read().unwrap_or_else(|e| e.into_inner());
+        config.platform_url.clone()
+    }
     }
 
     /// 设置内部客户端的认证 Token
@@ -102,12 +106,9 @@ impl ProxyApiClient {
     }
 }
 
-/// 根据 ApiConfig 创建对应的 API 客户端
+/// 根据 ApiConfig 创建 API 客户端（始终为 RealApiClient）
 fn create_client(config: &ApiConfig) -> Box<dyn CalendarApi> {
-    match config.mode {
-        ApiMode::Mock => Box::new(MockApiClient::new()),
-        ApiMode::Real => Box::new(RealApiClient::new(config.base_url.clone())),
-    }
+    Box::new(RealApiClient::new(config.api_url.clone()))
 }
 
 #[async_trait]

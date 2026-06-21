@@ -2,7 +2,7 @@
 
 > 日期：2026-06-14
 > 关联设计：[2026-06-14-api-config-refactor-design.md](./2026-06-14-api-config-refactor-design.md)
-> 状态：待实现
+> 状态：已实现（前端降级方案已部署，待后端 /health 接口上线）
 
 ## 背景
 

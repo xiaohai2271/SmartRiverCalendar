@@ -77,7 +77,7 @@ pub fn run() {
         let conn = db_conn.get_connection();
         api::ApiConfig::from_settings(&conn)
     };
-    log::info!("API 客户端初始化完成，模式: {:?}", api_config.mode);
+    log::info!("API 客户端初始化完成，api_url: {}, platform_url: {}", api_config.api_url, api_config.platform_url);
     let api_client: std::sync::Arc<dyn api::CalendarApi> = std::sync::Arc::new(api::ProxyApiClient::new(api_config));
 
     // 时钟点击检测管理器（仅 Windows）
@@ -408,6 +408,7 @@ pub fn run() {
             commands::auth_login,
             commands::auth_register,
             commands::auth_oauth_github,
+            commands::auth_oauth_start,
             commands::auth_logout,
             commands::auth_get_profile,
             commands::auth_refresh_token,

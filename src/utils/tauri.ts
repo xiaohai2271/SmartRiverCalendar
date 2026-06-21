@@ -624,10 +624,10 @@ export async function debugClearLogs(): Promise<void> {
 
 /** API 配置信息 */
 export interface ApiConfigInfo {
-  /** API 模式: "mock" 或 "real" */
-  mode: string
-  /** API 基础 URL */
-  baseUrl: string
+  /** API 接口地址 */
+  apiUrl: string
+  /** 平台地址（OAuth 跳转） */
+  platformUrl: string
 }
 
 /** 获取当前 API 配置 */
@@ -637,9 +637,12 @@ export async function getApiConfig(): Promise<ApiConfigInfo | null> {
 }
 
 /** 切换 API 配置 */
-export async function switchApiConfig(mode: string, baseUrl: string): Promise<{ success: boolean; mode: string; baseUrl: string } | null> {
+export async function switchApiConfig(
+  apiUrl: string,
+  platformUrl: string
+): Promise<{ success: boolean; apiUrl: string; platformUrl: string } | null> {
   if (!isTauri()) return null
-  return await safeInvoke('switch_api_config', { mode, baseUrl })
+  return await safeInvoke('switch_api_config', { apiUrl, platformUrl })
 }
 
 // ============================================================
