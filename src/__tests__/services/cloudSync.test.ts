@@ -1,12 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
-// Mock Tauri 依赖
+// Mock @tauri-apps/api/event
 vi.mock('@tauri-apps/api/event', () => ({
   listen: vi.fn().mockResolvedValue(() => {}),
-}))
-
-vi.mock('@/utils/tauri', () => ({
-  safeInvoke: vi.fn().mockResolvedValue({}),
 }))
 
 // Mock syncRepo
@@ -41,6 +37,15 @@ const webCapabilities = {
   hasAutoUpdate: false,
   hasMinimizeToTray: false,
   hasProxySettings: false,
+  hasOAuthCallback: false,
+  hasSsoLogin: false,
+  hasExchangeSupport: false,
+  hasCalDavSupport: false,
+  hasExternalSync: false,
+  hasAlwaysOnTop: false,
+  hasBackgroundSync: false,
+  hasIncrementalSync: false,
+  hasClientConflictResolution: false,
 }
 
 vi.mock('@/platform/provider', () => ({
@@ -56,30 +61,84 @@ vi.mock('@/platform/provider', () => ({
   useCapabilities: () => webCapabilities,
 }))
 
+// Mock Pinia stores
+const mockAuthStore = {
+  isAuthenticated: true,
+  syncStatus: 'idle',
+  lastSyncAt: null as number | null,
+}
+
+vi.mock('@/stores/auth', () => ({
+  useAuthStore: vi.fn(() => mockAuthStore),
+}))
+
+// Mock calendar/todo stores（同步后刷新用）
+vi.mock('@/stores/calendar', () => ({
+  useCalendarStore: vi.fn(() => ({
+    reloadFromDatabase: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
+vi.mock('@/stores/todo', () => ({
+  useTodoStore: vi.fn(() => ({
+    reloadFromDatabase: vi.fn().mockResolvedValue(undefined),
+  })),
+}))
+
 describe('cloudSyncService', () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
 
-  it('在非 Tauri 环境下 triggerSync 通过 syncRepo 同步', async () => {
-    mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(false)
+  it('通过 syncRepo 触发同步', async () => {
+    mockAuthStore.isAuthenticated = true
+    mockSyncRepo.triggerCloudSync.mockResolvedValueOnce(true)
 
     const { cloudSyncService } = await import('../../services/cloudSync')
     const result = await cloudSyncService.triggerSync()
 
-    // Web 端通过 syncRepo 同步，mock 返回 false
+    expect(mockSyncRepo.triggerCloudSync).toHaveBeenCalled()
+    expect(result).toBe(true)
+  })
+
+  it('syncRepo 同步失败返回 false', async () => {
+    mockAuthStore.isAuthenticated = true
+    mockSyncRepo.triggerCloudSync.mockRejectedValueOnce(new Error('网络错误'))
+
+    const { cloudSyncService } = await import('../../services/cloudSync')
+    const result = await cloudSyncService.triggerSync()
+
     expect(result).toBe(false)
   })
 
-  it('在非 Tauri 环境下 getSyncStatus 返回默认状态', async () => {
+  it('未登录时返回 false', async () => {
+    mockAuthStore.isAuthenticated = false
+
+    const { cloudSyncService } = await import('../../services/cloudSync')
+    const result = await cloudSyncService.triggerSync()
+
+    expect(result).toBe(false)
+  })
+
+  it('getSyncStatus 通过 syncRepo 获取状态', async () => {
+    mockSyncRepo.getSyncStatus.mockResolvedValueOnce({
+      status: 'idle',
+      lastSyncAt: null,
+      pendingChanges: 0,
+    })
+
     const { cloudSyncService } = await import('../../services/cloudSync')
     const result = await cloudSyncService.getSyncStatus()
 
-    // Web 端不支持详细同步状态
-    expect(result).toBeNull()
+    expect(mockSyncRepo.getSyncStatus).toHaveBeenCalled()
+    expect(result).toEqual({
+      status: 'idle',
+      lastSyncAt: null,
+      pendingChanges: 0,
+    })
   })
 
-  it('在非 Tauri 环境下 startAutoSync 不抛出错误', async () => {
+  it('startAutoSync 不抛出错误', async () => {
     const { cloudSyncService } = await import('../../services/cloudSync')
     expect(() => cloudSyncService.startAutoSync(5)).not.toThrow()
   })

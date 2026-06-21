@@ -43,6 +43,43 @@ vi.mock('../utils/tauri', () => ({
   invokeGetSyncStatus: vi.fn(() => Promise.resolve(null))
 }))
 
+// Mock platform provider
+vi.mock('@/platform/provider', () => ({
+  usePlatform: () => ({
+    capabilities: { hasLocalDatabase: true, hasOfflineMode: true },
+    settingsRepo: {
+      loadAppSettings: vi.fn().mockResolvedValue({}),
+      saveAppSettings: vi.fn(),
+      loadPopupSettings: vi.fn().mockResolvedValue({}),
+      savePopupSettings: vi.fn(),
+      getUserHolidays: vi.fn().mockResolvedValue([]),
+      addUserHoliday: vi.fn(),
+      removeUserHoliday: vi.fn(),
+    },
+    authRepo: {},
+    calendarRepo: {},
+    eventRepo: {},
+    todoRepo: {},
+    syncRepo: {},
+  }),
+  useCapabilities: () => ({
+    hasLocalDatabase: true,
+    hasOfflineMode: true,
+    hasAutoUpdate: true,
+    hasSystemTray: true,
+    hasBackgroundSync: true,
+  }),
+}))
+
+// Mock settings service（isDatabaseAvailable 改为同步）
+vi.mock('@/services/settings', () => ({
+  isDatabaseAvailable: vi.fn(() => true),
+  getUserHolidays: vi.fn().mockResolvedValue([]),
+  addUserHoliday: vi.fn().mockResolvedValue(undefined),
+  removeUserHoliday: vi.fn().mockResolvedValue(false),
+  loadFromLocalStorage: vi.fn((key: string) => localStorage.getItem(key)),
+}))
+
 // Mock database utilities
 vi.mock('../utils/database', () => ({
   saveExternalAccount: vi.fn(() => Promise.resolve()),

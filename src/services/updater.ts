@@ -2,6 +2,14 @@ import { check } from '@tauri-apps/plugin-updater'
 import { relaunch } from '@tauri-apps/plugin-process'
 import { getVersion } from '@tauri-apps/api/app'
 import { sendNotification } from '@tauri-apps/plugin-notification'
+import { useCapabilities } from '@/platform/provider'
+
+/**
+ * 检查是否支持自动更新
+ */
+function canUpdate(): boolean {
+  return useCapabilities().hasAutoUpdate
+}
 
 // UpgradeLink 配置
 // 请在 UpgradeLink 后台获取以下配置信息
@@ -19,6 +27,7 @@ const UPGRADE_CONFIG = {
  * @param showNotification 是否显示系统通知
  */
 export async function checkAndInstallUpdate(showNotification = true): Promise<void> {
+  if (!canUpdate()) return
   try {
     const currentVersion = await getVersion()
     console.log('当前版本:', currentVersion)
@@ -92,6 +101,7 @@ export async function checkAndInstallUpdate(showNotification = true): Promise<vo
  * 返回是否有新版本可用
  */
 export async function checkForUpdate(): Promise<boolean> {
+  if (!canUpdate()) return false
   try {
     const update = await check({
       timeout: 5000,
@@ -111,6 +121,7 @@ export async function checkForUpdate(): Promise<boolean> {
  * 获取当前应用版本
  */
 export async function getCurrentVersion(): Promise<string> {
+  if (!canUpdate()) return '0.0.0'
   try {
     return await getVersion()
   } catch (error) {
@@ -161,6 +172,7 @@ export function isVersionSkipped(version: string): boolean {
  * @returns 更新信息，无更新或被跳过时返回 null
  */
 export async function checkForUpdateDetails(): Promise<import('@/types').UpdateInfo | null> {
+  if (!canUpdate()) return null
   try {
     const update = await check({
       timeout: 5000,
@@ -188,6 +200,9 @@ export async function checkForUpdateDetails(): Promise<import('@/types').UpdateI
  * @param updateInfo 更新信息
  */
 export async function startUpdate(updateInfo: import('@/types').UpdateInfo): Promise<void> {
+  if (!canUpdate()) {
+    throw new Error('当前平台不支持自动更新')
+  }
   // 重新获取 Update 对象
   const update = await check({
     timeout: 5000,

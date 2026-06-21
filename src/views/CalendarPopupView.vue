@@ -13,7 +13,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCalendarStore } from '@/stores/calendar'
 import { usePopupSettingsStore } from '@/stores/popupSettings'
 import { useSettingsStore } from '@/stores/settings'
-import * as settingsService from '@/services/settings'
+import { usePlatform } from '@/platform/provider'
 import { emit as tauriEmit } from '@tauri-apps/api/event'
 import { setPopupWindowSize } from '@/composables/useCalendarPopup'
 import { onSettingsChange } from '@/utils/broadcast'
@@ -124,12 +124,11 @@ watch(
 async function applyPopupTheme(theme?: 'light' | 'dark' | 'auto') {
   let targetTheme: 'light' | 'dark' | 'auto' | undefined = theme
   if (!targetTheme) {
-    // 从数据库读取最新的主题设置（不依赖 settingsStore 内存状态）
     try {
-      const dbValue = await settingsService.getSetting('app.theme')
-      targetTheme = dbValue ? (JSON.parse(dbValue) as 'light' | 'dark' | 'auto') : 'light'
+      const { settingsRepo } = usePlatform()
+      const appSettings = await settingsRepo.loadAppSettings()
+      targetTheme = appSettings.theme
     } catch {
-      // 数据库读取失败，使用 settingsStore 作为降级
       targetTheme = settingsStore.settings.theme
     }
   }
