@@ -8,15 +8,19 @@ mod crypto;
 pub mod ews;
 pub mod caldav;
 pub mod db;
+pub mod auth;
+pub mod api;
+pub mod sync_engine;
 mod sync;
 mod updater;
 mod log_buffer;
+pub mod xml_utils;
 
 #[cfg(target_os = "windows")]
 mod clock_hook;
 
 use db::connection::DatabaseConnection;
-use db::schema::create_tables;
+use db::schema;
 
 /// 初始化数据库连接
 fn init_database() -> Result<Mutex<DatabaseConnection>, Box<dyn std::error::Error>> {
@@ -38,8 +42,8 @@ fn init_database() -> Result<Mutex<DatabaseConnection>, Box<dyn std::error::Erro
     // 连接数据库
     let db = DatabaseConnection::connect(&db_path_str)?;
     
-    // 创建表结构
-    db.execute(|conn| create_tables(conn).map_err(|e| {
+    // 初始化数据库（创建表结构 + 执行迁移）
+    db.execute(|conn| schema::init_database(conn).map_err(|e| {
         rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
             std::io::ErrorKind::Other,
             e.to_string(),
@@ -67,6 +71,15 @@ pub fn run() {
 
     let app_state = Mutex::new(commands::AppState::default());
 
+    // 创建 API 客户端（优先从数据库读取配置，回退到环境变量）
+    let api_config = {
+        let db_conn = db.lock().unwrap();
+        let conn = db_conn.get_connection();
+        api::ApiConfig::from_settings(&conn)
+    };
+    log::info!("API 客户端初始化完成，api_url: {}, platform_url: {}", api_config.api_url, api_config.platform_url);
+    let api_client: std::sync::Arc<dyn api::CalendarApi> = std::sync::Arc::new(api::ProxyApiClient::new(api_config));
+
     // 时钟点击检测管理器（仅 Windows）
     #[cfg(target_os = "windows")]
     let clock_hook_manager = Mutex::new(clock_hook::ClockHookManager::new());
@@ -85,7 +98,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .manage(app_state)
-        .manage(db);
+        .manage(db)
+        .manage(api_client);
 
     // 注册时钟点击检测管理器（仅 Windows）
     #[cfg(target_os = "windows")]
@@ -371,6 +385,12 @@ pub fn run() {
             commands::debug_open_devtools,
             commands::debug_get_logs,
             commands::debug_clear_logs,
+            // API 配置命令
+            commands::get_api_config,
+            commands::switch_api_config,
+            // 日志级别命令
+            commands::get_log_level,
+            commands::set_log_level,
             // 应用设置命令
             commands::get_setting,
             commands::set_setting,
@@ -383,6 +403,25 @@ pub fn run() {
             commands::add_user_holiday,
             commands::remove_user_holiday,
             commands::get_all_user_holidays,
+            // 远程认证命令
+            commands::auth_check_status,
+            commands::auth_login,
+            commands::auth_register,
+            commands::auth_oauth_github,
+            commands::auth_oauth_start,
+            commands::auth_logout,
+            commands::auth_get_profile,
+            commands::auth_refresh_token,
+            commands::auth_get_public_key,
+            // 云同步命令
+            commands::cloud_sync_trigger,
+            commands::cloud_sync_get_status,
+            // 日历同步命令
+            commands::sync_calendars_from_server,
+            // 日历账户身份切换命令
+            commands::update_calendar_type,
+            commands::sync_record_pending,
+            commands::sync_push_pending,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

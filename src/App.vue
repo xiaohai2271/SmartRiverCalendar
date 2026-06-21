@@ -11,7 +11,7 @@
 
   <div class="app-container">
     <!-- Sidebar - Fluent Design -->
-    <aside class="sidebar fluent-card">
+    <aside class="sidebar fluent-card" data-testid="sidebar">
       <div class="logo">
         <div class="logo-icon">
           <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
@@ -25,24 +25,65 @@
       </div>
 
       <nav class="nav-menu">
-        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">
-          <span class="nav-icon">🏠</span>
+        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }" data-testid="nav-home">
+          <span class="nav-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M2.75 9.5L10 3.25L17.25 9.5V15.75C17.25 16.3 16.8 16.75 16.25 16.75H12.75V12.75C12.75 12.2 12.3 11.75 11.75 11.75H8.25C7.7 11.75 7.25 12.2 7.25 12.75V16.75H3.75C3.2 16.75 2.75 16.3 2.75 15.75V9.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
           <span>首页</span>
         </router-link>
-        <router-link to="/calendar" class="nav-item" :class="{ active: $route.path === '/calendar' }">
-          <span class="nav-icon">📆</span>
+        <router-link to="/calendar" class="nav-item" :class="{ active: $route.path === '/calendar' }" data-testid="nav-calendar">
+          <span class="nav-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <rect x="2.75" y="4.25" width="14.5" height="13" rx="2.5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M2.75 8.75H17.25M6.25 2.75V5.25M13.75 2.75V5.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="6.5" cy="11.5" r="0.75" fill="currentColor"/>
+              <circle cx="10" cy="11.5" r="0.75" fill="currentColor"/>
+              <circle cx="13.5" cy="11.5" r="0.75" fill="currentColor"/>
+              <circle cx="6.5" cy="14.5" r="0.75" fill="currentColor"/>
+              <circle cx="10" cy="14.5" r="0.75" fill="currentColor"/>
+              <circle cx="13.5" cy="14.5" r="0.75" fill="currentColor"/>
+            </svg>
+          </span>
           <span>日历</span>
         </router-link>
-        <router-link to="/todos" class="nav-item" :class="{ active: $route.path === '/todos' }">
-          <span class="nav-icon">✅</span>
+        <router-link to="/todos" class="nav-item" :class="{ active: $route.path === '/todos' }" data-testid="nav-todos">
+          <span class="nav-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <rect x="2.75" y="2.75" width="14.5" height="14.5" rx="2.5" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M6.25 7.5L8.25 9.5L13.75 4.5M6.25 13.5L8.25 15.5L13.75 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
           <span>待办</span>
         </router-link>
-        <router-link to="/schedules" class="nav-item" :class="{ active: $route.path === '/schedules' }">
-          <span class="nav-icon">📋</span>
+        <router-link to="/schedules" class="nav-item" :class="{ active: $route.path === '/schedules' }" data-testid="nav-schedules">
+          <span class="nav-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M3.25 4.75H16.75M3.25 9.75H16.75M3.25 14.75H11.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+              <circle cx="3.25" cy="4.75" r="1.25" fill="currentColor" stroke="currentColor" stroke-width="0.5"/>
+              <circle cx="3.25" cy="9.75" r="1.25" fill="currentColor" stroke="currentColor" stroke-width="0.5"/>
+              <circle cx="3.25" cy="14.75" r="1.25" fill="currentColor" stroke="currentColor" stroke-width="0.5"/>
+            </svg>
+          </span>
           <span>日程</span>
         </router-link>
-        <router-link to="/settings" class="nav-item" :class="{ active: $route.path === '/settings' }">
-          <span class="nav-icon">⚙️</span>
+        <router-link to="/profile" class="nav-item" :class="{ active: $route.path === '/profile' }" data-testid="nav-profile">
+          <span class="nav-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <path d="M10 9.75C12.0711 9.75 13.75 8.07107 13.75 6C13.75 3.92893 12.0711 2.25 10 2.25C7.92893 2.25 6.25 3.92893 6.25 6C6.25 8.07107 7.92893 9.75 10 9.75Z" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M3.25 16.75C3.25 13.9886 6.27208 11.75 10 11.75C13.7279 11.75 16.75 13.9886 16.75 16.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            </svg>
+          </span>
+          <span>我的</span>
+        </router-link>
+        <router-link to="/settings" class="nav-item" :class="{ active: $route.path === '/settings' }" data-testid="nav-settings">
+          <span class="nav-icon">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <circle cx="10" cy="10" r="2.75" stroke="currentColor" stroke-width="1.5"/>
+              <path d="M9 2.5H11L11.5 4.5L12.5 5L14.25 3.75L15.75 5.25L14.5 7L15 8L17 8.5V10.5L15 11L14.5 12L15.75 13.75L14.25 15.25L12.5 14L11.5 14.5L11 16.5H9L8.5 14.5L7.5 14L5.75 15.25L4.25 13.75L5.5 12L5 11L3 10.5V8.5L5 8L5.5 7L4.25 5.25L5.75 3.75L7.5 5L8.5 4.5L9 2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/>
+            </svg>
+          </span>
           <span>设置</span>
         </router-link>
       </nav>
@@ -375,6 +416,20 @@ onMounted(async () => {
         settingsStore.updateSettings({ clockHookEnabled: false })
       })
     }
+    
+    // 检查登录状态并启动自动同步（后台进行）
+    import('./stores/auth').then(({ useAuthStore }) => {
+      const authStore = useAuthStore()
+      authStore.initialize().then(() => {
+        if (authStore.isAuthenticated) {
+          import('./services/cloudSync').then(({ cloudSyncService }) => {
+            cloudSyncService.startAutoSync(5)
+          })
+        }
+      })
+    }).catch((e: unknown) => {
+      console.warn('[App] 认证状态检查失败:', e)
+    })
   }, 100) // 延迟 100ms，让界面先渲染
 
   // 监听稍后提醒事件
@@ -602,7 +657,24 @@ function handleUpdateClose() {
 }
 
 .nav-icon {
-  font-size: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  transition: transform var(--transition-fast);
+}
+
+.nav-icon svg {
+  transition: color var(--transition-fast), filter var(--transition-fast);
+}
+
+.nav-item:hover .nav-icon {
+  transform: scale(1.05);
+}
+
+.nav-item.active .nav-icon svg {
+  filter: drop-shadow(0 1px 2px rgba(255, 255, 255, 0.2));
 }
 
 .mini-calendar {
@@ -617,6 +689,7 @@ function handleUpdateClose() {
   overflow: auto;
   padding: 12px;
   padding-left: 0;
+  position: relative;
 }
 
 /* Page transitions - Fluent smooth */

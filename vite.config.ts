@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+﻿import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { resolve } from 'path'
 import { execSync } from 'child_process'
@@ -43,6 +43,13 @@ export default defineConfig({
     port: 5173,
     host: '0.0.0.0',
     strictPort: true,
+    proxy: {
+      '/api/v1': {
+        target: 'http://10.0.0.100:1188',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/v1/, '/v1'),
+      },
+    },
     allowedHosts: [
       "127.0.0.1",
       "10.0.0.100",

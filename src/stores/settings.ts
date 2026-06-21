@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { AppSettings } from '../types'
-import * as settingsService from '../services/settings'
+import { usePlatform } from '@/platform/provider'
 import { broadcastSettingsChange } from '../utils/broadcast'
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -37,51 +37,17 @@ const DEFAULT_SETTINGS: AppSettings = {
   proxyPassword: '',
 }
 
-/**
- * 从数据库设置数组解析为 AppSettings 对象
- * @param settings 数据库返回的键值对数组 [['app.theme', '"dark"'], ...]
- * @returns 部分 AppSettings 对象
- */
-function parseSettingsFromDb(settings: [string, string][]): Partial<AppSettings> {
-  const result: Partial<AppSettings> = {}
-  for (const [key, value] of settings) {
-    const fieldName = key.replace('app.', '') as keyof AppSettings
-    try {
-      result[fieldName] = JSON.parse(value)
-    } catch {
-      // JSON 解析失败，直接使用原始值
-      ;(result as Record<string, unknown>)[fieldName] = value
-    }
-  }
-  return result
-}
-
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<AppSettings>({ ...DEFAULT_SETTINGS })
 
   /**
-   * 从数据库或 localStorage 加载设置
-   * 优先使用数据库，不可用时降级到 localStorage
+   * 从 Repository 加载设置
    */
   async function loadSettings(): Promise<void> {
     try {
-      const dbAvailable = await settingsService.isDatabaseAvailable()
-      
-      if (dbAvailable) {
-        // 从数据库加载
-        const dbSettings = await settingsService.getAllSettings('app.')
-        if (dbSettings.length > 0) {
-          const parsed = parseSettingsFromDb(dbSettings)
-          settings.value = { ...DEFAULT_SETTINGS, ...parsed }
-        }
-      } else {
-        // 降级到 localStorage
-        console.warn('[settings] 数据库不可用，降级到 localStorage 加载设置')
-        const stored = settingsService.loadFromLocalStorage('app-settings')
-        if (stored) {
-          settings.value = { ...DEFAULT_SETTINGS, ...JSON.parse(stored) }
-        }
-      }
+      const { settingsRepo } = usePlatform()
+      const loaded = await settingsRepo.loadAppSettings()
+      settings.value = { ...DEFAULT_SETTINGS, ...loaded }
     } catch (e) {
       console.error('Failed to load settings:', e)
       // 加载失败时保持默认值
@@ -89,23 +55,12 @@ export const useSettingsStore = defineStore('settings', () => {
   }
 
   /**
-   * 保存设置到数据库或 localStorage
-   * 优先使用数据库，不可用时降级到 localStorage
+   * 保存设置到 Repository
    */
   async function saveSettings(): Promise<void> {
     try {
-      const dbAvailable = await settingsService.isDatabaseAvailable()
-      
-      if (dbAvailable) {
-        // 保存到数据库：逐项保存每个设置字段
-        for (const [key, value] of Object.entries(settings.value)) {
-          await settingsService.setSetting(`app.${key}`, JSON.stringify(value))
-        }
-      } else {
-        // 降级到 localStorage
-        console.warn('[settings] 数据库不可用，降级到 localStorage 保存设置')
-        localStorage.setItem('app-settings', JSON.stringify(settings.value))
-      }
+      const { settingsRepo } = usePlatform()
+      await settingsRepo.saveAppSettings(settings.value)
     } catch (e) {
       console.error('Failed to save settings:', e)
     }

@@ -8,19 +8,19 @@
       </div>
     </div>
 
-    <!-- Filters -->
+    <!-- Filters 看板 ── 升级为极细描边微磨砂面板 -->
     <div class="filters-section">
       <!-- Search -->
       <div class="search-wrapper">
-        <svg class="search-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
-          <path d="M7 12C9.76142 12 12 9.76142 12 7C12 4.23858 9.76142 2 7 2C4.23858 2 2 4.23858 2 7C2 9.76142 4.23858 12 7 12Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-          <path d="M14 14L10.5 10.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/>
+          <line x1="21" y1="21" x2="16.65" y2="16.65"/>
         </svg>
         <input
           v-model="searchQuery"
           type="text"
           class="search-input"
-          placeholder="搜索日程..."
+          placeholder="搜索日程或描述..."
         />
       </div>
 
@@ -40,18 +40,23 @@
           placeholder="结束日期"
         />
         <button v-if="startDate || endDate" class="clear-btn" @click="clearDateRange" title="清除日期筛选">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-            <path d="M3 3L11 11M3 11L11 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
         </button>
       </div>
 
-      <!-- Calendar Filter -->
+      <!-- Calendar Filter ── Notion 彩点药丸 -->
       <div class="calendar-filter">
         <button
           v-for="cal in calendarStore.calendars"
           :key="cal.id"
           :class="['calendar-chip', { active: selectedCalendars.includes(cal.id) }]"
+          :style="{ 
+            '--calendar-color': cal.color,
+            '--calendar-active-bg': colorMixActiveBg(cal.color)
+          }"
           @click="toggleCalendar(cal.id)"
         >
           <span class="calendar-dot" :style="{ background: cal.color }"></span>
@@ -60,12 +65,13 @@
       </div>
     </div>
 
-    <!-- Events List -->
+    <!-- Events List ── 无边界空气流线 Timeline -->
     <div class="events-list">
       <template v-for="group in groupedEvents" :key="group.key">
         <div class="date-group">
+          <!-- 莫兰迪时间徽标 -->
           <div class="date-header">
-            <span class="date-label">{{ group.title }}</span>
+            <span class="date-label-badge">{{ group.title }}</span>
             <span class="date-count">{{ group.events.length }} 个日程</span>
           </div>
           <div class="date-events">
@@ -75,46 +81,60 @@
               :class="['event-item', 'fluent-card', { 'all-day': event.allDay }]"
               @contextmenu.prevent="handleEventContextMenu($event, event)"
             >
-              <div class="event-color-bar" :style="{ background: getEventColor(event) }"></div>
+              <!-- 专属日历 Ribbon 色条 -->
+              <div class="event-color-ribbon" :style="{ '--calendar-color': getEventColor(event) }"></div>
               <div class="event-content" @click="openEditModal(event)">
                 <div class="event-title-row">
                   <div class="event-title">{{ event.title }}</div>
                   <div v-if="event.allDay" class="all-day-badge">全天</div>
                 </div>
                 <div class="event-time">
-                  <span v-if="event.allDay">全天</span>
+                  <svg class="time-icon-svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  <span v-if="event.allDay">全天日程</span>
                   <span v-else>{{ formatEventTime(event) }}</span>
                 </div>
                 <div v-if="event.description" class="event-description">{{ event.description }}</div>
               </div>
               <div class="event-actions">
                 <button class="action-btn edit-btn" @click="openEditModal(event)" title="编辑">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M11.5 1.5L14.5 4.5L5 14H2V11L11.5 1.5Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 20h9"/>
+                    <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
                   </svg>
                 </button>
                 <button class="action-btn delete-btn" @click="handleDeleteEvent(event.id)" title="删除">
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M4.5 3V1.5C4.5 1.22 4.72 1 5 1H11C11.28 1 11.5 1.22 11.5 1.5V3M2.5 4H13.5M12.5 4V14C12.5 14.28 12.28 14.5 12 14.5H4C3.72 14.5 3.5 14.28 3.5 14V4M6.5 7V11.5M9.5 7V11.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    <line x1="10" y1="11" x2="10" y2="17"/>
+                    <line x1="14" y1="11" x2="14" y2="17"/>
                   </svg>
                 </button>
+                <!-- 快捷向右进入小箭头 (Hover Actions) -->
+                <div class="hover-action-arrow">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="9 18 15 12 9 6"/>
+                  </svg>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </template>
 
-      <!-- Empty State -->
+      <!-- 极简线描空日程占位插画 -->
       <div v-if="filteredEvents.length === 0" class="empty-state">
-        <div class="empty-icon">
-          <svg width="48" height="48" viewBox="0 0 48 48" fill="none">
-            <rect x="8" y="10" width="32" height="30" rx="4" stroke="currentColor" stroke-width="2"/>
-            <path d="M8 20H40" stroke="currentColor" stroke-width="2"/>
-            <path d="M16 6V14M32 6V14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-          </svg>
-        </div>
+        <svg class="empty-illustration" width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/>
+          <line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
         <div class="empty-text">
-          当前前后七天无日程数据
+          此日期范围内无日程安排，空气真好
         </div>
       </div>
     </div>
@@ -276,7 +296,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCalendarStore } from '../stores/calendar'
-import { formatDate, formatTime, isEventOnDay } from '../utils/date'
+import { formatDate, formatTime } from '../utils/date'
 import ContextMenu from '../components/common/ContextMenu.vue'
 import ConfirmPopover from '../components/common/ConfirmPopover.vue'
 import EventDetailModal from '../components/common/EventDetailModal.vue'
@@ -284,6 +304,14 @@ import type { CalendarEvent, MenuItem } from '../types'
 
 const route = useRoute()
 const calendarStore = useCalendarStore()
+
+// 混合激活背景色（Notion微光药丸）
+function colorMixActiveBg(color: string): string {
+  if (color && color.startsWith('#')) {
+    return color + '18' // 9.5% 不透明度作为微光背景
+  }
+  return color || 'rgba(74, 144, 217, 0.1)'
+}
 
 // 筛选状态
 const searchQuery = ref('')
@@ -386,65 +414,76 @@ const filteredEvents = computed(() => {
   return [...events].sort((a, b) => b.startTime - a.startTime)
 })
 
-// 固定分组类型
+// 动态日程分组类型
 interface EventGroup {
-  key: 'yesterday' | 'today' | 'tomorrow' | 'nextWeek'
+  key: string
   title: string
   events: CalendarEvent[]
 }
 
 const groupedEvents = computed((): EventGroup[] => {
-  // 获取基准日期（今天）
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
+  if (!filteredEvents.value.length) return []
 
-  const yesterday = new Date(today)
-  yesterday.setDate(yesterday.getDate() - 1)
+  // 基于事件的本地开始日期进行动态聚合
+  const groupsMap = new Map<string, CalendarEvent[]>()
 
-  const tomorrow = new Date(today)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-
-  // 创建固定分组结构
-  const groups: EventGroup[] = [
-    { key: 'today', title: '今天', events: [] },
-    { key: 'tomorrow', title: '明天', events: [] },
-    { key: 'nextWeek', title: '未来一周', events: [] },
-    { key: 'yesterday', title: '昨天', events: [] }
-  ]
-
-  // 为每个事件分配到对应的分组
   for (const event of filteredEvents.value) {
-    // 检查事件是否属于未来一周分组（未来2-7天）
-    for (let i = 2; i <= 7; i++) {
-      const futureDate = new Date(today)
-      futureDate.setDate(futureDate.getDate() + i)
-      if (isEventOnDay(event, futureDate)) {
-        groups[2].events.push(event)
-        break // 每个跨天事件在未来一周分组只显示一次
+    const dateStr = formatDate(new Date(event.startTime))
+    if (!groupsMap.has(dateStr)) {
+      groupsMap.set(dateStr, [])
+    }
+    groupsMap.get(dateStr)!.push(event)
+  }
+
+  // 获取排好序的唯一日期（降序排列，最新的在前）
+  const sortedDates = [...groupsMap.keys()].sort((a, b) => b.localeCompare(a))
+
+  const todayStr = formatDate(new Date())
+  const yesterday = new Date()
+  yesterday.setDate(yesterday.getDate() - 1)
+  const yesterdayStr = formatDate(yesterday)
+
+  const tomorrow = new Date()
+  tomorrow.setDate(tomorrow.getDate() + 1)
+  const tomorrowStr = formatDate(tomorrow)
+
+  const getWeekdayName = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number)
+    const date = new Date(y, m - 1, d)
+    const days = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
+    return days[date.getDay()]
+  }
+
+  const getGroupTitle = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number)
+    const weekday = getWeekdayName(dateStr)
+    const formattedDate = `${m}月${d}日`
+    
+    if (dateStr === todayStr) {
+      return `今天 (${formattedDate})`
+    } else if (dateStr === yesterdayStr) {
+      return `昨天 (${formattedDate})`
+    } else if (dateStr === tomorrowStr) {
+      return `明天 (${formattedDate})`
+    } else {
+      const currentYear = new Date().getFullYear()
+      if (y !== currentYear) {
+        return `${y}年${m}月${d}日 (${weekday})`
       }
-    }
-    // 检查事件是否属于明日分组
-    if (isEventOnDay(event, tomorrow)) {
-      groups[1].events.push(event)
-    }
-    // 检查事件是否属于今日分组
-    if (isEventOnDay(event, today)) {
-      groups[0].events.push(event)
-    }
-    // 检查事件是否属于昨日分组
-    if (isEventOnDay(event, yesterday)) {
-      groups[3].events.push(event)
+      return `${formattedDate} (${weekday})`
     }
   }
 
-  // 过滤掉空分组，并移除重复事件（使用事件ID去重），并按开始时间倒序排序
-  return groups
-    .map(group => ({
-      ...group,
-      events: [...new Map(group.events.map(e => [e.id, e])).values()]
-        .sort((a, b) => b.startTime - a.startTime)
-    }))
-    .filter(group => group.events.length > 0)
+  return sortedDates.map(dateStr => {
+    const events = groupsMap.get(dateStr)!
+    // 同一天内的日程，按开始时间正序（更早的排在上面）
+    events.sort((a, b) => a.startTime - b.startTime)
+    return {
+      key: dateStr,
+      title: getGroupTitle(dateStr),
+      events
+    }
+  })
 })
 
 // 切换日历筛选
@@ -601,7 +640,7 @@ function handleDeleteEvent(id: string) {
 .schedules-view {
   max-width: 900px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px 24px;
 }
 
 /* Header */
@@ -609,67 +648,84 @@ function handleDeleteEvent(id: string) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 
 .header-left {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: 14px;
 }
 
 .page-title {
-  font-size: 28px;
-  font-weight: 600;
+  font-size: 26px;
+  font-weight: 700;
   margin: 0;
-  letter-spacing: -0.5px;
+  color: var(--text-primary);
+  letter-spacing: -0.8px;
 }
 
 .event-count {
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 3px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--border-color);
 }
 
-/* Filters Section */
+/* Filters 看板 ── 升级为极细描边微磨砂面板 */
 .filters-section {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 24px;
-  padding: 16px;
+  gap: 16px;
+  margin-bottom: 32px;
+  padding: 20px;
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-radius: 16px;
   border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-sm), inset 0 1px 1px rgba(255, 255, 255, 0.05);
 }
 
 /* Search */
 .search-wrapper {
   position: relative;
+  width: 100%;
 }
 
 .search-icon {
   position: absolute;
-  left: 12px;
+  left: 14px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-tertiary);
+  pointer-events: none;
+  transition: color var(--transition-fast);
 }
 
 .search-input {
   width: 100%;
-  padding: 10px 12px 10px 36px;
+  padding: 11px 14px 11px 40px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border: 1.2px solid var(--border-color);
+  border-radius: 10px;
   color: var(--text-primary);
   font-size: 14px;
   outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  transition: all var(--transition-fast);
 }
 
 .search-input:focus {
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px var(--accent-light);
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 3px var(--accent-light);
+}
+
+.search-input:focus + .search-icon {
+  color: var(--accent-color);
 }
 
 .search-input::placeholder {
@@ -680,28 +736,43 @@ function handleDeleteEvent(id: string) {
 .date-range-filter {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
 }
 
 .date-input {
   flex: 1;
+  background: var(--bg-tertiary);
+  border: 1.2px solid var(--border-color);
+  border-radius: 10px;
+  padding: 10px 12px;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  outline: none;
+  transition: all var(--transition-fast);
+}
+
+.date-input:focus {
+  border-color: var(--accent-color);
+  background: var(--bg-primary);
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 
 .date-separator {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .clear-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
+  width: 32px;
+  height: 32px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
 }
@@ -709,6 +780,7 @@ function handleDeleteEvent(id: string) {
 .clear-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+  transform: scale(1.05);
 }
 
 /* Calendar Filter */
@@ -716,17 +788,20 @@ function handleDeleteEvent(id: string) {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  padding-top: 4px;
+  border-top: 1px dashed var(--border-color);
 }
 
 .calendar-chip {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 8px;
+  padding: 6px 14px;
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border: 1.2px solid var(--border-color);
+  border-radius: 20px;
   font-size: 13px;
+  font-weight: 500;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -734,128 +809,166 @@ function handleDeleteEvent(id: string) {
 
 .calendar-chip:hover {
   background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-tertiary);
 }
 
 .calendar-chip.active {
-  background: var(--accent-light);
-  border-color: var(--accent-color);
-  color: var(--accent-color);
+  background: var(--calendar-active-bg);
+  border-color: var(--calendar-color);
+  color: var(--calendar-color);
+  font-weight: 600;
 }
 
 .calendar-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
+  transition: transform var(--transition-fast);
 }
 
-/* Events List */
+.calendar-chip:hover .calendar-dot {
+  transform: scale(1.3);
+}
+
+/* Events List ── 空气感流线 Timeline */
 .events-list {
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 32px;
 }
 
 .date-group {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
+/* 莫兰迪空气感时间标头（去下划线分割线） */
 .date-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-color);
+  justify-content: space-between;
+  padding: 0 4px;
+  margin-bottom: 4px;
 }
 
-.date-label {
-  font-size: 14px;
+.date-label-badge {
+  font-size: 13.5px;
   font-weight: 600;
   color: var(--text-primary);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  padding: 4px 14px;
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
 }
 
 .date-count {
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--text-tertiary);
 }
 
 .date-events {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
-/* Event Item */
+/* 日程卡片 ── 升级为物理悬浮气泡卡片 */
 .event-item {
   display: flex;
   align-items: stretch;
   background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
   overflow: hidden;
+  position: relative;
   transition: all var(--transition-fast);
+  box-shadow: var(--shadow-sm);
 }
 
+/* Hover 时所属日历色彩柔和微光与位移 */
 .event-item:hover {
-  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+  background: color-mix(in srgb, var(--calendar-color, var(--accent-color)) 4%, var(--bg-secondary));
+  border-color: color-mix(in srgb, var(--calendar-color, var(--accent-color)) 25%, var(--border-color));
+  box-shadow: var(--shadow-md), 0 4px 12px color-mix(in srgb, var(--calendar-color, var(--accent-color)) 6%, transparent);
+}
+
+/* 专属日历 Ribbon 色条 */
+.event-color-ribbon {
+  width: 4px;
+  flex-shrink: 0;
+  background: var(--calendar-color);
+  transition: width var(--transition-fast);
+}
+
+.event-item:hover .event-color-ribbon {
+  width: 6px;
+}
+
+.event-content {
+  flex: 1;
+  padding: 14px 20px;
+  cursor: pointer;
+  min-width: 0;
 }
 
 .event-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.event-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
 }
 
 .all-day-badge {
   background: var(--accent-color);
   color: white;
-  font-size: 10px;
-  padding: 2px 8px;
-  border-radius: 10px;
-  font-weight: 500;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 20px;
+  font-weight: 600;
   flex-shrink: 0;
-}
-
-.event-color-bar {
-  width: 4px;
-  flex-shrink: 0;
-}
-
-.event-content {
-  flex: 1;
-  padding: 12px 16px;
-  cursor: pointer;
-  min-width: 0;
-}
-
-.event-content:hover {
-  background: var(--bg-hover);
-}
-
-.event-title {
-  font-weight: 500;
-  color: var(--text-primary);
-  margin-bottom: 4px;
 }
 
 .event-time {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   color: var(--text-secondary);
+}
+
+.time-icon-svg {
+  color: var(--text-tertiary);
 }
 
 .event-description {
   font-size: 13px;
   color: var(--text-tertiary);
-  margin-top: 4px;
+  margin-top: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  padding-left: 2px;
 }
 
+/* 操作区域 */
 .event-actions {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 8px;
+  gap: 6px;
+  padding: 0 16px;
+  position: relative;
 }
 
 .action-btn {
@@ -864,45 +977,79 @@ function handleDeleteEvent(id: string) {
   justify-content: center;
   width: 32px;
   height: 32px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-tertiary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  color: var(--text-secondary);
   cursor: pointer;
   opacity: 0;
+  transform: scale(0.9) translateX(10px);
   transition: all var(--transition-fast);
 }
 
+/* Hover 时淡入操作按钮，淡出向右箭头 */
 .event-item:hover .action-btn {
   opacity: 1;
+  transform: scale(1) translateX(0);
 }
 
+/* 操作按钮悬停效果 */
 .edit-btn:hover {
   background: var(--accent-light);
+  border-color: var(--accent-color);
   color: var(--accent-color);
 }
 
 .delete-btn:hover {
   background: #fee2e2;
+  border-color: #fca5a5;
   color: #dc2626;
 }
 
-/* Empty State */
+/* 快捷向右进入小箭头 */
+.hover-action-arrow {
+  position: absolute;
+  right: 20px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-tertiary);
+  opacity: 1;
+  transition: all var(--transition-fast);
+  pointer-events: none;
+}
+
+.event-item:hover .hover-action-arrow {
+  opacity: 0;
+  transform: translateY(-50%) translateX(15px);
+}
+
+/* 空日程占位插画 */
 .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 60px 20px;
+  justify-content: center;
+  padding: 80px 24px;
   text-align: center;
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: 16px;
 }
 
-.empty-icon {
+.empty-illustration {
   color: var(--text-tertiary);
   margin-bottom: 16px;
+  opacity: 0.8;
+  transition: transform var(--transition-fast);
+}
+
+.empty-state:hover .empty-illustration {
+  transform: translateY(-4px) rotate(3deg);
 }
 
 .empty-text {
-  font-size: 16px;
+  font-size: 14.5px;
+  font-weight: 500;
   color: var(--text-secondary);
 }
 
@@ -914,7 +1061,8 @@ function handleDeleteEvent(id: string) {
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -923,17 +1071,21 @@ function handleDeleteEvent(id: string) {
 
 .event-modal {
   width: 480px;
-  max-width: 90vw;
+  max-width: 92vw;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
 }
 
 .modal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
+  padding: 16px 20px;
   border-bottom: 1px solid var(--border-color);
 }
 
@@ -941,17 +1093,18 @@ function handleDeleteEvent(id: string) {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
+  color: var(--text-primary);
 }
 
 .close-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 30px;
+  height: 30px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 8px;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -963,19 +1116,19 @@ function handleDeleteEvent(id: string) {
 }
 
 .modal-body {
-  padding: 16px 18px;
+  padding: 20px;
 }
 
 /* Form */
 .form-group {
-  margin-bottom: 16px;
+  margin-bottom: 18px;
 }
 
 .form-label {
   display: block;
   margin-bottom: 8px;
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
@@ -983,7 +1136,7 @@ function handleDeleteEvent(id: string) {
 .toggle-wrapper {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   cursor: pointer;
   user-select: none;
 }
@@ -993,11 +1146,11 @@ function handleDeleteEvent(id: string) {
 }
 
 .toggle-slider {
-  width: 36px;
-  height: 20px;
+  width: 40px;
+  height: 22px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: 10px;
+  border-radius: 20px;
   position: relative;
   transition: all var(--transition-fast);
 }
@@ -1005,14 +1158,14 @@ function handleDeleteEvent(id: string) {
 .toggle-slider::after {
   content: '';
   position: absolute;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
   background: white;
   border-radius: 50%;
   top: 2px;
   left: 2px;
   transition: all var(--transition-fast);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .toggle-input:checked + .toggle-slider {
@@ -1021,20 +1174,22 @@ function handleDeleteEvent(id: string) {
 }
 
 .toggle-input:checked + .toggle-slider::after {
-  transform: translateX(16px);
+  transform: translateX(18px);
 }
 
 .toggle-label {
   font-size: 13px;
+  font-weight: 500;
   color: var(--text-primary);
 }
 
 /* Date Time Section */
 .datetime-section {
   background: var(--bg-tertiary);
-  border-radius: var(--radius-lg);
-  padding: 12px 14px;
-  margin-bottom: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 14px;
+  margin-bottom: 18px;
 }
 
 .datetime-row {
@@ -1044,12 +1199,13 @@ function handleDeleteEvent(id: string) {
 }
 
 .datetime-row:not(:last-child) {
-  margin-bottom: 10px;
+  margin-bottom: 12px;
 }
 
 .datetime-label {
   width: 40px;
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 600;
   color: var(--text-secondary);
   text-align: right;
 }
@@ -1057,50 +1213,46 @@ function handleDeleteEvent(id: string) {
 .datetime-inputs {
   flex: 1;
   display: flex;
-  gap: 8px;
-}
-
-.date-input {
-  flex: 1;
-}
-
-.time-input {
-  width: 110px;
+  gap: 10px;
 }
 
 /* Calendar Selector */
 .calendar-selector {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 8px;
 }
 
 .calendar-option {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 8px;
+  padding: 6px 14px;
   background: var(--bg-tertiary);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border: 1.2px solid var(--border-color);
+  border-radius: 20px;
   cursor: pointer;
   transition: all var(--transition-fast);
-  font-size: 12px;
+  font-size: 12.5px;
+  font-weight: 500;
   color: var(--text-primary);
 }
 
 .calendar-option:hover {
   background: var(--bg-hover);
+  border-color: var(--text-tertiary);
 }
 
 .calendar-option.active {
   border-color: var(--accent-color);
   background: var(--accent-light);
+  color: var(--accent-color);
+  font-weight: 600;
 }
 
 .calendar-color {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
 }
 
@@ -1109,8 +1261,8 @@ function handleDeleteEvent(id: string) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
-  padding-top: 16px;
+  margin-top: 20px;
+  padding-top: 20px;
   border-top: 1px solid var(--border-color);
 }
 
@@ -1137,12 +1289,12 @@ function handleDeleteEvent(id: string) {
 
 .modal-enter-from .event-modal {
   opacity: 0;
-  transform: scale(0.95) translateY(10px);
+  transform: scale(0.96) translateY(12px);
 }
 
 .modal-leave-to .event-modal {
   opacity: 0;
-  transform: scale(0.95);
+  transform: scale(0.96);
 }
 
 /* Fluent Components */
@@ -1150,13 +1302,13 @@ function handleDeleteEvent(id: string) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 9px 18px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border-radius: 10px;
   color: var(--text-primary);
-  font-weight: 500;
+  font-weight: 600;
   font-size: 13px;
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -1164,6 +1316,7 @@ function handleDeleteEvent(id: string) {
 
 .fluent-button:hover {
   background: var(--bg-hover);
+  transform: translateY(-1px);
 }
 
 .fluent-button:active {
@@ -1183,6 +1336,7 @@ function handleDeleteEvent(id: string) {
 .fluent-button.primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+  transform: none;
 }
 
 .fluent-button.danger {
@@ -1196,28 +1350,21 @@ function handleDeleteEvent(id: string) {
   border-color: #fca5a5;
 }
 
-.fluent-card {
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-
 .fluent-input {
   width: 100%;
   padding: 10px 12px;
   background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
+  border: 1.2px solid var(--border-color);
+  border-radius: 10px;
   color: var(--text-primary);
   outline: none;
-  font-size: 13px;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  font-size: 13.5px;
+  transition: all var(--transition-fast);
 }
 
 .fluent-input:focus {
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 2px var(--accent-light);
+  box-shadow: 0 0 0 3px var(--accent-light);
 }
 
 .fluent-input::placeholder {

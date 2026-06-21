@@ -2599,7 +2599,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -5740,7 +5740,7 @@ dependencies = [
  "png 0.18.1",
  "serde",
  "thiserror 2.0.18",
- "windows-sys 0.60.2",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -7053,18 +7053,22 @@ name = "xiaohe-calendar"
 version = "0.1.2"
 dependencies = [
  "aes-gcm",
+ "async-trait",
  "base64 0.22.1",
  "chrono",
  "dirs 5.0.1",
  "env_logger",
  "ews",
+ "hex",
  "hostname",
  "ical",
  "log",
  "once_cell",
+ "open",
  "quick-xml 0.37.5",
  "rand 0.8.5",
  "reqwest 0.12.28",
+ "ring",
  "rusqlite",
  "serde",
  "serde_json",
@@ -7085,6 +7089,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "tokio",
+ "tokio-util",
  "uiautomation",
  "url",
  "uuid",

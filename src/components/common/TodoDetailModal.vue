@@ -71,44 +71,90 @@ function handleModalClick(e: MouseEvent) {
         @click="handleOverlayClick"
       >
         <div
-          class="todo-detail-modal fluent-card"
+          class="todo-detail-modal elegant-modal-card fluent-card"
           @click="handleModalClick"
           @keydown.escape="handleClose"
         >
-          <!-- 头部 -->
+          <!-- 头部 - 大字标题排版，去除生硬边线 -->
           <div class="modal-header">
-            <h3 class="todo-title">{{ todo?.title }}</h3>
-            <button class="close-btn" @click="handleClose">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <div class="title-with-interactive-check">
+              <!-- 大号精致复选打勾框，点击支持完成状态切换（支持弹性动画） -->
+              <span class="interactive-todo-checkbox" :class="{ checked: todo?.completed }">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="check-mark-svg">
+                  <polyline points="2.5 6 4.5 8 9.5 3.5"/>
+                </svg>
+              </span>
+              <h3 class="detail-title todo-title" :class="{ strikethrough: todo?.completed }">{{ todo?.title }}</h3>
+            </div>
+            <button class="close-btn" @click="handleClose" type="button">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
                 <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
             </button>
           </div>
 
-          <!-- 内容 -->
+          <!-- 内容 - Notion & Todoist 风格的属性对齐网格 -->
           <div class="modal-body">
-            <!-- 描述 -->
-            <div v-if="hasDescription" class="detail-row">
-              <span class="detail-label">描述</span>
-              <span class="todo-description">{{ todo!.description }}</span>
-            </div>
+            <div class="metadata-detail-grid">
+              
+              <!-- 1. 优先级属性 -->
+              <div v-if="todo" class="meta-detail-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                    <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/>
+                  </svg>
+                  <span>优先级</span>
+                </span>
+                <span class="meta-row-value">
+                  <span class="priority-badge-pill priority-badge" :class="todo.priority">
+                    <span class="priority-badge-dot"></span>
+                    <span>{{ priorityText }}</span>
+                  </span>
+                </span>
+              </div>
 
-            <!-- 优先级 -->
-            <div class="detail-row">
-              <span class="detail-label">优先级</span>
-              <span class="priority-badge" :class="todo?.priority">{{ priorityText }}</span>
-            </div>
+              <!-- 2. 截止日期属性 -->
+              <div v-if="todo?.dueDate" class="meta-detail-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                  <span>截止日期</span>
+                </span>
+                <span class="meta-row-value todo-due-date">{{ dueDateDisplay }}</span>
+              </div>
 
-            <!-- 截止日期 -->
-            <div v-if="todo?.dueDate" class="detail-row">
-              <span class="detail-label">截止日期</span>
-              <span class="todo-due-date">{{ dueDateDisplay }}</span>
-            </div>
+              <!-- 3. 状态属性 -->
+              <div v-if="todo" class="meta-detail-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                  <span>任务状态</span>
+                </span>
+                <span class="meta-row-value">
+                  <span class="todo-status-pill todo-status" :class="statusClass">{{ statusText }}</span>
+                </span>
+              </div>
 
-            <!-- 状态 -->
-            <div class="detail-row">
-              <span class="detail-label">状态</span>
-              <span class="todo-status" :class="statusClass">{{ statusText }}</span>
+              <!-- 4. 描述属性 -->
+              <div v-if="todo && hasDescription" class="meta-detail-row align-start">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                  </svg>
+                  <span>任务描述</span>
+                </span>
+                <span class="meta-row-value todo-description">{{ todo.description }}</span>
+              </div>
+
             </div>
           </div>
         </div>
@@ -136,15 +182,16 @@ function handleModalClick(e: MouseEvent) {
 /* 模态框 */
 .todo-detail-modal {
   position: relative;
-  width: 480px;
+  width: 440px;
   max-width: 90vw;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+  animation: scaleIn var(--transition-smooth);
 }
 
 /* 头部 */
@@ -152,20 +199,60 @@ function handleModalClick(e: MouseEvent) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 20px 24px 10px 24px;
 }
 
-.todo-title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
+.title-with-interactive-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
   flex: 1;
   min-width: 0;
+}
+
+.interactive-todo-checkbox {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  border: 2px solid var(--border-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
+
+.check-mark-svg {
+  color: white;
+  transform: scale(0);
+  transition: transform var(--transition-fast) cubic-bezier(0.12, 0.4, 0.29, 1.46);
+}
+
+.interactive-todo-checkbox.checked {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+}
+
+.interactive-todo-checkbox.checked .check-mark-svg {
+  transform: scale(1);
+}
+
+.detail-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  transition: all var(--transition-normal);
+}
+
+.detail-title.strikethrough {
+  text-decoration: line-through;
+  color: var(--text-tertiary);
+  opacity: 0.8;
 }
 
 .close-btn {
@@ -176,7 +263,7 @@ function handleModalClick(e: MouseEvent) {
   height: 28px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -190,75 +277,121 @@ function handleModalClick(e: MouseEvent) {
 
 /* 内容 */
 .modal-body {
-  padding: 16px 18px;
+  padding: 16px 24px 24px 24px;
 }
 
-.detail-row {
+/* Metadata Detail Grid */
+.metadata-detail-grid {
   display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--bg-tertiary);
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+.meta-detail-row {
+  display: flex;
+  align-items: center;
+}
+
+.meta-detail-row.align-start {
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 12px;
 }
 
-.detail-row:last-child {
-  margin-bottom: 0;
-}
-
-.detail-label {
+.meta-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100px;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
-  min-width: 40px;
   flex-shrink: 0;
 }
 
-.todo-description {
+.meta-svg-icon {
+  color: var(--text-tertiary);
+}
+
+.meta-row-value {
+  flex: 1;
   font-size: 13px;
   color: var(--text-primary);
+  font-weight: 500;
   word-break: break-word;
 }
 
-/* 优先级标签 */
-.priority-badge {
-  display: inline-block;
-  font-size: 12px;
+/* 优先级胶囊标签 */
+.priority-badge-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
   font-weight: 600;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
+  padding: 3px 10px;
+  border-radius: var(--radius-md);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
-.priority-badge.high {
-  background: rgba(255, 59, 48, 0.1);
+.priority-badge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.priority-badge-pill.high {
+  background: rgba(255, 59, 48, 0.08);
   color: #FF3B30;
 }
+.priority-badge-pill.high .priority-badge-dot {
+  background: #FF3B30;
+}
 
-.priority-badge.medium {
-  background: rgba(255, 149, 0, 0.1);
+.priority-badge-pill.medium {
+  background: rgba(255, 149, 0, 0.08);
   color: #FF9500;
 }
-
-.priority-badge.low {
-  background: rgba(52, 199, 89, 0.1);
-  color: #34C759;
+.priority-badge-pill.medium .priority-badge-dot {
+  background: #FF9500;
 }
 
-/* 截止日期 */
+.priority-badge-pill.low {
+  background: rgba(52, 199, 89, 0.08);
+  color: #34C759;
+}
+.priority-badge-pill.low .priority-badge-dot {
+  background: #34C759;
+}
+
 .todo-due-date {
-  font-size: 13px;
+  font-weight: 600;
   color: var(--text-primary);
 }
 
-/* 状态 */
-.todo-status {
-  font-size: 13px;
-  font-weight: 500;
+/* 状态胶囊 */
+.todo-status-pill {
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: var(--radius-md);
 }
 
-.todo-status.completed {
+.todo-status-pill.completed {
+  background: rgba(52, 199, 89, 0.08);
   color: #34C759;
 }
 
-.todo-status.pending {
+.todo-status-pill.pending {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+}
+
+.todo-description {
+  line-height: 1.5;
   color: var(--text-secondary);
 }
 

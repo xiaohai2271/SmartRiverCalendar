@@ -1,9 +1,7 @@
-import { sendNotification } from '@tauri-apps/plugin-notification'
-import { WebviewWindow } from '@tauri-apps/api/webviewWindow'
-import { emit as tauriEmit } from '@tauri-apps/api/event'
 import { useCalendarStore } from '../stores/calendar'
 import { useTodoStore } from '../stores/todo'
 import { useSettingsStore } from '../stores/settings'
+import { useCapabilities } from '@/platform/provider'
 import type { CalendarEvent, Todo, AppSettings } from '../types'
 
 // ────────────────────────────────────────────
@@ -322,10 +320,13 @@ export function offReminderPopup(callback: ReminderPopupCallback): void {
 
 /**
  * 在独立窗口中显示提醒
+ * 桌面端使用 Tauri 多窗口弹窗，Web 端降级为浏览器通知
  * @param data 提醒数据
  */
 async function showReminderInWindow(data: ReminderQueueItem): Promise<void> {
   try {
+    const capabilities = useCapabilities()
+
     // 获取设置存储
     const settingsStore = useSettingsStore()
     const settings = settingsStore.settings
@@ -333,54 +334,61 @@ async function showReminderInWindow(data: ReminderQueueItem): Promise<void> {
     // 检查是否为夜间模式
     if (settings.theme === 'dark') {
       console.log('[reminder] 夜间模式不显示提醒窗口')
-      // 夜间模式不显示窗口，但确保已发送系统通知（由 sendReminderNotification 处理）
       return
     }
 
-    // 获取提醒窗口实例
-    const reminderWindow = await WebviewWindow.getByLabel(REMINDER_POPUP_LABEL)
+    if (capabilities.hasReminderPopup) {
+      // 桌面端：使用 Tauri 多窗口弹窗
+      const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      const { emit: tauriEmit } = await import('@tauri-apps/api/event')
 
-    if (reminderWindow) {
-      // 检查窗口是否可见
-      const isVisible = await reminderWindow.isVisible()
+      // 获取提醒窗口实例
+      const reminderWindow = await WebviewWindow.getByLabel(REMINDER_POPUP_LABEL)
 
-      // 无论窗口是否可见，都需要定位
-      const { positionReminderWindow } = await import('@/composables/useReminderPopup')
+      if (reminderWindow) {
+        // 检查窗口是否可见
+        const isVisible = await reminderWindow.isVisible()
 
-      if (!isVisible) {
-        // 先定位窗口，再显示（避免白屏闪烁）
-        await positionReminderWindow(reminderWindow)
+        // 无论窗口是否可见，都需要定位
+        const { positionReminderWindow } = await import('@/composables/useReminderPopup')
 
-        // 显示窗口（此时已在正确位置）
-        await reminderWindow.show()
-        await reminderWindow.setFocus()
-        console.log('[reminder] 提醒窗口已显示')
+        if (!isVisible) {
+          // 先定位窗口，再显示（避免白屏闪烁）
+          await positionReminderWindow(reminderWindow)
 
-        // 等待一小段时间让窗口渲染就绪（Vue 组件已挂载，事件监听器已注册）
-        await new Promise(resolve => setTimeout(resolve, 200))
+          // 显示窗口（此时已在正确位置）
+          await reminderWindow.show()
+          await reminderWindow.setFocus()
+          console.log('[reminder] 提醒窗口已显示')
+
+          // 等待一小段时间让窗口渲染就绪（Vue 组件已挂载，事件监听器已注册）
+          await new Promise(resolve => setTimeout(resolve, 200))
+        } else {
+          // 窗口已可见，重新定位并直接发送事件
+          console.log('[reminder] 提醒窗口已可见，重新定位并发送事件')
+          await positionReminderWindow(reminderWindow)
+          await reminderWindow.setFocus()
+        }
+
+        // 发送提醒事件到窗口
+        await tauriEmit('show-reminder', {
+          id: data.id,
+          type: data.type,
+          title: data.title,
+          body: data.body,
+          triggerTime: data.triggerTime,
+          itemId: data.itemId,
+          itemData: data.itemData,
+          createdAt: data.enqueuedAt
+        })
+
+        console.log('[reminder] 提醒事件已发送:', data.title)
       } else {
-        // 窗口已可见，重新定位并直接发送事件
-        console.log('[reminder] 提醒窗口已可见，重新定位并发送事件')
-        await positionReminderWindow(reminderWindow)
-        await reminderWindow.setFocus()
+        console.warn('[reminder] 提醒窗口不存在，降级为本地回调')
+        triggerLocalPopup(data)
       }
-
-      // 发送提醒事件到窗口
-      await tauriEmit('show-reminder', {
-        id: data.id,
-        type: data.type,
-        title: data.title,
-        body: data.body,
-        triggerTime: data.triggerTime,
-        itemId: data.itemId,
-        itemData: data.itemData,
-        createdAt: data.enqueuedAt
-      })
-
-      console.log('[reminder] 提醒事件已发送:', data.title)
     } else {
-      console.warn('[reminder] 提醒窗口不存在，请检查窗口配置')
-      // 降级处理：触发本地回调
+      // Web 端：降级为本地回调（浏览器通知由 sendReminderNotification 处理）
       triggerLocalPopup(data)
     }
   } catch (error) {
@@ -627,6 +635,7 @@ function formatNotificationBody(
 
 /**
  * 发送提醒通知
+ * 桌面端使用 Tauri 通知 API，Web 端使用浏览器 Notification API
  * @param title 通知标题
  * @param body 通知正文
  * @param mode 提醒强度
@@ -645,6 +654,8 @@ async function sendReminderNotification(
   triggerTime: number
 ): Promise<void> {
   try {
+    const capabilities = useCapabilities()
+
     // 快速连续触发防护：同一 itemId 在冷却时间内不重复触发
     const now = Date.now()
     const lastTriggerTime = lastTriggerTimes.get(itemId)
@@ -681,12 +692,45 @@ async function sendReminderNotification(
       // 闪烁任务栏标题
       startBlinkTitle(title)
     } else if (mode === 'standard') {
-      // 标准提醒：只发送系统通知，不显示提醒窗口
-      await sendNotification({ title, body })
+      // 标准提醒：发送系统通知
+      if (capabilities.hasSystemNotification) {
+        if (capabilities.hasReminderPopup) {
+          // 桌面端：Tauri 通知 API
+          try {
+            const { sendNotification } = await import('@tauri-apps/plugin-notification')
+            await sendNotification({ title, body })
+          } catch (e) {
+            console.warn('[reminder] Tauri 通知发送失败，降级为浏览器通知:', e)
+            sendBrowserNotification(title, body)
+          }
+        } else {
+          // Web 端：浏览器通知 API
+          sendBrowserNotification(title, body)
+        }
+      }
     }
     // silent 模式：都不展示
   } catch (error) {
     console.error('发送提醒通知失败:', error)
+  }
+}
+
+/**
+ * 使用浏览器 Notification API 发送通知（Web 端降级方案）
+ * @param title 通知标题
+ * @param body 通知正文
+ */
+function sendBrowserNotification(title: string, body: string): void {
+  if ('Notification' in window) {
+    if (Notification.permission === 'granted') {
+      new Notification(title, { body })
+    } else if (Notification.permission !== 'denied') {
+      Notification.requestPermission().then(permission => {
+        if (permission === 'granted') {
+          new Notification(title, { body })
+        }
+      })
+    }
   }
 }
 
@@ -972,6 +1016,8 @@ export async function handleReminderDeleted(
   type: 'event' | 'todo'
 ): Promise<void> {
   try {
+    const capabilities = useCapabilities()
+
     // 检查队列中是否有该项目的提醒
     const queue = loadQueue()
     const matchingItem = queue.items.find(item => item.itemId === itemId)
@@ -1004,18 +1050,23 @@ export async function handleReminderDeleted(
       // 保存更新后的队列
       saveQueue(queue)
 
-      // 如果当前正在显示这个提醒，发送更新事件
-      if (currentDisplayedReminderId === matchingItem.id) {
-        await tauriEmit('show-reminder', {
-          id: matchingItem.id,
-          type: matchingItem.type,
-          title: matchingItem.title,
-          body: matchingItem.body,
-          triggerTime: matchingItem.triggerTime,
-          itemId: matchingItem.itemId,
-          itemData: matchingItem.itemData,
-          createdAt: matchingItem.enqueuedAt
-        })
+      // 如果当前正在显示这个提醒，发送更新事件（仅桌面端支持多窗口事件）
+      if (currentDisplayedReminderId === matchingItem.id && capabilities.hasReminderPopup) {
+        try {
+          const { emit: tauriEmit } = await import('@tauri-apps/api/event')
+          await tauriEmit('show-reminder', {
+            id: matchingItem.id,
+            type: matchingItem.type,
+            title: matchingItem.title,
+            body: matchingItem.body,
+            triggerTime: matchingItem.triggerTime,
+            itemId: matchingItem.itemId,
+            itemData: matchingItem.itemData,
+            createdAt: matchingItem.enqueuedAt
+          })
+        } catch (e) {
+          console.warn('[reminder] 发送删除更新事件失败:', e)
+        }
       }
 
       console.log(`[reminder] 项目已删除提醒已更新: ${itemId}`)

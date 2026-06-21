@@ -1,7 +1,8 @@
-use log::{info, error};
+use log::{info, error, warn};
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::State;
+use base64::Engine;
 
 use crate::caldav;
 use crate::crypto;
@@ -59,6 +60,8 @@ pub struct AccountInfo {
     pub username: String,
     /// 加密后的密码
     pub encrypted_password: String,
+    /// 密钥派生盐值（base64 编码）
+    pub key_salt: String,
     /// 显示名称
     pub display_name: String,
     /// 是否启用
@@ -211,9 +214,21 @@ pub async fn connect_exchange(
     server_url: Option<String>,
     username: String,
     password: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ConnectResult, String> {
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 加密密码
-    let encrypted_password = crypto::encrypt_password(&password)
+    let salt = crypto::generate_salt();
+    let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
+    let encrypted_password = crypto::encrypt_password(&password, user_id, &salt)
         .map_err(|e| format!("密码加密失败: {}", e))?;
 
     // 创建 EWS 客户端
@@ -241,6 +256,7 @@ pub async fn connect_exchange(
             server_url: username.clone(), // 存储邮箱地址，服务器地址由 Autodiscover 动态获取
             username: username.clone(),
             encrypted_password,
+            key_salt: salt_b64,
             display_name: username,
             enabled: true,
             last_sync: None,
@@ -255,11 +271,23 @@ pub async fn connect_caldav(
     server_url: String,
     username: String,
     password: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ConnectResult, String> {
     info!("[CalDAV] 开始连接, server_url: {}, username: {}", server_url, username);
 
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 加密密码
-    let encrypted_password = crypto::encrypt_password(&password)
+    let salt = crypto::generate_salt();
+    let salt_b64 = base64::engine::general_purpose::STANDARD.encode(salt);
+    let encrypted_password = crypto::encrypt_password(&password, user_id, &salt)
         .map_err(|e| {
             error!("[CalDAV] 密码加密失败: {}", e);
             format!("密码加密失败: {}", e)
@@ -300,6 +328,7 @@ pub async fn connect_caldav(
         server_url,
         username: username.clone(),
         encrypted_password,
+        key_salt: salt_b64,
         display_name: username,
         enabled: true,
         last_sync: None,
@@ -340,6 +369,8 @@ pub async fn get_external_calendars(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<Vec<CalendarInfo>, String> {
     info!("[get_external_calendars] accountId: {}, accountType: {}, serverUrl: {}", account_id, account_type, server_url);
 
@@ -347,8 +378,23 @@ pub async fn get_external_calendars(
         return Err("账号 ID 不能为空".to_string());
     }
 
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 解密密码
-    let password = crypto::decrypt_password(&encrypted_password)
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     // 根据账号类型获取日历列表
@@ -463,13 +509,30 @@ pub async fn create_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     calendar_url: String,
     event: ExternalEventInput,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ExternalEventResult, String> {
     info!("[create_external_event] 账号: {}, 日历: {}, 类型: {}", account_id, calendar_url, account_type);
 
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
     // 解密密码
-    let password = crypto::decrypt_password(&encrypted_password)
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -524,14 +587,31 @@ pub async fn get_external_events(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     calendar_url: String,
     calendar_id: String,
     start_time: i64,
     end_time: i64,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<Vec<ExternalEventOutput>, String> {
     info!("[get_external_events] 获取外部事件: 账号 {}, 日历 {}", account_id, calendar_url);
 
-    let password = crypto::decrypt_password(&encrypted_password)
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -575,12 +655,29 @@ pub async fn update_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
-    calendar_url: String,
+    key_salt: String,
+    _calendar_url: String,
     event: ExternalEventInput,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ExternalEventResult, String> {
     info!("[update_external_event] 更新事件: 账号 {}, 事件 {}", account_id, event.id);
 
-    let password = crypto::decrypt_password(&encrypted_password)
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -625,12 +722,29 @@ pub async fn delete_external_event(
     server_url: String,
     username: String,
     encrypted_password: String,
-    calendar_url: String,
+    key_salt: String,
+    _calendar_url: String,
     event_id: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<ExternalEventResult, String> {
     info!("[delete_external_event] 删除事件: 账号 {}, 事件 {}", account_id, event_id);
 
-    let password = crypto::decrypt_password(&encrypted_password)
+    // 获取当前用户 ID 用于密钥派生
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let uid = get_current_user_id(&db_conn.get_connection()).ok_or_else(|| {
+            "无法获取当前用户 ID，请先登录".to_string()
+        })?;
+        uid
+    };
+
+    let salt = base64::engine::general_purpose::STANDARD
+        .decode(&key_salt)
+        .map_err(|e| format!("盐值解码失败: {}", e))?;
+    if salt.len() < 16 {
+        return Err(format!("盐值长度不足: {} < 16", salt.len()));
+    }
+    let password = crypto::decrypt_password(&encrypted_password, user_id, &salt)
         .map_err(|e| format!("密码解密失败: {}", e))?;
 
     let account_type_lower = account_type.to_lowercase();
@@ -694,8 +808,19 @@ pub struct ExternalEventResult {
     pub error: Option<String>,
 }
 
+/// 获取当前登录用户的 ID
+/// 从 local_users 表查询 is_current = 1 的记录
+fn get_current_user_id(conn: &rusqlite::Connection) -> Option<i64> {
+    conn.query_row(
+        "SELECT user_id FROM local_users WHERE is_current = 1 LIMIT 1",
+        [],
+        |row| row.get(0),
+    )
+    .ok()
+}
+
 // ============================================================
-// 本地日历命令
+// 日历命令
 // ============================================================
 
 /// 获取所有本地日历
@@ -734,8 +859,20 @@ pub fn create_calendar(
         account_id,
         visible: visible.unwrap_or(true),
         sync_enabled: sync_enabled.unwrap_or(false),
+        user_id: None,
+        timezone: None,
     };
-    repo.create(&req)
+    let created = repo.create(&req)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::to_string(&created).unwrap_or_default();
+    if let Err(e) = tracker.track_change(user_id, "calendar", created.id, "create", &payload) {
+        log::warn!("[create_calendar] 记录变更日志失败: {}", e);
+    }
+
+    Ok(created)
 }
 
 /// 更新本地日历
@@ -760,7 +897,17 @@ pub fn update_calendar(
         visible,
         sync_enabled,
     };
-    repo.update(&req)
+    let updated = repo.update(&req)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::to_string(&updated).unwrap_or_default();
+    if let Err(e) = tracker.track_change(user_id, "calendar", updated.id, "update", &payload) {
+        log::warn!("[update_calendar] 记录变更日志失败: {}", e);
+    }
+
+    Ok(updated)
 }
 
 /// 删除本地日历
@@ -774,7 +921,17 @@ pub fn delete_calendar(
         message: "数据库连接锁获取失败".to_string(),
     })?;
     let repo = CalendarRepository::new(&db);
-    repo.delete(id)
+    repo.delete(id)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::json!({"id": id}).to_string();
+    if let Err(e) = tracker.track_change(user_id, "calendar", id, "delete", &payload) {
+        log::warn!("[delete_calendar] 记录变更日志失败: {}", e);
+    }
+
+    Ok(())
 }
 
 // ============================================================
@@ -856,8 +1013,20 @@ pub fn create_event(
         repeat_rule,
         location,
         external_id,
+        user_id: None,
+        timezone: None,
     };
-    repo.create(&event)
+    let created = repo.create(&event)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::to_string(&created).unwrap_or_default();
+    if let Err(e) = tracker.track_change(user_id, "event", created.id, "create", &payload) {
+        log::warn!("[create_event] 记录变更日志失败: {}", e);
+    }
+
+    Ok(created)
 }
 
 /// 更新本地事件
@@ -896,7 +1065,17 @@ pub fn update_event(
         location,
         external_id,
     };
-    repo.update(&event)
+    let updated = repo.update(&event)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::to_string(&updated).unwrap_or_default();
+    if let Err(e) = tracker.track_change(user_id, "event", updated.id, "update", &payload) {
+        log::warn!("[update_event] 记录变更日志失败: {}", e);
+    }
+
+    Ok(updated)
 }
 
 /// 删除本地事件
@@ -910,7 +1089,17 @@ pub fn delete_event(
         message: "数据库连接锁获取失败".to_string(),
     })?;
     let repo = EventRepository::new(&db);
-    repo.delete(id)
+    let result = repo.delete(id)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::json!({"id": id}).to_string();
+    if let Err(e) = tracker.track_change(user_id, "event", id, "delete", &payload) {
+        log::warn!("[delete_event] 记录变更日志失败: {}", e);
+    }
+
+    Ok(result)
 }
 
 // ============================================================
@@ -967,8 +1156,21 @@ pub fn create_todo(
         completed,
         priority,
         calendar_id,
+        external_id: None,
+        user_id: None,
+        timezone: None,
     };
-    repo.create(&input)
+    let created = repo.create(&input)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::to_string(&created).unwrap_or_default();
+    if let Err(e) = tracker.track_change(user_id, "todo", created.id, "create", &payload) {
+        log::warn!("[create_todo] 记录变更日志失败: {}", e);
+    }
+
+    Ok(created)
 }
 
 /// 更新待办事项
@@ -996,8 +1198,19 @@ pub fn update_todo(
         completed,
         priority,
         calendar_id,
+        external_id: None,
     };
-    repo.update(&input)
+    let updated = repo.update(&input)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::to_string(&updated).unwrap_or_default();
+    if let Err(e) = tracker.track_change(user_id, "todo", updated.id, "update", &payload) {
+        log::warn!("[update_todo] 记录变更日志失败: {}", e);
+    }
+
+    Ok(updated)
 }
 
 /// 删除待办事项
@@ -1011,7 +1224,17 @@ pub fn delete_todo(
         message: "数据库连接锁获取失败".to_string(),
     })?;
     let repo = TodoRepository::new(&db);
-    repo.delete(id)
+    let result = repo.delete(id)?;
+
+    // 记录变更到 sync_log
+    let user_id = get_current_user_id(&*db.get_connection());
+    let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db);
+    let payload = serde_json::json!({"id": id}).to_string();
+    if let Err(e) = tracker.track_change(user_id, "todo", id, "delete", &payload) {
+        log::warn!("[delete_todo] 记录变更日志失败: {}", e);
+    }
+
+    Ok(result)
 }
 
 // ============================================================
@@ -1052,11 +1275,15 @@ pub fn create_account(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     display_name: Option<String>,
     enabled: Option<bool>,
     db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<DbAccount, DatabaseError> {
     info!("[create_account] 创建账号: {} ({})", username, account_type);
+    if key_salt.is_empty() {
+        warn!("[create_account] key_salt 为空，加密密码将无法解密");
+    }
     let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
         message: "数据库连接锁获取失败".to_string(),
     })?;
@@ -1066,6 +1293,7 @@ pub fn create_account(
         server_url,
         username,
         encrypted_password,
+        key_salt: if key_salt.is_empty() { None } else { Some(key_salt) },
         display_name,
         enabled: enabled.unwrap_or(true),
     };
@@ -1080,11 +1308,15 @@ pub fn update_account(
     server_url: String,
     username: String,
     encrypted_password: String,
+    key_salt: String,
     display_name: Option<String>,
     enabled: bool,
     db: State<'_, Mutex<DatabaseConnection>>,
 ) -> Result<DbAccount, DatabaseError> {
     info!("[update_account] 更新账号: id={}", id);
+    if key_salt.is_empty() {
+        warn!("[update_account] key_salt 为空，加密密码将无法解密");
+    }
     let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
         message: "数据库连接锁获取失败".to_string(),
     })?;
@@ -1095,6 +1327,7 @@ pub fn update_account(
         server_url,
         username,
         encrypted_password,
+        key_salt: if key_salt.is_empty() { None } else { Some(key_salt) },
         display_name,
         enabled,
     };
@@ -1174,6 +1407,894 @@ pub fn delete_sync_state(
     })?;
     let conn = db.get_connection();
     SyncStateRepository::delete(&conn, account_id, calendar_id).map_err(|e| e.into())
+}
+
+// ============================================================
+// 远程认证命令
+// ============================================================
+
+/// 检查是否已登录（Token 是否存在且未过期）
+///
+/// 启动时调用，从 SQLite 加载加密 Token 注入到 HTTP 客户端内存，
+/// 然后调用 get_profile 验证 token 是否有效。
+/// 认证成功后会将刷新后的 Token 回写到 SQLite，
+/// 确保下次启动时仍能恢复登录状态。
+#[tauri::command]
+pub async fn auth_check_status(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<bool, String> {
+    info!("[auth_check_status] 检查认证状态");
+    let token_store = crate::auth::token::TokenStore::new();
+
+    // 检查本地数据库中是否有当前用户
+    let user_id: Option<i64> = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        conn.query_row(
+            "SELECT user_id FROM local_users WHERE is_current = 1 LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+    };
+
+    if let Some(uid) = user_id {
+        // 从 SQLite 加载加密 Token，解密后注入到 HTTP 客户端
+        let tokens = {
+            let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+            let conn = db_conn.get_connection();
+            match token_store.load_tokens(&conn, uid) {
+                Ok(Some(t)) => t,
+                Ok(None) => {
+                    info!("[auth_check_status] 数据库中无 Token (user_id={})", uid);
+                    return Ok(false);
+                }
+                Err(e) => {
+                    error!("[auth_check_status] 加载 Token 失败: {}", e);
+                    return Err(format!("TOKEN_LOAD_ERROR:{}", e));
+                }
+            }
+        };
+
+        // 计算 expires_in（可能已过期，HttpClient 会自动刷新）
+        let now = chrono::Utc::now().timestamp_millis();
+        let expires_in = ((tokens.expires_at - now) / 1000).max(0);
+
+        // 通过 downcast 注入 token 到 HTTP 客户端
+        if let Some(proxy) = api_client
+            .as_ref()
+            .as_any()
+            .downcast_ref::<crate::api::ProxyApiClient>()
+        {
+            proxy
+                .set_inner_token(
+                    tokens.access_token.clone(),
+                    tokens.refresh_token.clone(),
+                    expires_in,
+                )
+                .await;
+            info!("[auth_check_status] 已通过 ProxyApiClient 恢复 Token");
+        } else if let Some(real_client) = api_client
+            .as_ref()
+            .as_any()
+            .downcast_ref::<crate::api::RealApiClient>()
+        {
+            real_client
+                .set_auth_token(
+                    tokens.access_token.clone(),
+                    tokens.refresh_token.clone(),
+                    expires_in,
+                )
+                .await;
+            info!("[auth_check_status] 已通过 RealApiClient 恢复 Token");
+        } else {
+            info!("[auth_check_status] 无法 downcast API 客户端，跳过 Token 恢复");
+        }
+
+        // 尝试调用 get_profile 验证 Token 是否有效
+        match api_client.get_profile().await {
+            Ok(_profile) => {
+                info!("[auth_check_status] 认证有效 (user_id={})", uid);
+
+                // 认证成功后，将可能已刷新的 Token 回写到 SQLite
+                if let Some(proxy) = api_client
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<crate::api::ProxyApiClient>()
+                {
+                    if let Some(current_token) = proxy.get_inner_token().await {
+                        let new_token_info = crate::auth::token::TokenInfo {
+                            access_token: current_token.access_token,
+                            refresh_token: current_token.refresh_token,
+                            expires_at: current_token.expires_at,
+                            user_id: uid,
+                        };
+                        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+                        let conn = db_conn.get_connection();
+                        if let Err(e) = token_store.save_tokens(&conn, &new_token_info) {
+                            warn!("[auth_check_status] 回写 Token 到数据库失败: {}", e);
+                        } else {
+                            info!("[auth_check_status] 已将刷新后的 Token 回写到数据库");
+                        }
+                    }
+                } else if let Some(real_client) = api_client
+                    .as_ref()
+                    .as_any()
+                    .downcast_ref::<crate::api::RealApiClient>()
+                {
+                    if let Some(current_token) = real_client.get_auth_token().await {
+                        let new_token_info = crate::auth::token::TokenInfo {
+                            access_token: current_token.access_token,
+                            refresh_token: current_token.refresh_token,
+                            expires_at: current_token.expires_at,
+                            user_id: uid,
+                        };
+                        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+                        let conn = db_conn.get_connection();
+                        if let Err(e) = token_store.save_tokens(&conn, &new_token_info) {
+                            warn!("[auth_check_status] 回写 Token 到数据库失败: {}", e);
+                        } else {
+                            info!("[auth_check_status] 已将刷新后的 Token 回写到数据库");
+                        }
+                    }
+                }
+
+                Ok(true)
+            }
+            Err(e) => {
+                info!("[auth_check_status] 认证无效: {}", e);
+                Ok(false)
+            }
+        }
+    } else {
+        info!("[auth_check_status] 本地无登录用户");
+        Ok(false)
+    }
+}
+
+/// 邮箱密码登录
+#[tauri::command]
+pub async fn auth_login(
+    email: String,
+    password: String,
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<serde_json::Value, String> {
+    info!("[auth_login] 邮箱密码登录: {}", email);
+    let token_store = crate::auth::token::TokenStore::new();
+    let request = crate::api::LoginRequest { email, password };
+    let response = api_client
+        .login(request)
+        .await
+        .map_err(|e| format!("登录失败: {}", e))?;
+
+    // 保存 Token 到 SQLite 加密存储（应用重启时用于恢复登录状态）
+    {
+        let token_info = crate::auth::token::TokenInfo {
+            access_token: response.access_token.clone(),
+            refresh_token: response.refresh_token.clone(),
+            expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
+            user_id: response.user_id,
+        };
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        if let Err(e) = token_store.save_tokens(&conn, &token_info) {
+            error!("[auth_login] 保存 Token 到数据库失败: {}", e);
+        } else {
+            info!("[auth_login] 已保存 Token 到数据库 (user_id={})", response.user_id);
+        }
+    }
+
+    // 获取用户资料并保存到本地数据库
+    match api_client.get_profile().await {
+        Ok(profile) => {
+            let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+            let now = chrono::Utc::now().timestamp();
+            // 先将其他用户的 is_current 设为 0
+            let _ = db_conn.execute(|conn| {
+                conn.execute("UPDATE local_users SET is_current = 0 WHERE is_current = 1", [])
+            });
+            // 插入或替换当前用户
+            let _ = db_conn.execute(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO local_users (user_id, email, display_name, is_current, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![profile.id, profile.email, profile.display_name, 1, now, now],
+                )
+            });
+        }
+        Err(e) => {
+            error!("[auth_login] 获取用户资料失败: {}, 清除已设置的 Token", e);
+            // 清除已设置的 Token，避免 isAuthenticated=true 但 user=null 的不一致状态
+            if let Some(proxy) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::ProxyApiClient>()
+            {
+                proxy.clear_inner_token().await;
+            } else if let Some(real_client) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::RealApiClient>()
+            {
+                real_client.clear_auth_token().await;
+            }
+            return Err(format!("登录成功但获取用户信息失败: {}", e));
+        }
+    }
+
+    serde_json::to_value(&response).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 邮箱密码注册
+#[tauri::command]
+pub async fn auth_register(
+    email: String,
+    password: String,
+    display_name: String,
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<serde_json::Value, String> {
+    info!("[auth_register] 邮箱注册: {}", email);
+    let token_store = crate::auth::token::TokenStore::new();
+    let request = crate::api::RegisterRequest {
+        email,
+        password,
+        display_name,
+    };
+    let response = api_client
+        .register(request)
+        .await
+        .map_err(|e| format!("注册失败: {}", e))?;
+
+    // 保存 Token 到 SQLite 加密存储（应用重启时用于恢复登录状态）
+    {
+        let token_info = crate::auth::token::TokenInfo {
+            access_token: response.access_token.clone(),
+            refresh_token: response.refresh_token.clone(),
+            expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
+            user_id: response.user_id,
+        };
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        if let Err(e) = token_store.save_tokens(&conn, &token_info) {
+            error!("[auth_register] 保存 Token 到数据库失败: {}", e);
+        } else {
+            info!("[auth_register] 已保存 Token 到数据库 (user_id={})", response.user_id);
+        }
+    }
+
+    // 获取用户资料并保存到本地数据库
+    match api_client.get_profile().await {
+        Ok(profile) => {
+            let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+            let now = chrono::Utc::now().timestamp();
+            let _ = db_conn.execute(|conn| {
+                conn.execute("UPDATE local_users SET is_current = 0 WHERE is_current = 1", [])
+            });
+            let _ = db_conn.execute(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO local_users (user_id, email, display_name, is_current, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![profile.id, profile.email, profile.display_name, 1, now, now],
+                )
+            });
+        }
+        Err(e) => {
+            error!("[auth_register] 获取用户资料失败: {}, 清除已设置的 Token", e);
+            // 清除已设置的 Token，避免不一致状态
+            if let Some(proxy) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::ProxyApiClient>()
+            {
+                proxy.clear_inner_token().await;
+            } else if let Some(real_client) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::RealApiClient>()
+            {
+                real_client.clear_auth_token().await;
+            }
+            return Err(format!("注册成功但获取用户信息失败: {}", e));
+        }
+    }
+
+    serde_json::to_value(&response).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// GitHub OAuth 登录
+///
+/// 前端传入 client_id 和 redirect_uri，后端启动本地 OAuth 监听器完成授权流程
+#[tauri::command]
+pub async fn auth_oauth_github(
+    client_id: String,
+    redirect_uri: String,
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<serde_json::Value, String> {
+    info!("[auth_oauth_github] GitHub OAuth 登录, client_id: {}", client_id);
+    let token_store = crate::auth::token::TokenStore::new();
+
+    // 创建 OAuth 配置
+    let oauth_config = crate::auth::oauth::OAuthConfig {
+        client_id: client_id.clone(),
+        client_secret: String::new(),
+        redirect_base: redirect_uri,
+    };
+
+    // 启动 OAuth 流程
+    let oauth = crate::auth::oauth::OAuthService::new(oauth_config);
+    let state = crate::auth::oauth::OAuthService::generate_state();
+    let _auth_url = oauth.get_authorization_url(&state);
+
+    // 监听回调（5分钟超时）
+    let callback = oauth
+        .listen_for_callback(300)
+        .await
+        .map_err(|e| format!("OAuth 回调监听失败: {}", e))?;
+
+    // 验证 state
+    if callback.state != state {
+        return Err("OAuth state 不匹配，可能遭受 CSRF 攻击".to_string());
+    }
+
+    // 用授权码调用 API 完成 OAuth
+    let response = api_client
+        .github_oauth(&callback.code, &callback.state)
+        .await
+        .map_err(|e| format!("GitHub OAuth 登录失败: {}", e))?;
+
+    // 保存 Token 到 SQLite 加密存储（应用重启时用于恢复登录状态）
+    {
+        let token_info = crate::auth::token::TokenInfo {
+            access_token: response.access_token.clone(),
+            refresh_token: response.refresh_token.clone(),
+            expires_at: chrono::Utc::now().timestamp_millis() + response.expires_in * 1000,
+            user_id: response.user_id,
+        };
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        if let Err(e) = token_store.save_tokens(&conn, &token_info) {
+            error!("[auth_oauth_github] 保存 Token 到数据库失败: {}", e);
+        } else {
+            info!("[auth_oauth_github] 已保存 Token 到数据库 (user_id={})", response.user_id);
+        }
+    }
+
+    // 获取用户资料并保存到本地数据库
+    match api_client.get_profile().await {
+        Ok(profile) => {
+            let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+            let now = chrono::Utc::now().timestamp();
+            let _ = db_conn.execute(|conn| {
+                conn.execute("UPDATE local_users SET is_current = 0 WHERE is_current = 1", [])
+            });
+            let _ = db_conn.execute(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO local_users (user_id, email, display_name, is_current, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    rusqlite::params![profile.id, profile.email, profile.display_name, 1, now, now],
+                )
+            });
+        }
+        Err(e) => {
+            error!("[auth_oauth_github] 获取用户资料失败: {}, 清除已设置的 Token", e);
+            // 清除已设置的 Token，避免不一致状态
+            if let Some(proxy) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::ProxyApiClient>()
+            {
+                proxy.clear_inner_token().await;
+            } else if let Some(real_client) = api_client
+                .as_ref()
+                .as_any()
+                .downcast_ref::<crate::api::RealApiClient>()
+            {
+                real_client.clear_auth_token().await;
+            }
+            return Err(format!("GitHub OAuth 登录成功但获取用户信息失败: {}", e));
+        }
+    }
+
+    serde_json::to_value(&response).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 启动桌面端 Session 中转 OAuth 登录
+#[tauri::command]
+pub async fn auth_oauth_start(
+    provider: String,
+    app: tauri::AppHandle,
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<String, String> {
+    info!("[auth_oauth_start] 启动桌面端 OAuth 登录, provider: {}", provider);
+
+    // 获取 API 接口地址和平台地址
+    let (api_base_url, platform_url) = if let Some(proxy) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+    {
+        (proxy.get_base_url(), proxy.get_platform_url())
+    } else if let Some(real_client) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::RealApiClient>()
+    {
+        (real_client.base_url().to_string(), real_client.base_url().to_string())
+    } else {
+        return Err("无法获取 API 配置".to_string());
+    };
+
+    let cancel_token = tokio_util::sync::CancellationToken::new();
+
+    crate::auth::desktop_oauth::start_oauth(
+        &provider,
+        &api_base_url,
+        &platform_url,
+        app,
+        cancel_token,
+    )
+    .await
+}
+
+/// 退出登录
+#[tauri::command]
+pub async fn auth_logout(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), String> {
+    info!("[auth_logout] 退出登录");
+    let token_store = crate::auth::token::TokenStore::new();
+
+    // 从本地数据库获取当前用户 ID（删除 Token 需要）
+    let user_id: Option<i64> = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        conn.query_row(
+            "SELECT user_id FROM local_users WHERE is_current = 1 LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+    };
+
+    // 清除数据库中的加密 Token
+    if let Some(uid) = user_id {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        if let Err(e) = token_store.delete_tokens(&conn, uid) {
+            info!("[auth_logout] 删除 Token 失败 (可忽略): {}", e);
+        } else {
+            info!("[auth_logout] 已删除 Token (user_id={})", uid);
+        }
+    }
+
+    // 清除 API 客户端 Token
+    // 优先检查 ProxyApiClient（运行时切换模式），fallback 到 RealApiClient（直接模式）
+    if let Some(proxy) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+    {
+        proxy.clear_inner_token().await;
+    } else if let Some(real_client) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::RealApiClient>()
+    {
+        real_client.clear_auth_token().await;
+    }
+
+    // 清除本地数据库中的用户信息
+    let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+    let _ = db_conn.execute(|conn| {
+        conn.execute("UPDATE local_users SET is_current = 0 WHERE is_current = 1", [])
+    });
+
+    info!("[auth_logout] 退出登录成功");
+    Ok(())
+}
+
+/// 获取用户资料
+#[tauri::command]
+pub async fn auth_get_profile(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<serde_json::Value, String> {
+    info!("[auth_get_profile] 获取用户资料");
+    
+    let profile = api_client
+        .get_profile()
+        .await
+        .map_err(|e| {
+            error!("[auth_get_profile] 获取用户资料失败: {}", e);
+            format!("获取用户资料失败: {}", e)
+        })?;
+    serde_json::to_value(&profile).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 刷新 Token
+#[tauri::command]
+pub async fn auth_refresh_token(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<bool, String> {
+    info!("[auth_refresh_token] 刷新 Token");
+
+    // 尝试通过 get_profile 触发 HttpClient 自动刷新机制
+    match api_client.get_profile().await {
+        Ok(_) => {
+            info!("[auth_refresh_token] Token 有效或自动刷新成功");
+            Ok(true)
+        }
+        Err(e) => {
+            error!("[auth_refresh_token] Token 已失效: {}", e);
+            Ok(false)
+        }
+    }
+}
+
+/// 获取 RSA 公钥
+#[tauri::command]
+pub async fn auth_get_public_key(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<serde_json::Value, String> {
+    info!("[auth_get_public_key] 获取 RSA 公钥");
+    // 获取 API 接口地址
+    let base_url = if let Some(proxy) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+    {
+        proxy.get_base_url()
+    } else if let Some(real_client) = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::RealApiClient>()
+    {
+        real_client.base_url().to_string()
+    } else {
+        return Err("无法获取 API 接口地址".to_string());
+    };
+
+    let response = reqwest::get(&format!("{}/auth/public-key", base_url))
+        .await
+        .map_err(|e| format!("获取公钥失败: {}", e))?;
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("解析公钥响应失败: {}", e))?;
+    Ok(json)
+}
+
+// ============================================================
+// 云同步命令
+// ============================================================
+
+/// 启动同步
+///
+/// 执行完整的同步流程：
+/// 1. 从 sync_log 获取未同步的本地变更
+/// 2. 构建上传请求并调用 API（上传本地变更 + 拉取远端变更）
+/// 3. 将远端变更应用到本地 SQLite（使用事务）
+/// 4. 标记已同步的本地变更
+/// 5. 更新同步时间和 sync_token
+#[tauri::command]
+pub async fn cloud_sync_trigger(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<serde_json::Value, String> {
+    info!("[cloud_sync_trigger] 触发同步");
+
+    // 获取当前用户 ID
+    let user_id: i64 = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        conn.query_row(
+            "SELECT user_id FROM local_users WHERE is_current = 1 LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|_| "未找到当前登录用户，请先登录".to_string())?
+    };
+    info!("[cloud_sync_trigger] 当前用户: {}", user_id);
+
+    // 获取最后同步时间
+    let last_sync_at: Option<i64> = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let conn = db_conn.get_connection();
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'last_cloud_sync_at' LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|v| v.parse().ok())
+    };
+
+    // 步骤 1：从 sync_log 获取未同步的本地变更（同步块，不跨 await）
+    let (local_changes, upload_request) = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let executor = crate::sync_engine::sync::SyncExecutor::new(&db_conn, (*api_client).clone());
+
+        // 获取未同步变更
+        let local_changes = match executor.get_unsynced_changes(user_id) {
+            Ok(changes) => changes,
+            Err(e) => {
+                log::error!("获取未同步变更失败: {}", e);
+                return Ok(serde_json::json!({
+                    "success": false,
+                    "errors": [format!("获取未同步变更失败: {}", e)],
+                }));
+            }
+        };
+
+        log::info!("[cloud_sync_trigger] 本地未同步变更数量: {}", local_changes.len());
+
+        // 构建上传请求
+        let upload_request = executor.build_upload_request(local_changes.as_slice(), last_sync_at);
+
+        // 收集本地变更 ID（用于后续标记已同步）
+        let local_ids: Vec<i64> = local_changes.iter().map(|c| c.id).collect();
+
+        (local_ids, upload_request)
+    };
+    // db_conn 在此释放
+
+    // 步骤 2：调用 API 上传变更并拉取远端变更（async，不持有锁）
+    let download_response = match api_client.sync_upload(upload_request).await {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!("[cloud_sync_trigger] 上传变更失败: {}", e);
+            return Ok(serde_json::json!({
+                "success": false,
+                "errors": [format!("上传变更失败: {}", e)],
+            }));
+        }
+    };
+
+    let downloaded_count = download_response.server_changes.calendars.created.len()
+        + download_response.server_changes.calendars.updated.len()
+        + download_response.server_changes.calendars.deleted.len()
+        + download_response.server_changes.events.created.len()
+        + download_response.server_changes.events.updated.len()
+        + download_response.server_changes.events.deleted.len()
+        + download_response.server_changes.todos.created.len()
+        + download_response.server_changes.todos.updated.len()
+        + download_response.server_changes.todos.deleted.len();
+
+    log::info!(
+        "[cloud_sync_trigger] 上传成功，远端返回 {} 条变更，服务端时间: {}",
+        downloaded_count,
+        download_response.server_time
+    );
+
+    // 步骤 3：应用远端变更到本地 + 步骤 4：标记已同步（同步块）
+    let apply_conflicts = {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let executor = crate::sync_engine::sync::SyncExecutor::new(&db_conn, (*api_client).clone());
+
+        // 应用远端变更
+        let apply_result = executor.apply_server_changes(user_id, &download_response.server_changes);
+
+        // 标记本地变更为已同步
+        if !local_changes.is_empty() {
+            if let Err(e) = executor.mark_synced_batch(&local_changes) {
+                log::error!("[cloud_sync_trigger] 标记已同步失败: {}", e);
+            }
+        }
+
+        // 清理已同步的日志（避免 sync_log 无限增长）
+        if let Err(e) = executor.cleanup_synced(user_id) {
+            log::warn!("[cloud_sync_trigger] 清理已同步日志失败: {}", e);
+        }
+
+        apply_result
+    };
+
+    // 步骤 5：更新同步时间和 sync_token
+    {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let _ = db_conn.execute(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_cloud_sync_at', ?1)",
+                [download_response.server_time.to_string()],
+            )
+        });
+
+        if !download_response.sync_token.is_empty() {
+            let _ = db_conn.execute(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('cloud_sync_token', ?1)",
+                    [download_response.sync_token.clone()],
+                )
+            });
+        }
+    }
+
+    // 组装结果
+    match apply_conflicts {
+        Ok(conflicts) => {
+            log::info!(
+                "[cloud_sync_trigger] 同步完成: 上传={}, 下载={}, 冲突={}, 服务端时间={}",
+                local_changes.len(),
+                downloaded_count,
+                conflicts,
+                download_response.server_time
+            );
+            Ok(serde_json::json!({
+                "success": true,
+                "uploaded": local_changes.len(),
+                "downloaded": downloaded_count,
+                "conflicts": conflicts,
+                "serverTime": download_response.server_time,
+                "errors": Vec::<String>::new(),
+            }))
+        }
+        Err(e) => {
+            log::error!("[cloud_sync_trigger] 应用远端变更失败: {}", e);
+            Ok(serde_json::json!({
+                "success": false,
+                "uploaded": local_changes.len(),
+                "downloaded": downloaded_count,
+                "errors": [format!("应用远端变更失败: {}", e)],
+            }))
+        }
+    }
+}
+
+/// 获取同步状态
+///
+/// 从 sync_log 表获取真实的待同步变更数量
+#[tauri::command]
+pub async fn cloud_sync_get_status(
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<serde_json::Value, String> {
+    info!("[cloud_sync_get_status] 获取同步状态");
+
+    let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+    let conn = db_conn.get_connection();
+
+    let last_sync_at: Option<i64> = conn
+        .query_row(
+            "SELECT value FROM settings WHERE key = 'last_cloud_sync_at' LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|v| v.parse().ok());
+
+    // 获取当前用户 ID（用于查询该用户的待同步变更数）
+    let user_id: Option<i64> = conn
+        .query_row(
+            "SELECT user_id FROM local_users WHERE is_current = 1 LIMIT 1",
+            [],
+            |row| row.get(0),
+        )
+        .ok();
+
+    // 从 sync_log 获取待同步变更数量
+    let pending_changes: i64 = if let Some(uid) = user_id {
+        let tracker = crate::sync_engine::tracker::ChangeTracker::new(&db_conn);
+        tracker
+            .get_unsynced_by_user(uid)
+            .map(|entries| entries.len() as i64)
+            .unwrap_or(0)
+    } else {
+        0
+    };
+
+    Ok(serde_json::json!({
+        "status": "idle",
+        "lastSyncAt": last_sync_at,
+        "pendingChanges": pending_changes
+    }))
+}
+
+// ============================================================
+// API 配置命令
+// ============================================================
+
+/// 获取当前 API 配置
+#[tauri::command]
+pub async fn get_api_config(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<serde_json::Value, String> {
+    info!("[get_api_config] 获取 API 配置");
+
+    let proxy = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+        .ok_or("API 客户端不支持运行时配置查询")?;
+
+    let config = proxy.get_config();
+    serde_json::to_value(config).map_err(|e| format!("序列化失败: {}", e))
+}
+
+/// 切换 API 配置
+///
+/// 切换时会：
+/// 1. 清除旧客户端的认证 Token
+/// 2. 清除本地登录状态
+/// 3. 创建新客户端并替换
+/// 4. 持久化新配置到数据库
+#[tauri::command]
+pub async fn switch_api_config(
+    api_url: String,
+    platform_url: String,
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<serde_json::Value, String> {
+    info!("[switch_api_config] 切换 API 配置: api_url={}, platform_url={}", api_url, platform_url);
+
+    // 获取代理客户端
+    let proxy = api_client
+        .as_ref()
+        .as_any()
+        .downcast_ref::<crate::api::ProxyApiClient>()
+        .ok_or("API 客户端不支持运行时切换")?;
+
+    // 构建新配置
+    let new_config = crate::api::ApiConfig {
+        api_url: api_url.clone(),
+        platform_url: platform_url.clone(),
+        github_client_id: crate::api::ApiConfig::from_env().github_client_id,
+    };
+
+    // 切换客户端（内部会清理旧 Token）
+    proxy.switch(new_config.clone()).await;
+
+    // 清除本地登录状态并持久化新配置
+    {
+        let db_conn = db.lock().map_err(|e| format!("数据库锁获取失败: {}", e))?;
+        let _ = db_conn.execute(|conn| {
+            conn.execute("UPDATE local_users SET is_current = 0 WHERE is_current = 1", [])
+        });
+        // 持久化新配置到数据库
+        let conn = db_conn.get_connection();
+        let _ = new_config.save_to_db(&conn);
+    }
+
+    info!("[switch_api_config] API 配置切换完成: api_url={}", api_url);
+
+    serde_json::to_value(serde_json::json!({
+        "success": true,
+        "apiUrl": api_url,
+        "platformUrl": platform_url,
+    }))
+    .map_err(|e| format!("序列化失败: {}", e))
+}
+
+// ============================================================
+// 日志级别命令
+// ============================================================
+
+/// 获取当前日志级别
+#[tauri::command]
+pub fn get_log_level() -> Result<String, String> {
+    let level = crate::log_buffer::get_log_level();
+    Ok(format!("{:?}", level).to_lowercase())
+}
+
+/// 设置日志级别
+///
+/// 支持的级别: error, warn, info, debug, trace
+#[tauri::command]
+pub fn set_log_level(level: String) -> Result<String, String> {
+    let level_filter = match level.to_lowercase().as_str() {
+        "error" => log::LevelFilter::Error,
+        "warn" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        "off" => log::LevelFilter::Off,
+        _ => return Err(format!("无效的日志级别: {}，支持: error/warn/info/debug/trace/off", level)),
+    };
+    crate::log_buffer::set_log_level(level_filter);
+    info!("[set_log_level] 日志级别已切换为: {:?}", level_filter);
+    Ok(format!("{:?}", level_filter).to_lowercase())
 }
 
 // ==================== 时钟点击 Hook 相关命令 ====================
@@ -1477,6 +2598,7 @@ mod tests {
             server_url: "https://mail.example.com/EWS/Exchange.asmx".to_string(),
             username: "user@example.com".to_string(),
             encrypted_password: "encrypted_password_123".to_string(),
+            key_salt: "dGVzdHNhbHQ=".to_string(),
             display_name: "测试用户".to_string(),
             enabled: true,
             last_sync: Some(1700000000),
@@ -1921,4 +3043,287 @@ pub fn debug_get_logs() -> Vec<LogEntry> {
 pub fn debug_clear_logs() {
     crate::log_buffer::clear_logs();
     info!("[debug_clear_logs] 日志已清空");
+}
+
+// ==================== 日历同步命令 ====================
+
+/// 从服务端同步日历到本地
+///
+/// 调用 GET /calendars API 获取服务端日历列表，
+/// 然后使用 INSERT OR IGNORE 策略同步到本地 SQLite。
+///
+/// # 返回
+/// 成功返回 true，失败返回错误信息
+#[tauri::command]
+pub async fn sync_calendars_from_server(
+    db: State<'_, Mutex<DatabaseConnection>>,
+    api: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+) -> Result<bool, String> {
+    info!("开始从服务端同步日历");
+
+    // 1. 调用 API 获取服务端日历（在获取 DB 锁之前）
+    let server_calendars = api.get_calendars().await
+        .map_err(|e| {
+            error!("获取服务端日历失败: {}", e);
+            format!("获取服务端日历失败: {}", e)
+        })?;
+
+    info!("获取到 {} 个服务端日历", server_calendars.len());
+
+    // 2. 获取 DB 锁并同步日历
+    let db_conn = db.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    let calendar_repo = CalendarRepository::new(&db_conn);
+
+    let mut synced_count = 0;
+    for server_cal in server_calendars {
+        let req = CreateCalendarRequest {
+            name: server_cal.name.clone(),
+            color: server_cal.color.clone(),
+            type_: server_cal.r#type.clone(),
+            account_id: server_cal.account_id,
+            visible: server_cal.visible,
+            sync_enabled: server_cal.sync_enabled,
+            user_id: server_cal.user_id,
+            timezone: None,
+        };
+
+        // 使用 INSERT OR IGNORE 避免覆盖本地日历
+        match calendar_repo.insert_with_id(server_cal.id, &req) {
+            Ok(_) => {
+                synced_count += 1;
+                info!("同步日历成功: id={}, name={}", server_cal.id, server_cal.name);
+            }
+            Err(e) => {
+                error!("同步日历失败: id={}, error={}", server_cal.id, e);
+                // 继续同步其他日历，不中断
+            }
+        }
+    }
+
+    info!("日历同步完成: 共同步 {} 个日历", synced_count);
+    Ok(true)
+}
+
+// ============================================================
+// 日历账户身份切换命令
+// ============================================================
+
+/// 更新日历类型（登录/退出身份切换）
+///
+/// 将日历 type 从 'local' 切换为 'online'，或反向切换。
+/// 同时更新 sync_enabled 和 updated_at 字段。
+#[tauri::command]
+pub fn update_calendar_type(
+    id: i64,
+    cal_type: String,
+    sync_enabled: bool,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<DbCalendar, DatabaseError> {
+    info!("[update_calendar_type] 更新日历类型: id={}, type={}, sync_enabled={}", id, cal_type, sync_enabled);
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+    let repo = CalendarRepository::new(&db);
+    repo.update_calendar_type(id, &cal_type, sync_enabled)
+}
+
+/// 同步推送结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncPushResult {
+    /// 推送的记录数
+    pub pushed: usize,
+    /// 成功推送的记录数
+    pub succeeded: usize,
+    /// 失败的记录数
+    pub failed: usize,
+    /// 错误信息列表
+    pub errors: Vec<String>,
+}
+
+/// 记录待同步的本地变更
+///
+/// 将本地数据变更记录到 sync_log 表，用于后续增量同步。
+#[tauri::command]
+pub fn sync_record_pending(
+    action: String,
+    entity_type: String,
+    entity_id: String,
+    payload: String,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<(), DatabaseError> {
+    info!(
+        "[sync_record_pending] 记录变更: action={}, entity_type={}, entity_id={}",
+        action, entity_type, entity_id
+    );
+
+    // 解析 entity_id 为 i64
+    let entity_id: i64 = entity_id
+        .parse()
+        .map_err(|e| DatabaseError::QueryError {
+            message: format!("entity_id 解析失败: {}", e),
+        })?;
+
+    let db = db.lock().map_err(|_| DatabaseError::ConnectionError {
+        message: "数据库连接锁获取失败".to_string(),
+    })?;
+
+    // 获取当前用户 ID
+    let user_id = get_current_user_id(&*db.get_connection());
+
+    // 创建同步日志
+    let repo = crate::db::repositories::sync_log::SyncLogRepository::new(&db);
+    let params = crate::db::repositories::sync_log::CreateSyncLogParams {
+        user_id,
+        entity_type,
+        entity_id,
+        action,
+        payload,
+    };
+
+    repo.create(&params)?;
+
+    info!("[sync_record_pending] 变更记录成功");
+    Ok(())
+}
+
+/// 推送待同步的本地变更到远端
+///
+/// 从 sync_log 表获取未同步的记录，调用远端 API 上传变更并拉取远端变更。
+/// 复用 SyncExecutor 的核心同步逻辑，与 cloud_sync_trigger 一致。
+#[tauri::command]
+pub async fn sync_push_pending(
+    api_client: State<'_, std::sync::Arc<dyn crate::api::CalendarApi>>,
+    db: State<'_, Mutex<DatabaseConnection>>,
+) -> Result<SyncPushResult, DatabaseError> {
+    info!("[sync_push_pending] 开始推送待同步变更");
+
+    // 获取当前用户 ID
+    let user_id: Option<i64> = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let user_id = get_current_user_id(&*db_conn.get_connection());
+        user_id
+    };
+
+    let Some(uid) = user_id else {
+        info!("[sync_push_pending] 无当前登录用户，跳过推送");
+        return Ok(SyncPushResult {
+            pushed: 0,
+            succeeded: 0,
+            failed: 0,
+            errors: vec!["无当前登录用户".to_string()],
+        });
+    };
+
+    // 获取最后同步时间
+    let last_sync_at: Option<i64> = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let conn = db_conn.get_connection();
+        conn.query_row(
+            "SELECT value FROM settings WHERE key = 'last_cloud_sync_at' LIMIT 1",
+            [],
+            |row| row.get::<_, String>(0),
+        )
+        .ok()
+        .and_then(|v| v.parse().ok())
+    };
+
+    // 步骤 1：从 sync_log 获取未同步的本地变更（同步块，不跨 await）
+    let (local_ids, upload_request) = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let executor = crate::sync_engine::sync::SyncExecutor::new(&db_conn, (*api_client).clone());
+
+        let local_changes = executor.get_unsynced_changes(uid)?;
+
+        if local_changes.is_empty() {
+            info!("[sync_push_pending] 无待同步变更");
+            return Ok(SyncPushResult {
+                pushed: 0,
+                succeeded: 0,
+                failed: 0,
+                errors: vec![],
+            });
+        }
+
+        info!("[sync_push_pending] 发现 {} 条待同步变更", local_changes.len());
+
+        let upload_request = executor.build_upload_request(local_changes.as_slice(), last_sync_at);
+        let local_ids: Vec<i64> = local_changes.iter().map(|c| c.id).collect();
+
+        (local_ids, upload_request)
+    };
+
+    let pushed_count = local_ids.len();
+
+    // 步骤 2：调用 API 上传变更并拉取远端变更（async，不持有锁）
+    let download_response = match api_client.sync_upload(upload_request).await {
+        Ok(response) => response,
+        Err(e) => {
+            log::error!("[sync_push_pending] 上传变更失败: {}", e);
+            return Ok(SyncPushResult {
+                pushed: pushed_count,
+                succeeded: 0,
+                failed: pushed_count,
+                errors: vec![format!("上传变更失败: {}", e)],
+            });
+        }
+    };
+
+    // 步骤 3：应用远端变更 + 标记已同步（同步块）
+    let succeeded = {
+        let db_conn = db.lock().map_err(|_| DatabaseError::ConnectionError {
+            message: "数据库连接锁获取失败".to_string(),
+        })?;
+        let executor = crate::sync_engine::sync::SyncExecutor::new(&db_conn, (*api_client).clone());
+
+        // 应用远端变更
+        if let Err(e) = executor.apply_server_changes(uid, &download_response.server_changes) {
+            log::error!("[sync_push_pending] 应用远端变更失败: {}", e);
+        }
+
+        // 标记本地变更为已同步
+        let succeeded = executor.mark_synced_batch(&local_ids).unwrap_or(0);
+
+        // 清理已同步的日志
+        if let Err(e) = executor.cleanup_synced(uid) {
+            log::warn!("[sync_push_pending] 清理已同步日志失败: {}", e);
+        }
+
+        // 更新同步时间
+        let _ = db_conn.execute(|conn| {
+            conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES ('last_cloud_sync_at', ?1)",
+                [download_response.server_time.to_string()],
+            )
+        });
+
+        // 更新同步令牌
+        if !download_response.sync_token.is_empty() {
+            let _ = db_conn.execute(|conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES ('cloud_sync_token', ?1)",
+                    [download_response.sync_token.clone()],
+                )
+            });
+        }
+
+        succeeded
+    };
+
+    info!(
+        "[sync_push_pending] 推送完成: 推送={}, 成功={}",
+        pushed_count, succeeded
+    );
+
+    Ok(SyncPushResult {
+        pushed: pushed_count,
+        succeeded,
+        failed: pushed_count - succeeded,
+        errors: vec![],
+    })
 }

@@ -13,10 +13,9 @@ import {
   loadCustomHolidays
 } from '@/utils/holidayStorage'
 
-// 模拟 settingsService，使数据库不可用，测试 localStorage 降级路径
 vi.mock('@/services/settings', () => ({
-  isDatabaseAvailable: vi.fn().mockResolvedValue(false),
-  getAllUserHolidays: vi.fn().mockResolvedValue([]),
+  isDatabaseAvailable: vi.fn(() => false),
+  getUserHolidays: vi.fn().mockResolvedValue([]),
   addUserHoliday: vi.fn().mockResolvedValue(undefined),
   removeUserHoliday: vi.fn().mockResolvedValue(false),
   loadFromLocalStorage: vi.fn((key: string) => localStorage.getItem(key)),

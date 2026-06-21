@@ -30,7 +30,7 @@ export interface Calendar {
   id: string
   name: string
   color: string
-  type: 'local' | 'exchange' | 'caldav'
+  type: 'local' | 'online' | 'exchange' | 'caldav'
   accountId?: string
   // 外部日历的账号信息
   accountType?: string
@@ -56,6 +56,7 @@ export interface Todo {
   completed: boolean
   priority: 'low' | 'medium' | 'high'
   calendarId: string
+  externalId?: string  // 外部系统 ID（远端同步时用于关联本地与远端记录）
   createdAt: number
   updatedAt: number
 }

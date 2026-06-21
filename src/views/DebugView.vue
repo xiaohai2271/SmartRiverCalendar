@@ -22,6 +22,16 @@
       <div class="section-header">
         <h3>日志导出</h3>
         <div class="log-controls">
+          <div class="log-level-control">
+            <label>日志级别</label>
+            <select v-model="logLevel" @change="handleLogLevelChange" class="log-source-select">
+              <option value="error">Error</option>
+              <option value="warn">Warn</option>
+              <option value="info">Info</option>
+              <option value="debug">Debug</option>
+              <option value="trace">Trace</option>
+            </select>
+          </div>
           <select v-model="logSource" @change="refreshLogs" class="log-source-select">
             <option value="all">全部日志</option>
             <option value="frontend">前端日志</option>
@@ -166,6 +176,98 @@
       </div>
     </div>
 
+    <!-- API 配置 -->
+    <div v-if="activeTab === 'api'" class="debug-section">
+      <div class="section-header">
+        <h3>API 配置</h3>
+      </div>
+      <div class="api-config-content">
+        <div class="setting-item" style="margin-bottom: 12px;">
+          <button class="action-btn" @click="fillDefaultApiConfig" style="width: auto; padding: 6px 16px;">
+            线上环境
+          </button>
+          <span style="margin-left: 8px; color: var(--neutral-foreground-secondary); font-size: 12px;">一键填入默认线上地址</span>
+        </div>
+        <div class="setting-item">
+          <label>API 接口地址</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input
+              v-model="apiConfig.apiUrl"
+              type="text"
+              class="api-url-input"
+              placeholder="https://calendar.menghuan.life/api"
+              style="flex: 1;"
+            />
+            <button
+              class="action-btn"
+              @click="checkApiConnectivity('api')"
+              :disabled="connectivityChecking === 'api'"
+              style="width: auto; padding: 4px 12px; font-size: 12px;"
+            >
+              {{ connectivityChecking === 'api' ? '⏳' : connectivityResults.apiUrl?.reachable === true ? '✅' : connectivityResults.apiUrl?.reachable === false ? '❌' : '检查连接' }}
+            </button>
+          </div>
+          <div v-if="connectivityResults.apiUrl" style="font-size: 11px; margin-top: 4px;">
+            <span v-if="connectivityResults.apiUrl.reachable" style="color: var(--green);">
+              可达 ({{ connectivityResults.apiUrl.latencyMs }}ms)
+            </span>
+            <span v-else style="color: var(--red);">
+              不可达: {{ connectivityResults.apiUrl.error }}
+            </span>
+          </div>
+        </div>
+        <div class="setting-item">
+          <label>平台地址（OAuth 跳转）</label>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <input
+              v-model="apiConfig.platformUrl"
+              type="text"
+              class="api-url-input"
+              placeholder="https://calendar.menghuan.life"
+              style="flex: 1;"
+            />
+            <button
+              class="action-btn"
+              @click="checkApiConnectivity('platform')"
+              :disabled="connectivityChecking === 'platform'"
+              style="width: auto; padding: 4px 12px; font-size: 12px;"
+            >
+              {{ connectivityChecking === 'platform' ? '⏳' : connectivityResults.platformUrl?.reachable === true ? '✅' : connectivityResults.platformUrl?.reachable === false ? '❌' : '检查连接' }}
+            </button>
+          </div>
+          <div v-if="connectivityResults.platformUrl" style="font-size: 11px; margin-top: 4px;">
+            <span v-if="connectivityResults.platformUrl.reachable && connectivityResults.platformUrl.keywordFound" style="color: var(--green);">
+              可达，已验证 ({{ connectivityResults.platformUrl.latencyMs }}ms)
+            </span>
+            <span v-else-if="connectivityResults.platformUrl.reachable && connectivityResults.platformUrl.keywordFound === false" style="color: #f0a030;">
+              可达但未检测到"小河日历"，请确认地址 ⚠️
+            </span>
+            <span v-else-if="connectivityResults.platformUrl.reachable" style="color: var(--green);">
+              可达 ({{ connectivityResults.platformUrl.latencyMs }}ms)
+            </span>
+            <span v-else style="color: var(--red);">
+              不可达: {{ connectivityResults.platformUrl.error }}
+            </span>
+          </div>
+        </div>
+        <div class="api-config-actions">
+          <button
+            class="action-btn"
+            @click="handleSwitchApiConfig"
+            :disabled="switchingApi"
+          >
+            {{ switchingApi ? '应用中...' : '应用配置' }}
+          </button>
+        </div>
+        <div v-if="apiConfigMessage" :class="['config-message', apiConfigMessageType]">
+          {{ apiConfigMessage }}
+        </div>
+        <div class="config-warning">
+          ⚠️ 切换地址会清除当前登录状态和 Token，需要重新登录
+        </div>
+      </div>
+    </div>
+
     <!-- 存储信息对话框 -->
     <div v-if="showStorageDialog" class="dialog-overlay" @click.self="showStorageDialog = false">
       <div class="dialog">
@@ -189,7 +291,7 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { useRouter } from 'vue-router'
-import { isTauri, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs } from '../utils/tauri'
+import { isTauri, debugGetTableSchema, debugGetTableData, debugOpenDevTools, debugGetLogs, debugClearLogs, getApiConfig, switchApiConfig, getLogLevel, setLogLevel } from '../utils/tauri'
 import { startLogCapture, stopLogCapture } from '../utils/logger'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeTextFile } from '@tauri-apps/plugin-fs'
@@ -201,7 +303,8 @@ const tabs = [
   { id: 'logs', name: '日志' },
   { id: 'schema', name: '表结构' },
   { id: 'data', name: '数据' },
-  { id: 'devtools', name: '开发工具' }
+  { id: 'devtools', name: '开发工具' },
+  { id: 'api', name: 'API 配置' }
 ]
 
 const activeTab = ref('logs')
@@ -216,6 +319,7 @@ interface LogEntry {
 const logs = ref<LogEntry[]>([])
 const exporting = ref(false)
 const logSource = ref<'all' | 'frontend' | 'backend'>('all')
+const logLevel = ref('info')
 
 // 数据库结构相关
 interface ColumnInfo {
@@ -256,6 +360,105 @@ const platform = ref('')
 // 存储信息
 const showStorageDialog = ref(false)
 const storageInfo = ref<Record<string, number>>({})
+
+// API 配置相关
+const apiConfig = reactive({
+  apiUrl: 'https://calendar.menghuan.life/api',
+  platformUrl: 'https://calendar.menghuan.life',
+})
+const switchingApi = ref(false)
+const apiConfigMessage = ref('')
+const apiConfigMessageType = ref<'success' | 'error'>('success')
+const connectivityChecking = ref<'api' | 'platform' | null>(null)
+const connectivityResults = reactive<{
+  apiUrl: { reachable: boolean; latencyMs: number | null; error: string | null; keywordFound: boolean | null } | null
+  platformUrl: { reachable: boolean; latencyMs: number | null; error: string | null; keywordFound: boolean | null } | null
+}>({ apiUrl: null, platformUrl: null })
+
+// 一键填入线上默认地址
+function fillDefaultApiConfig() {
+  apiConfig.apiUrl = 'https://calendar.menghuan.life/api'
+  apiConfig.platformUrl = 'https://calendar.menghuan.life'
+}
+
+// 检查连通性
+async function checkApiConnectivity(target: 'api' | 'platform') {
+  connectivityChecking.value = target
+  try {
+    const { checkConnectivity } = await import('../utils/connectivity')
+    const result = await checkConnectivity(apiConfig.apiUrl, apiConfig.platformUrl)
+    connectivityResults.apiUrl = result.apiUrl
+    connectivityResults.platformUrl = result.platformUrl
+  } catch (err) {
+    console.error('连通性检查失败:', err)
+  } finally {
+    connectivityChecking.value = null
+  }
+}
+
+// 加载 API 配置
+async function loadApiConfig() {
+  if (!isTauri()) return
+  try {
+    const config = await getApiConfig()
+    if (config) {
+      apiConfig.apiUrl = config.apiUrl
+      apiConfig.platformUrl = config.platformUrl
+    }
+  } catch (error) {
+    console.error('获取 API 配置失败:', error)
+  }
+}
+
+// 切换 API 配置
+async function handleSwitchApiConfig() {
+  // 校验地址格式
+  const urlPattern = /^https?:\/\/.+/
+  if (!urlPattern.test(apiConfig.apiUrl)) {
+    apiConfigMessage.value = 'API 接口地址格式不正确，需以 http:// 或 https:// 开头'
+    apiConfigMessageType.value = 'error'
+    return
+  }
+  if (!urlPattern.test(apiConfig.platformUrl)) {
+    apiConfigMessage.value = '平台地址格式不正确，需以 http:// 或 https:// 开头'
+    apiConfigMessageType.value = 'error'
+    return
+  }
+  // 自动去除尾部斜杠
+  apiConfig.apiUrl = apiConfig.apiUrl.replace(/\/+$/, '')
+  apiConfig.platformUrl = apiConfig.platformUrl.replace(/\/+$/, '')
+
+  const confirmed = confirm(
+    '确定要应用新的 API 配置吗？\n\n' +
+    '切换后会：\n' +
+    '• 清除当前登录状态\n' +
+    '• 清除缓存的 Token\n' +
+    '• 需要重新登录\n\n' +
+    `API 接口地址: ${apiConfig.apiUrl}\n` +
+    `平台地址: ${apiConfig.platformUrl}\n\n` +
+    '是否继续？'
+  )
+  if (!confirmed) return
+
+  switchingApi.value = true
+  apiConfigMessage.value = ''
+
+  try {
+    const result = await switchApiConfig(apiConfig.apiUrl, apiConfig.platformUrl)
+    if (result?.success) {
+      apiConfigMessage.value = '配置已应用'
+      apiConfigMessageType.value = 'success'
+    } else {
+      apiConfigMessage.value = '应用配置失败'
+      apiConfigMessageType.value = 'error'
+    }
+  } catch (error) {
+    apiConfigMessage.value = `应用失败: ${error instanceof Error ? error.message : String(error)}`
+    apiConfigMessageType.value = 'error'
+  } finally {
+    switchingApi.value = false
+  }
+}
 
 // 返回设置页面
 function goBack() {
@@ -360,6 +563,17 @@ async function clearLogs() {
   }
   
   logs.value = []
+}
+
+// 处理日志级别变更
+async function handleLogLevelChange() {
+  if (!isTauri()) return
+  try {
+    await setLogLevel(logLevel.value)
+    console.log(`[DebugView] 日志级别已切换为: ${logLevel.value}`)
+  } catch (error) {
+    console.error('设置日志级别失败:', error)
+  }
 }
 
 // ==================== 数据库结构功能 ====================
@@ -585,15 +799,28 @@ onMounted(async () => {
   // 启用前端日志捕获
   startLogCapture()
   console.log('[DebugView] 调试页面已打开')
-  
+
   // 刷新日志
   refreshLogs()
-  
+
   // 加载表结构
   await loadSchema()
-  
+
   // 获取平台信息
   platform.value = navigator.platform
+
+  // 加载 API 配置
+  await loadApiConfig()
+
+  // 加载日志级别
+  if (isTauri()) {
+    try {
+      const level = await getLogLevel()
+      if (level) logLevel.value = level
+    } catch {
+      // 忽略
+    }
+  }
 })
 
 onUnmounted(() => {
@@ -783,6 +1010,18 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
+}
+
+.log-level-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.log-level-control label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .log-source-select {
@@ -1073,5 +1312,75 @@ onUnmounted(() => {
   border-radius: var(--radius-md);
   font-size: 13px;
   margin-bottom: 16px;
+}
+
+/* API 配置 */
+.api-config-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.mode-badge {
+  font-size: 12px;
+  padding: 4px 12px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.mode-badge.mock {
+  background: #f59e0b;
+  color: white;
+}
+
+.mode-badge.real {
+  background: #22c55e;
+  color: white;
+}
+
+.api-mode-select,
+.api-url-input {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.api-url-input {
+  flex: 1;
+  min-width: 300px;
+}
+
+.api-config-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.config-message {
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  font-size: 13px;
+}
+
+.config-message.success {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.config-message.error {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.config-warning {
+  font-size: 12px;
+  color: var(--text-secondary);
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-md);
+  border-left: 3px solid #f59e0b;
 }
 </style>

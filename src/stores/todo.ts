@@ -1,13 +1,9 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { Todo } from '../types'
-import {
-  invokeGetTodos,
-  invokeCreateTodo,
-  invokeUpdateTodo,
-  invokeDeleteTodo
-} from '../utils/tauri'
+import { usePlatform } from '@/platform/provider'
 import { useCalendarStore } from './calendar'
+import { getValidCalendarId } from '@/utils/calendar-helpers'
 
 export const useTodoStore = defineStore('todo', () => {
   const todos = ref<Todo[]>([])
@@ -17,7 +13,8 @@ export const useTodoStore = defineStore('todo', () => {
     if (isInitialized.value) return
 
     try {
-      const loadedTodos = await invokeGetTodos()
+      const { todoRepo } = usePlatform()
+      const loadedTodos = await todoRepo.getAll()
       todos.value = loadedTodos
       isInitialized.value = true
       console.log('Todo store initialized:', todos.value.length)
@@ -29,38 +26,13 @@ export const useTodoStore = defineStore('todo', () => {
   const pendingTodos = computed(() => todos.value.filter(t => !t.completed))
   const completedTodos = computed(() => todos.value.filter(t => t.completed))
 
-  /**
-   * 获取有效的日历 ID
-   * 如果传入的 calendarId 无效（无法解析为数字），则从 calendarStore 获取第一个可用日历的 ID
-   */
-  function getValidCalendarId(calendarId: string | undefined): number {
-    if (calendarId) {
-      const parsed = parseInt(calendarId)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-    
-    // 从 calendarStore 获取第一个可用日历
-    const calendarStore = useCalendarStore()
-    const firstCalendar = calendarStore.calendars[0]
-    if (firstCalendar) {
-      const parsed = parseInt(firstCalendar.id)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-    
-    // 如果仍然无法获取，返回 1（但这可能导致外键约束失败）
-    console.warn('[TodoStore] 无法获取有效的日历 ID，使用默认值 1')
-    return 1
-  }
-
   async function addTodo(todo: Omit<Todo, 'id' | 'createdAt' | 'updatedAt'>) {
+    const { todoRepo } = usePlatform()
     // 获取有效的日历 ID
-    const calendarId = getValidCalendarId(todo.calendarId)
+    const calendarStore = useCalendarStore()
+    const calendarId = getValidCalendarId(todo.calendarId, calendarStore.calendars)
     
-    const created = await invokeCreateTodo({
+    const created = await todoRepo.create({
       title: todo.title,
       description: todo.description,
       dueDate: todo.dueDate,
@@ -69,12 +41,8 @@ export const useTodoStore = defineStore('todo', () => {
       calendarId
     })
     
-    if (created) {
-      todos.value.push(created)
-      console.log('Todo created:', created.id)
-    } else {
-      console.error('Failed to create todo')
-    }
+    todos.value.push(created)
+    console.log('Todo created:', created.id)
   }
 
   async function updateTodo(id: string, updates: Partial<Todo>) {
@@ -83,7 +51,8 @@ export const useTodoStore = defineStore('todo', () => {
       const todoId = parseInt(id)
       
       if (!isNaN(todoId)) {
-        const updated = await invokeUpdateTodo({
+        const { todoRepo } = usePlatform()
+        const updated = await todoRepo.update({
           id: todoId,
           title: updates.title,
           description: updates.description,
@@ -96,12 +65,8 @@ export const useTodoStore = defineStore('todo', () => {
           })() : undefined
         })
         
-        if (updated) {
-          todos.value[index] = updated
-          console.log('Todo updated:', id)
-        } else {
-          console.error('Failed to update todo:', id)
-        }
+        todos.value[index] = updated
+        console.log('Todo updated:', id)
       } else {
         // 临时 ID，仅更新本地状态
         todos.value[index] = {
@@ -124,11 +89,27 @@ export const useTodoStore = defineStore('todo', () => {
     const todoId = parseInt(id)
     
     if (!isNaN(todoId)) {
-      await invokeDeleteTodo(todoId)
+      const { todoRepo } = usePlatform()
+      await todoRepo.delete(todoId)
     }
     
     todos.value = todos.value.filter(t => t.id !== id)
     console.log('Todo deleted:', id)
+  }
+
+  /**
+   * 从数据库重新加载数据
+   * 同步完成后调用，将远端变更刷新到前端 Store
+   */
+  async function reloadFromDatabase(): Promise<void> {
+    try {
+      const { todoRepo } = usePlatform()
+      const loadedTodos = await todoRepo.getAll()
+      todos.value = loadedTodos
+      console.log('[TodoStore] 数据已从数据库重新加载:', todos.value.length)
+    } catch (error) {
+      console.error('[TodoStore] 重新加载数据失败:', error)
+    }
   }
 
   return {
@@ -137,6 +118,7 @@ export const useTodoStore = defineStore('todo', () => {
     pendingTodos,
     completedTodos,
     initialize,
+    reloadFromDatabase,
     addTodo,
     updateTodo,
     toggleTodo,

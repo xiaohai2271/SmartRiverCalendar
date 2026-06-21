@@ -11,6 +11,8 @@
         v-for="(day, index) in monthDays"
         :key="index"
         class="day-cell"
+        data-testid="day-cell"
+        :data-date="formatDateStr(day)"
         :class="{
           'other-month': !isSameMonth(day, currentDate),
           'today': isToday(day),
@@ -188,6 +190,13 @@ const lunarInfoCache = computed(() => {
 
 function isSameMonth(date: Date, compareDate: Date): boolean {
   return date.getMonth() === compareDate.getMonth() && date.getFullYear() === compareDate.getFullYear()
+}
+
+function formatDateStr(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
 }
 
 function isToday(date: Date): boolean {

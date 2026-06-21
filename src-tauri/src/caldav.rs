@@ -7,11 +7,11 @@
 
 #![allow(dead_code)]
 
-use log::{info, error, warn};
+use log::{info, error};
 use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION, CONTENT_TYPE};
 use quick_xml::events::Event;
-use quick_xml::Reader;
 use chrono::{TimeZone, Utc};
+use crate::xml_utils::{create_safe_reader, validate_xml_size};
 use serde::Serialize;
 
 /// 日历信息结构体
@@ -277,8 +277,8 @@ impl CalDavClient {
     fn parse_principal_url(&self, xml: &str) -> Result<String, String> {
         info!("[CalDAV Client] parse_principal_url: 开始解析 XML, 长度={}", xml.len());
         
-        let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        validate_xml_size(xml)?;
+        let mut reader = create_safe_reader(xml);
 
         let mut in_href = false;
         let mut in_current_user_principal = false;
@@ -434,8 +434,8 @@ impl CalDavClient {
     fn parse_calendar_home_set(&self, xml: &str) -> Result<String, String> {
         info!("[CalDAV Client] parse_calendar_home_set: 开始解析 XML, 长度={}", xml.len());
         
-        let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        validate_xml_size(xml)?;
+        let mut reader = create_safe_reader(xml);
 
         let mut in_href = false;
         let mut in_calendar_home_set = false;
@@ -661,8 +661,8 @@ impl CalDavClient {
     fn parse_calendars(&self, xml: &str, base_url: &str) -> Result<Vec<CalendarInfo>, String> {
         info!("[CalDAV Client] parse_calendars: 开始解析 XML, 长度={}, base_url={}", xml.len(), base_url);
         
-        let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        validate_xml_size(xml)?;
+        let mut reader = create_safe_reader(xml);
 
         let mut calendars = Vec::new();
         let mut current_href = String::new();
@@ -990,11 +990,11 @@ impl CalDavClient {
 
     /// 解析 calendar-multiget 响应
     fn parse_multiget_response(&self, xml: &str) -> Result<Vec<EventInfo>, String> {
-        let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        validate_xml_size(xml)?;
+        let mut reader = create_safe_reader(xml);
 
         let mut events = Vec::new();
-        let mut in_response = false;
+        let mut _in_response = false;
         let mut in_href = false;
         let mut in_calendar_data = false;
         let mut current_href = String::new();
@@ -1005,7 +1005,7 @@ impl CalDavClient {
                 Ok(Event::Start(ref e)) => {
                     match e.local_name().as_ref() {
                         b"response" => {
-                            in_response = true;
+                             _in_response = true;
                             current_href.clear();
                             current_ical.clear();
                         }
@@ -1061,7 +1061,7 @@ impl CalDavClient {
                             current_ical.clear();
                         }
                         b"response" => {
-                            in_response = false;
+                             _in_response = false;
                         }
                         _ => {}
                     }
@@ -1116,8 +1116,8 @@ impl CalDavClient {
     fn parse_events_refs(&self, xml: &str, calendar_url: &str) -> Result<Vec<EventRef>, String> {
         info!("[CalDAV] parse_events_refs: 开始解析 XML, 长度={}", xml.len());
         
-        let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        validate_xml_size(xml)?;
+        let mut reader = create_safe_reader(xml);
 
         let mut event_refs = Vec::new();
         let mut current_href = String::new();
@@ -1260,8 +1260,8 @@ impl CalDavClient {
     ///
     /// 从 REPORT calendar-query 响应中解析事件列表
     fn parse_events_response(&self, xml: &str) -> Result<Vec<EventInfo>, String> {
-        let mut reader = Reader::from_str(xml);
-        reader.config_mut().trim_text(true);
+        validate_xml_size(xml)?;
+        let mut reader = create_safe_reader(xml);
 
         let mut events = Vec::new();
         let mut in_calendar_data = false;
@@ -1669,11 +1669,11 @@ impl CalDavClient {
         let mut lines: Vec<String> = original.lines().map(|s| s.to_string()).collect();
         
         // 需要更新的字段
-        let mut update_summary = true;
-        let mut update_description = event.description.is_some();
-        let mut update_dtstart = true;
-        let mut update_dtend = true;
-        let mut update_location = event.location.is_some();
+        let update_summary = true;
+        let update_description = event.description.is_some();
+        let update_dtstart = true;
+        let update_dtend = true;
+        let update_location = event.location.is_some();
         
         // 时间格式转换
         let start_dt = Utc.timestamp_opt(event.start_time, 0).single()

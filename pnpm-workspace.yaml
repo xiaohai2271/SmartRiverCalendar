@@ -1,0 +1,8 @@
+allowBuilds:
+  '@parcel/watcher': true
+  edgedriver: true
+  esbuild: true
+  geckodriver: true
+  sharp: true
+overrides:
+  nanoid: 3.3.11

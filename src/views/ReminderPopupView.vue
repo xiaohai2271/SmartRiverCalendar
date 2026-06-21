@@ -16,7 +16,7 @@ import { onSettingsChange } from '@/utils/broadcast'
 import { getCurrentWebviewWindow, WebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { listen, emit as tauriEmit } from '@tauri-apps/api/event'
 import { useSettingsStore } from '@/stores/settings'
-import * as settingsService from '@/services/settings'
+import { usePlatform } from '@/platform/provider'
 import { positionReminderWindow } from '@/composables/useReminderPopup'
 import ReminderPopup from '@/components/reminder/ReminderPopup.vue'
 import type { ReminderPopupData } from '@/components/reminder/ReminderPopup.vue'
@@ -47,12 +47,11 @@ let unlistenSettings: (() => void) | null = null
 async function applyPopupTheme(theme?: 'light' | 'dark' | 'auto') {
   let targetTheme: 'light' | 'dark' | 'auto' | undefined = theme
   if (!targetTheme) {
-    // 从数据库读取最新的主题设置
     try {
-      const dbValue = await settingsService.getSetting('app.theme')
-      targetTheme = dbValue ? (JSON.parse(dbValue) as 'light' | 'dark' | 'auto') : 'light'
+      const { settingsRepo } = usePlatform()
+      const appSettings = await settingsRepo.loadAppSettings()
+      targetTheme = appSettings.theme
     } catch {
-      // 数据库读取失败，使用 settingsStore 作为降级
       targetTheme = settingsStore.settings.theme
     }
   }
