@@ -62,7 +62,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: 安装 Playwright 浏览器
-        run: pnpm exec playwright install chromium --with-deps
+        run: npx playwright install chromium --with-deps
 
       - name: 运行 E2E 测试
         run: pnpm e2e
