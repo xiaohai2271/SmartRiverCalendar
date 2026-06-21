@@ -22,17 +22,16 @@ export const useCalendarStore = defineStore('calendar', () => {
     try {
       const { calendarRepo, eventRepo } = usePlatform()
 
-      // 从 localStorage 加载默认视图设置
+      // 通过 settingsStore 获取默认视图设置
       try {
-        const storedSettings = localStorage.getItem('app-settings')
-        if (storedSettings) {
-          const settings = JSON.parse(storedSettings)
-          if (settings.defaultView) {
-            currentView.value = settings.defaultView
-          }
+        const { useSettingsStore } = await import('./settings')
+        const settingsStore = useSettingsStore()
+        const defaultView = settingsStore.settings?.defaultView
+        if (defaultView) {
+          currentView.value = defaultView
         }
       } catch (e) {
-        console.error('Failed to load default view setting:', e)
+        console.warn('[CalendarStore] 无法加载默认视图设置:', e)
       }
 
       // 1. 加载日历数据

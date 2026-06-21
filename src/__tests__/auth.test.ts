@@ -11,6 +11,7 @@ const mockAuthRepo = {
   checkAuthStatus: vi.fn(),
   refreshToken: vi.fn(),
   getPublicKey: vi.fn(),
+  loginWithOAuth: vi.fn(),
 }
 
 // Mock syncRepo
@@ -69,16 +70,10 @@ vi.mock('@/services/rsa', () => ({
   clearCachedPublicKey: vi.fn(),
 }))
 
-// Mock safeInvoke（OAuth 用）
-vi.mock('@/utils/tauri', () => ({
-  safeInvoke: vi.fn(),
-  isTauri: vi.fn(() => true),
-}))
-
 describe('auth Store', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
     setActivePinia(createPinia())
+    vi.clearAllMocks()
   })
 
   describe('初始状态', () => {
@@ -292,12 +287,11 @@ describe('auth Store', () => {
         displayName: 'GitHub 用户',
         provider: 'github' as const,
       }
-      const { safeInvoke } = await import('@/utils/tauri')
-      vi.mocked(safeInvoke).mockResolvedValueOnce({
-        user_id: 1,
-        access_token: 'access-token',
-        refresh_token: 'refresh-token',
-        expires_in: 3600,
+      mockAuthRepo.loginWithOAuth.mockResolvedValueOnce({
+        userId: 1,
+        accessToken: 'access-token',
+        refreshToken: 'refresh-token',
+        expiresIn: 3600,
       })
       mockAuthRepo.getCurrentUser.mockResolvedValueOnce(mockUser)
 
@@ -306,7 +300,8 @@ describe('auth Store', () => {
 
       const result = await store.loginWithGithub('client-id', 'http://localhost/callback')
 
-      expect(safeInvoke).toHaveBeenCalledWith('auth_oauth_github', {
+      expect(mockAuthRepo.loginWithOAuth).toHaveBeenCalledWith({
+        provider: 'github',
         clientId: 'client-id',
         redirectUri: 'http://localhost/callback',
       })
