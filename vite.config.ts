@@ -75,7 +75,7 @@ export default defineConfig({
     exclude: []
   },
   build: {
-    target: ['es2021', 'chrome100', 'safari13'],
+    target: ['es2022', 'chrome100', 'safari15'],
     minify: !process.env.TAURI_DEBUG ? 'esbuild' : false,
     sourcemap: !!process.env.TAURI_DEBUG,
     // 代码分割优化配置
