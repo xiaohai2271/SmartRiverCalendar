@@ -163,7 +163,7 @@ describe('设置服务 (SettingsService)', () => {
   describe('getUserHolidays', () => {
     it('应该委托给 settingsRepo.getUserHolidays', async () => {
       const mockHolidays: UserHolidayEntry[] = [
-        { date: '2025-01-01', name: '元旦', category: 'holiday', source: 'custom', createdAt: 1704067200000 },
+        { date: '2025-01-01', name: '元旦', category: 'holiday', source: 'custom', created_at: 1704067200000 },
       ]
       vi.mocked(mockSettingsRepo.getUserHolidays).mockResolvedValueOnce(mockHolidays)
 
@@ -266,7 +266,7 @@ describe('设置服务 (SettingsService)', () => {
 
   describe('migrateLocalStorageToDb', () => {
     it('有 migrateFromLocalStorage 时应该委托', async () => {
-      vi.mocked(mockSettingsRepo.migrateFromLocalStorage).mockResolvedValueOnce(undefined)
+      vi.mocked(mockSettingsRepo.migrateFromLocalStorage!).mockResolvedValueOnce(undefined)
 
       await settingsService.migrateLocalStorageToDb()
 

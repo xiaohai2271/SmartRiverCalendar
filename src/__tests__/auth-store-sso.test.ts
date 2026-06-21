@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import { createPinia, setActivePinia } from 'pinia'
-import type { IAuthRepository } from '@/platform/types/auth.repository'
 import type { PlatformCapabilities } from '@/platform/capabilities'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
@@ -91,7 +90,7 @@ describe('AuthStore SSO 集成', () => {
       hasAlwaysOnTop: false,
       hasMinimizeToTray: false,
       hasProxySettings: false,
-      hasOAuthLogin: false,
+      hasOAuthCallback: false,
       hasSsoLogin: true,
       hasBackgroundSync: false,
       hasIncrementalSync: false,

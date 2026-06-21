@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { SsoCoordinator } from '@/platform/web/sso-coordinator'
-import type { IAuthRepository, SsoSessionResult, SsoEvent } from '@/platform/types/auth.repository'
+import type { IAuthRepository, SsoEvent } from '@/platform/types/auth.repository'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
 // 创建 mock authRepo
@@ -13,8 +13,6 @@ function createMockAuthRepo(overrides?: Partial<IAuthRepository>): IAuthReposito
     checkAuthStatus: vi.fn(),
     refreshToken: vi.fn(),
     getPublicKey: vi.fn(),
-    oauthLogin: vi.fn(),
-    cancelOAuthLogin: vi.fn(),
     detectSsoSession: vi.fn().mockResolvedValue({ loggedIn: false }),
     notifySsoEvent: vi.fn(),
     subscribeSsoEvents: vi.fn().mockReturnValue(() => {}),
@@ -30,7 +28,7 @@ const origRemoveEventListener = document.removeEventListener.bind(document)
 describe('SsoCoordinator', () => {
   let coordinator: SsoCoordinator
   let mockAuthRepo: IAuthRepository
-  let onSessionChange: ReturnType<typeof vi.fn>
+  let onSessionChange: (result: import('@/platform/types/auth.repository').SsoSessionResult) => void
 
   beforeEach(() => {
     vi.clearAllMocks()

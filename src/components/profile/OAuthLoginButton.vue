@@ -47,19 +47,20 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useAuthStore } from '../../stores/auth'
-import type { OAuthProviderId } from '@/platform/types/auth.repository'
 
 // ==================== Store ====================
 const authStore = useAuthStore()
 
 // ==================== State ====================
+type OAuthStatus = 'idle' | 'pending' | 'authorizing' | 'failed' | 'expired' | 'timeout'
+const internalStatus = ref<OAuthStatus>('idle')
+const errorMessage = ref('')
 const isLoading = ref(false)
-const oauthStatus = computed(() => authStore.oauthStatus)
-const oauthErrorMessage = computed(() => authStore.oauthErrorMessage)
+const oauthStatus = computed(() => internalStatus.value)
+const oauthErrorMessage = computed(() => errorMessage.value)
 
 // ==================== Provider 配置 ====================
-// 仅显示已上线的 OAuth 服务商，微信/QQ 登录待后续上线
-const providers: { id: OAuthProviderId; name: string; icon: string }[] = [
+const providers: { id: string; name: string; icon: string }[] = [
   {
     id: 'github',
     name: 'GitHub',
@@ -68,33 +69,35 @@ const providers: { id: OAuthProviderId; name: string; icon: string }[] = [
 ]
 
 // ==================== Methods ====================
-/**
- * 处理 OAuth 登录
- */
-async function handleLogin(provider: OAuthProviderId): Promise<void> {
+async function handleLogin(provider: string): Promise<void> {
   if (isLoading.value) return
   isLoading.value = true
+  internalStatus.value = 'pending'
   try {
-    await authStore.oauthLogin(provider)
+    if (provider === 'github') {
+      const success = await authStore.loginWithGithub('', '')
+      if (!success) {
+        internalStatus.value = 'failed'
+        errorMessage.value = '登录失败，请重试'
+        return
+      }
+    }
+    internalStatus.value = 'idle'
+  } catch {
+    internalStatus.value = 'failed'
+    errorMessage.value = '登录失败，请重试'
   } finally {
     isLoading.value = false
   }
 }
 
-/**
- * 取消 OAuth 登录
- */
 async function handleCancel(): Promise<void> {
-  await authStore.cancelOAuthLogin()
+  internalStatus.value = 'idle'
 }
 
-/**
- * 重置状态，回到 idle 以便重试
- */
 function resetStatus(): void {
-  // 重置 oauth 状态，允许用户重新发起登录
-  authStore.oauthStatus = 'idle'
-  authStore.oauthErrorMessage = ''
+  internalStatus.value = 'idle'
+  errorMessage.value = ''
 }
 </script>
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 // ── 可变能力对象，方便在测试中切换 local-first / remote-first ──
@@ -24,7 +24,6 @@ const capabilitiesMock = {
   hasMinimizeToTray: false,
   hasProxySettings: false,
   hasOAuthCallback: false,
-  hasExternalSync: true,
 }
 
 // ── Mock 函数 ──

@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
 import { usePlatform, useCapabilities } from '@/platform/provider'
-import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 import { cloudSyncService } from '../services/cloudSync'
 import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '@/utils/date'
 import { debounce } from '@/utils/helpers'
@@ -80,7 +79,7 @@ export const useCalendarStore = defineStore('calendar', () => {
       )
     )
     // 去重合并（相邻月份缓冲区有重叠）
-    const eventMap = new Map<number, CalendarEvent>()
+    const eventMap = new Map<string, CalendarEvent>()
     for (const monthEvents of results) {
       for (const event of monthEvents) {
         eventMap.set(event.id, event)
@@ -284,7 +283,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function deleteCalendar(id: string) {
-    const { calendarRepo, eventRepo } = usePlatform()
+    const { calendarRepo } = usePlatform()
     const calId = parseInt(id)
     if (!isNaN(calId)) {
       await calendarRepo.delete(calId)

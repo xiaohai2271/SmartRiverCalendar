@@ -167,10 +167,16 @@ class ReminderServiceImpl implements ReminderService {
   private currentDisplayedId: string | null = null
   private interval: ReturnType<typeof setInterval> | null = null
 
+  private readonly repo: IReminderRepository
+  private readonly actions: ReminderActions
+
   constructor(
-    private readonly repo: IReminderRepository,
-    private readonly actions: ReminderActions
-  ) {}
+    repo: IReminderRepository,
+    actions: ReminderActions
+  ) {
+    this.repo = repo
+    this.actions = actions
+  }
 
   start(): void {
     if (this.interval) return

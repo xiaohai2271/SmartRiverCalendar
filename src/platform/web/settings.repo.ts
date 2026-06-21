@@ -8,7 +8,8 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 export class WebSettingsRepository implements ISettingsRepository {
   private readonly platform = 'web' as const
 
-  constructor(private readonly apiClient: WebApiClient) {}
+  private readonly apiClient: WebApiClient
+  constructor(apiClient: WebApiClient) { this.apiClient = apiClient }
 
   async loadAppSettings(): Promise<AppSettings> {
     // API: GET /settings?prefix=app.

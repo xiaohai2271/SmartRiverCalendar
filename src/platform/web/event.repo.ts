@@ -8,7 +8,8 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 export class WebEventRepository implements IEventRepository {
   private readonly platform = 'web' as const
 
-  constructor(private readonly apiClient: WebApiClient) {}
+  private readonly apiClient: WebApiClient
+  constructor(apiClient: WebApiClient) { this.apiClient = apiClient }
 
   async getAll(): Promise<CalendarEvent[]> {
     const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>('/events')
@@ -153,7 +154,7 @@ export class WebEventRepository implements IEventRepository {
     }
   }
 
-  async getByTimeRangeAndCalendars(startTime: number, endTime: number, calendarIds: number[]): Promise<CalendarEvent[]> {
+  async getByTimeRangeAndCalendars(startTime: number, endTime: number, calendarIds: string[]): Promise<CalendarEvent[]> {
     if (calendarIds.length === 0) return []
     const idsParam = calendarIds.join(',')
     const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(
@@ -181,7 +182,7 @@ export class WebEventRepository implements IEventRepository {
     return response.data.count
   }
 
-  async getUpcoming(limit: number, calendarIds: number[]): Promise<CalendarEvent[]> {
+  async getUpcoming(limit: number, calendarIds: string[]): Promise<CalendarEvent[]> {
     if (calendarIds.length === 0) return []
     const idsParam = calendarIds.join(',')
     const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(
@@ -197,7 +198,7 @@ export class WebEventRepository implements IEventRepository {
     return response.data.items.map(transformWebEvent)
   }
 
-  async search(query: string, limit: number, calendarIds: number[]): Promise<CalendarEvent[]> {
+  async search(query: string, limit: number, calendarIds: string[]): Promise<CalendarEvent[]> {
     if (calendarIds.length === 0) return []
     const idsParam = calendarIds.join(',')
     const response = await this.apiClient.get<ApiResponse<PageResponse<WebEvent>>>(

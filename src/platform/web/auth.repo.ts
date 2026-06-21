@@ -8,7 +8,8 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 export class WebAuthRepository implements IAuthRepository {
   private readonly platform = 'web' as const
 
-  constructor(private readonly apiClient: WebApiClient) {}
+  private readonly apiClient: WebApiClient
+  constructor(apiClient: WebApiClient) { this.apiClient = apiClient }
 
   async login(email: string, encryptedPassword: string): Promise<AuthResult> {
     const data = await this.apiClient.post<

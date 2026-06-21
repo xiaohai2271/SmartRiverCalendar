@@ -63,14 +63,14 @@ export interface IEventRepository {
   deleteByCalendarAndTimeRange(calendarId: string, startTime: number, endTime: number): Promise<void>
 
   /** 按时间范围和日历 ID 获取事件（性能优化核心方法） */
-  getByTimeRangeAndCalendars(startTime: number, endTime: number, calendarIds: number[]): Promise<CalendarEvent[]>
+  getByTimeRangeAndCalendars(startTime: number, endTime: number, calendarIds: string[]): Promise<CalendarEvent[]>
 
   /** 获取事件总数 */
   getCount(): Promise<number>
 
   /** 获取即将到来的事件 */
-  getUpcoming(limit: number, calendarIds: number[]): Promise<CalendarEvent[]>
+  getUpcoming(limit: number, calendarIds: string[]): Promise<CalendarEvent[]>
 
   /** 搜索事件 */
-  search(query: string, limit: number, calendarIds: number[]): Promise<CalendarEvent[]>
+  search(query: string, limit: number, calendarIds: string[]): Promise<CalendarEvent[]>
 }

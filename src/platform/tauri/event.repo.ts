@@ -174,9 +174,10 @@ export class TauriEventRepository implements IEventRepository {
     })
   }
 
-  async getByTimeRangeAndCalendars(startTime: number, endTime: number, calendarIds: number[]): Promise<CalendarEvent[]> {
+  async getByTimeRangeAndCalendars(startTime: number, endTime: number, calendarIds: string[]): Promise<CalendarEvent[]> {
     if (calendarIds.length === 0) return []
-    const result = await safeInvoke<RawEvent[]>('get_events_by_time_range_and_calendars', { startTime, endTime, calendarIds })
+    const numericCalendarIds = calendarIds.map(id => Number(id))
+    const result = await safeInvoke<RawEvent[]>('get_events_by_time_range_and_calendars', { startTime, endTime, calendarIds: numericCalendarIds })
     if (result === null) {
       throw new RepositoryError({
         code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
@@ -199,9 +200,10 @@ export class TauriEventRepository implements IEventRepository {
     return result
   }
 
-  async getUpcoming(limit: number, calendarIds: number[]): Promise<CalendarEvent[]> {
+  async getUpcoming(limit: number, calendarIds: string[]): Promise<CalendarEvent[]> {
     if (calendarIds.length === 0) return []
-    const result = await safeInvoke<RawEvent[]>('get_upcoming_events', { limit, calendarIds })
+    const numericCalendarIds = calendarIds.map(id => Number(id))
+    const result = await safeInvoke<RawEvent[]>('get_upcoming_events', { limit, calendarIds: numericCalendarIds })
     if (result === null) {
       throw new RepositoryError({
         code: RepoErrorCodes.PLATFORM_UNAVAILABLE,
@@ -212,9 +214,10 @@ export class TauriEventRepository implements IEventRepository {
     return result.map(transformEvent)
   }
 
-  async search(query: string, limit: number, calendarIds: number[]): Promise<CalendarEvent[]> {
+  async search(query: string, limit: number, calendarIds: string[]): Promise<CalendarEvent[]> {
     if (calendarIds.length === 0) return []
-    const result = await safeInvoke<RawEvent[]>('search_events', { query, limit, calendarIds })
+    const numericCalendarIds = calendarIds.map(id => Number(id))
+    const result = await safeInvoke<RawEvent[]>('search_events', { query, limit, calendarIds: numericCalendarIds })
     if (result === null) {
       throw new RepositoryError({
         code: RepoErrorCodes.PLATFORM_UNAVAILABLE,

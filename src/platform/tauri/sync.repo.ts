@@ -1,4 +1,3 @@
-import type { ISettingsRepository } from '../types/settings.repository'
 import type { ISyncRepository, ConnectResult, ExternalEventParams, ExternalCalendarInfo } from '../types/sync.repository'
 import type { CalendarEvent, ExternalAccount } from '@/types'
 import { safeInvoke, safeInvokeWithResult } from '@/utils/tauri'
@@ -21,12 +20,23 @@ export class TauriSyncRepository implements ISyncRepository {
 
     if (result.account) {
       return {
-        ...result,
+        success: result.success,
+        error: result.error,
         account: transformAccount(result.account as unknown as RawAccount),
+        calendars: result.calendars?.map(cal => ({
+          id: cal.id,
+          name: cal.name,
+          color: cal.color,
+          url: cal.url,
+          readOnly: cal.readOnly ?? false,
+        })),
       }
     }
 
-    return result
+    return {
+      success: result.success,
+      error: result.error,
+    }
   }
 
   async connectCalDAV(serverUrl: string, username: string, password: string): Promise<ConnectResult> {
@@ -38,12 +48,23 @@ export class TauriSyncRepository implements ISyncRepository {
 
     if (result.account) {
       return {
-        ...result,
+        success: result.success,
+        error: result.error,
         account: transformAccount(result.account as unknown as RawAccount),
+        calendars: result.calendars?.map(cal => ({
+          id: cal.id,
+          name: cal.name,
+          color: cal.color,
+          url: cal.url,
+          readOnly: cal.readOnly ?? false,
+        })),
       }
     }
 
-    return result
+    return {
+      success: result.success,
+      error: result.error,
+    }
   }
 
   async getAllAccounts(): Promise<ExternalAccount[]> {

@@ -1,5 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { PlatformCapabilities } from '@/platform/capabilities'
+import { describe, it, expect, vi } from 'vitest'
 
 // mock 能力和认证状态
 let mockHasSsoLogin = false

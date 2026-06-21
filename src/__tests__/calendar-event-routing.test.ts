@@ -25,12 +25,10 @@ const capabilitiesMock = {
   hasMinimizeToTray: false,
   hasProxySettings: false,
   hasOAuthCallback: false,
-  hasExternalSync: true,
 }
 
 // ── Mock 函数 ──
 const mockCalendarGetAll = vi.fn()
-const mockEventGetAll = vi.fn().mockResolvedValue([])
 const mockEventGetByTimeRangeAndCalendars = vi.fn().mockResolvedValue([])
 const mockEventGetCount = vi.fn().mockResolvedValue(0)
 const mockEventCreate = vi.fn()

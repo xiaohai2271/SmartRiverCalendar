@@ -35,6 +35,7 @@ export function resetRapidTriggerState(): void {
   lastTriggerTimes.clear()
 }
 
+// @ts-expect-error 预留给未来防抖逻辑
 function checkRapidTrigger(itemId: string): boolean {
   const now = Date.now()
   const lastTime = lastTriggerTimes.get(itemId)

@@ -8,7 +8,6 @@ const VIEWED_VALID_DURATION = 60 * 60 * 1000
 const LAST_CLEANUP_KEY = 'reminder_last_cleanup_time'
 
 export class TauriReminderRepository implements IReminderRepository {
-  private readonly platform = 'tauri' as const
 
   async loadQueue(): Promise<ReminderQueueItem[]> {
     try {
