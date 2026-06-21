@@ -4,6 +4,7 @@ import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
 import { usePlatform, useCapabilities } from '@/platform/provider'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 import { cloudSyncService } from '../services/cloudSync'
+import { getValidCalendarId } from '@/utils/calendar-helpers'
 
 export const useCalendarStore = defineStore('calendar', () => {
   // State
@@ -334,39 +335,10 @@ export const useCalendarStore = defineStore('calendar', () => {
   })
 
   // Actions
-  /**
-   * 获取有效的日历 ID
-   * 优先返回传入的 calendarId，其次返回本地日历，最后返回第一个可用日历
-   */
-  function getValidCalendarId(calendarId: string | undefined): number {
-    if (calendarId) {
-      const parsed = parseInt(calendarId)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
 
-    // 从 calendarStore 获取第一个本地日历
-    const localCalendar = calendars.value.find(c => c.type === 'local')
-    if (localCalendar) {
-      const parsed = parseInt(localCalendar.id)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-
-    // 兜底：返回第一个日历（不限类型）
-    const firstCalendar = calendars.value[0]
-    if (firstCalendar) {
-      const parsed = parseInt(firstCalendar.id)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-
-    // 最终兜底（不应发生）
-    console.warn('[CalendarStore] 无法获取有效的日历 ID，使用默认值 1')
-    return 1
+  /** 获取有效的日历 ID（封装共享函数，自动传入当前日历列表） */
+  function getValidCalendarIdWrapper(calendarId: string | undefined): number {
+    return getValidCalendarId(calendarId, calendars.value)
   }
 
   async function addCalendar(calendar: Omit<Calendar, 'id'>) {
@@ -495,7 +467,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         startTime: event.startTime,
         endTime: event.endTime,
         allDay: event.allDay,
-        calendarId: getValidCalendarId(event.calendarId),
+        calendarId: getValidCalendarIdWrapper(event.calendarId),
         color: event.color,
         reminder: event.reminder,
         repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
@@ -525,7 +497,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         startTime: event.startTime,
         endTime: event.endTime,
         allDay: event.allDay,
-        calendarId: getValidCalendarId(event.calendarId),
+        calendarId: getValidCalendarIdWrapper(event.calendarId),
         color: event.color,
         reminder: event.reminder,
         repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
@@ -548,7 +520,7 @@ export const useCalendarStore = defineStore('calendar', () => {
         startTime: event.startTime,
         endTime: event.endTime,
         allDay: event.allDay,
-        calendarId: getValidCalendarId(event.calendarId),
+        calendarId: getValidCalendarIdWrapper(event.calendarId),
         color: event.color,
         reminder: event.reminder,
         repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
@@ -994,6 +966,6 @@ export const useCalendarStore = defineStore('calendar', () => {
     visibleEvents,
     currentDateRange,
     eventsForCurrentView,
-    getValidCalendarId
+    getValidCalendarId: getValidCalendarIdWrapper
   }
 })

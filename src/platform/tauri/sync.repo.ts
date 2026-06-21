@@ -22,6 +22,7 @@ export class TauriSyncRepository implements ISyncRepository {
     if (result.account) {
       return {
         ...result,
+        // safeInvokeWithResult 返回的 account 是后端原始 snake_case 格式，需转换为 RawAccount 再做转换
         account: transformAccount(result.account as unknown as RawAccount),
       }
     }
@@ -39,6 +40,7 @@ export class TauriSyncRepository implements ISyncRepository {
     if (result.account) {
       return {
         ...result,
+        // safeInvokeWithResult 返回的 account 是后端原始 snake_case 格式，需转换为 RawAccount 再做转换
         account: transformAccount(result.account as unknown as RawAccount),
       }
     }
