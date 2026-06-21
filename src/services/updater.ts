@@ -8,9 +8,10 @@ import { sendNotification } from '@tauri-apps/plugin-notification'
 // 1. 访问 https://www.toolsetlink.com 注册账户
 // 2. 创建 Tauri 应用获取 tauriKey
 // 3. 在密钥管理中获取 AccessKey 和 AccessSecret
+// 注意：API Key 通过环境变量注入，请参考 .env.example 配置
 const UPGRADE_CONFIG = {
-  accessKey: 'jQuUu_dPgZgTaFyaTeVGBg', // 替换为您的 AccessKey
-  tauriKey: 'VsD99h2Y0AHwh_gGf2iiJw',   // 替换为您的 Tauri Key
+  accessKey: import.meta.env.VITE_UPDATER_ACCESS_KEY || '',
+  tauriKey: import.meta.env.VITE_UPDATER_TAURI_KEY || '',
 }
 
 /**
