@@ -1,7 +1,7 @@
 // Web 平台数据转换函数
 // 将 Web API 响应（snake_case）转换为前端类型（camelCase）
 
-import type { Calendar, CalendarEvent, Todo, ExternalAccount, UserHolidayEntry } from '@/types'
+import type { Calendar, CalendarEvent, Todo, ExternalAccount } from '@/types'
 import type { User } from '@/types/auth'
 
 /** Web API 响应格式 */

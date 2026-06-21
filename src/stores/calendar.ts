@@ -96,7 +96,7 @@ export const useCalendarStore = defineStore('calendar', () => {
 
       for (const account of accounts) {
         try {
-          const externalCalendars = await syncRepo.getExternalEvents({
+          await syncRepo.getExternalEvents({
             accountId: account.id,
             accountType: account.type,
             serverUrl: account.serverUrl,
@@ -108,8 +108,6 @@ export const useCalendarStore = defineStore('calendar', () => {
             endTime: Date.now() * 2,
           })
 
-          // 通过 syncRepo 获取外部日历列表
-          const { syncRepo } = usePlatform()
           const calList = await syncRepo.getExternalCalendars({
             accountId: account.id,
             accountType: account.type,
@@ -377,7 +375,7 @@ export const useCalendarStore = defineStore('calendar', () => {
   }
 
   async function deleteCalendar(id: string) {
-    const { calendarRepo, eventRepo } = usePlatform()
+    const { calendarRepo } = usePlatform()
     const calId = parseInt(id)
     if (!isNaN(calId)) {
       await calendarRepo.delete(calId)

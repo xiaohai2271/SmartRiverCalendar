@@ -13,32 +13,6 @@ import {
   loadCustomHolidays
 } from '@/utils/holidayStorage'
 
-// 模拟 settingsService，使数据库不可用，测试 localStorage 降级路径
-const mockCapabilities = {
-  hasLocalDatabase: false,
-  hasOfflineMode: false,
-  dataPriority: 'remote-first' as const,
-  hasReminderPopup: false,
-  hasSystemNotification: true,
-  hasSnoozeReminder: false,
-  hasSystemTray: false,
-  hasAutoStart: false,
-  hasClockHook: false,
-  hasMultiWindow: false,
-  hasAutoUpdate: false,
-  hasMinimizeToTray: false,
-  hasProxySettings: false,
-  hasOAuthCallback: false,
-  hasSsoLogin: false,
-  hasExchangeSupport: false,
-  hasCalDavSupport: false,
-  hasExternalSync: false,
-  hasAlwaysOnTop: false,
-  hasBackgroundSync: false,
-  hasIncrementalSync: false,
-  hasClientConflictResolution: false,
-}
-
 vi.mock('@/services/settings', () => ({
   isDatabaseAvailable: vi.fn(() => false),
   getUserHolidays: vi.fn().mockResolvedValue([]),

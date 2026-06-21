@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { useAuthStore } from '@/stores/auth'
 import { createPinia, setActivePinia } from 'pinia'
-import type { IAuthRepository } from '@/platform/types/auth.repository'
 import type { PlatformCapabilities } from '@/platform/capabilities'
 import { RepositoryError, RepoErrorCodes } from '@/platform/errors'
 
@@ -31,8 +30,7 @@ vi.mock('@/platform/provider', () => ({
       getCurrentUser: mockGetCurrentUser,
       refreshToken: vi.fn(),
       getPublicKey: vi.fn(),
-      oauthLogin: vi.fn(),
-      cancelOAuthLogin: vi.fn(),
+      loginWithOAuth: vi.fn(),
       detectSsoSession: mockDetectSsoSession,
       notifySsoEvent: mockNotifySsoEvent,
       subscribeSsoEvents: mockSubscribeSsoEvents,
@@ -91,7 +89,7 @@ describe('AuthStore SSO 集成', () => {
       hasAlwaysOnTop: false,
       hasMinimizeToTray: false,
       hasProxySettings: false,
-      hasOAuthLogin: false,
+      hasOAuthCallback: false,
       hasSsoLogin: true,
       hasBackgroundSync: false,
       hasIncrementalSync: false,

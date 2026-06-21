@@ -45,21 +45,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { useAuthStore } from '../../stores/auth'
-import type { OAuthProviderId } from '@/platform/types/auth.repository'
 
 // ==================== Store ====================
 const authStore = useAuthStore()
 
 // ==================== State ====================
 const isLoading = ref(false)
-const oauthStatus = computed(() => authStore.oauthStatus)
-const oauthErrorMessage = computed(() => authStore.oauthErrorMessage)
+const oauthStatus = ref<'idle' | 'pending' | 'authorizing' | 'failed' | 'expired' | 'timeout'>('idle')
+const oauthErrorMessage = ref('')
 
 // ==================== Provider 配置 ====================
-// 仅显示已上线的 OAuth 服务商，微信/QQ 登录待后续上线
-const providers: { id: OAuthProviderId; name: string; icon: string }[] = [
+const providers: { id: 'github'; name: string; icon: string }[] = [
   {
     id: 'github',
     name: 'GitHub',
@@ -68,33 +66,37 @@ const providers: { id: OAuthProviderId; name: string; icon: string }[] = [
 ]
 
 // ==================== Methods ====================
-/**
- * 处理 OAuth 登录
- */
-async function handleLogin(provider: OAuthProviderId): Promise<void> {
+async function handleLogin(_provider: 'github'): Promise<void> {
   if (isLoading.value) return
   isLoading.value = true
+  oauthStatus.value = 'pending'
+  oauthErrorMessage.value = ''
   try {
-    await authStore.oauthLogin(provider)
+    const success = await authStore.loginWithGithub(
+      import.meta.env.VITE_GITHUB_CLIENT_ID || '',
+      import.meta.env.VITE_GITHUB_REDIRECT_URI || ''
+    )
+    if (success) {
+      oauthStatus.value = 'idle'
+    } else {
+      oauthStatus.value = 'failed'
+      oauthErrorMessage.value = '登录失败'
+    }
+  } catch {
+    oauthStatus.value = 'failed'
+    oauthErrorMessage.value = '登录异常'
   } finally {
     isLoading.value = false
   }
 }
 
-/**
- * 取消 OAuth 登录
- */
 async function handleCancel(): Promise<void> {
-  await authStore.cancelOAuthLogin()
+  oauthStatus.value = 'idle'
 }
 
-/**
- * 重置状态，回到 idle 以便重试
- */
 function resetStatus(): void {
-  // 重置 oauth 状态，允许用户重新发起登录
-  authStore.oauthStatus = 'idle'
-  authStore.oauthErrorMessage = ''
+  oauthStatus.value = 'idle'
+  oauthErrorMessage.value = ''
 }
 </script>
 

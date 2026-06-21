@@ -296,7 +296,7 @@
 import { ref, computed, nextTick, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { useCalendarStore } from '../stores/calendar'
-import { formatDate, formatTime, isEventOnDay } from '../utils/date'
+import { formatDate, formatTime } from '../utils/date'
 import ContextMenu from '../components/common/ContextMenu.vue'
 import ConfirmPopover from '../components/common/ConfirmPopover.vue'
 import EventDetailModal from '../components/common/EventDetailModal.vue'

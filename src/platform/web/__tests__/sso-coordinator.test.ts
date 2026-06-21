@@ -13,8 +13,7 @@ function createMockAuthRepo(overrides?: Partial<IAuthRepository>): IAuthReposito
     checkAuthStatus: vi.fn(),
     refreshToken: vi.fn(),
     getPublicKey: vi.fn(),
-    oauthLogin: vi.fn(),
-    cancelOAuthLogin: vi.fn(),
+    loginWithOAuth: vi.fn(),
     detectSsoSession: vi.fn().mockResolvedValue({ loggedIn: false }),
     notifySsoEvent: vi.fn(),
     subscribeSsoEvents: vi.fn().mockReturnValue(() => {}),
@@ -30,7 +29,7 @@ const origRemoveEventListener = document.removeEventListener.bind(document)
 describe('SsoCoordinator', () => {
   let coordinator: SsoCoordinator
   let mockAuthRepo: IAuthRepository
-  let onSessionChange: ReturnType<typeof vi.fn>
+  let onSessionChange: (result: SsoSessionResult) => void
 
   beforeEach(() => {
     vi.clearAllMocks()
@@ -50,7 +49,7 @@ describe('SsoCoordinator', () => {
       }
     }) as any
 
-    onSessionChange = vi.fn()
+    onSessionChange = vi.fn<(result: SsoSessionResult) => void>()
     mockAuthRepo = createMockAuthRepo()
     coordinator = new SsoCoordinator(mockAuthRepo, { onSessionChange })
   })

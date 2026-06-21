@@ -8,8 +8,11 @@ import { getDefaultAppSettings, getDefaultPopupSettings } from '../shared/defaul
 /** Web 设置 Repository 实现 — 设置存远端 API，无本地缓存 */
 export class WebSettingsRepository implements ISettingsRepository {
   private readonly platform = 'web' as const
+  private readonly apiClient: WebApiClient
 
-  constructor(private readonly apiClient: WebApiClient) {}
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async loadAppSettings(): Promise<AppSettings> {
     // API: GET /settings?prefix=app.

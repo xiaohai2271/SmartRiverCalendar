@@ -7,8 +7,11 @@ import { RepositoryError, RepoErrorCodes } from '../errors'
 /** Web 认证 Repository 实现 */
 export class WebAuthRepository implements IAuthRepository {
   private readonly platform = 'web' as const
+  private readonly apiClient: WebApiClient
 
-  constructor(private readonly apiClient: WebApiClient) {}
+  constructor(apiClient: WebApiClient) {
+    this.apiClient = apiClient
+  }
 
   async login(email: string, encryptedPassword: string): Promise<AuthResult> {
     const data = await this.apiClient.post<

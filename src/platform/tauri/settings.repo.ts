@@ -16,7 +16,7 @@ export class TauriSettingsRepository implements ISettingsRepository {
   }
 
   async saveAppSettings(settings: AppSettings): Promise<void> {
-    await this.saveSettings('app.', settings)
+    await this.saveSettings('app.', settings as unknown as Record<string, unknown>)
   }
 
   async loadPopupSettings(): Promise<PopupSettings> {
@@ -24,7 +24,7 @@ export class TauriSettingsRepository implements ISettingsRepository {
   }
 
   async savePopupSettings(settings: PopupSettings): Promise<void> {
-    await this.saveSettings('popup.', settings)
+    await this.saveSettings('popup.', settings as unknown as Record<string, unknown>)
   }
 
   async getUserHolidays(): Promise<UserHolidayEntry[]> {

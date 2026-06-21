@@ -103,6 +103,7 @@ describe('Tauri 数据转换', () => {
         completed: false,
         priority: 'medium',
         calendar_id: 1,
+        external_id: null,
         created_at: 1700000000,
         updated_at: 1700000000,
       }
