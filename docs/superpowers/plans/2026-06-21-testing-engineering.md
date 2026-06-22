@@ -1,12 +1,38 @@
-# 前端自动化测试工程化体系实施计划
+# 前端自动化测试工程化体系实施计划（v2 — 评审修订版）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 建立小河日历前端自动化测试工程化体系，修复现有失败测试，搭建 Playwright/WebDriverIO E2E 基础设施，编写核心流程 E2E 用例，配置 CI 自动化流水线。
+**Goal:** 建立小河日历前端自动化测试工程化体系，修复 SSO 代码中的架构问题，补全 data-testid 标注，增强现有 E2E 基础设施和测试覆盖率，完善 CI 自动化流水线。
 
-**Architecture:** L1 单测(Vitest) + L2 组件测试 + L3 E2E(Playwright for Web / WebDriverIO + tauri-driver for 桌面端) 分层测试体系，Playwright Route 拦截 API Mock 零后端依赖，GitHub Actions CI 自动化。
+**Architecture:** L1 单测(Vitest) + L2 组件测试 + L3 E2E(Playwright for Web / WebDriverIO + @crabnebula/tauri-driver for 桌面端) 分层测试体系，Playwright Route 拦截 API Mock 零后端依赖，GitHub Actions CI 自动化。
 
-**Tech Stack:** Vitest, @vue/test-utils, Playwright, WebDriverIO, tauri-driver, GitHub Actions
+**Tech Stack:** Vitest, @vue/test-utils, Playwright, WebDriverIO, @crabnebula/tauri-driver, GitHub Actions
+
+**评审修订说明：** 本计划经过三方评审（计划完整性 + SSO 架构 + E2E 技术可行性），修正了 4 个严重问题、9 个中等问题和 5 个轻微问题。原 Task 1-5 代码已全部实现，改为验证+修复任务；E2E 基础设施已存在，改为验证+增强任务。
+
+---
+
+## 现有代码库状态
+
+> 以下内容已在评审中验证，agent 执行时无需重新探查。
+
+| 模块 | 状态 | 文件 |
+|------|------|------|
+| SSO 接口定义 | ✅ 已实现 | `src/platform/types/auth.repository.ts`（含 SsoSessionResult/SsoEvent/detectSsoSession 等） |
+| SSO 错误码 | ✅ 已实现 | `src/platform/errors.ts`（含 SSO_SESSION_EXPIRED） |
+| SSO 能力声明 | ✅ 已实现 | `src/platform/capabilities.ts`（含 hasSsoLogin） |
+| Web Auth Repo SSO | ✅ 已实现 | `src/platform/web/auth.repo.ts`（202 行，原生 fetch + BroadcastChannel） |
+| Tauri Auth Repo SSO | ✅ 已实现 | `src/platform/tauri/auth.repo.ts`（no-op 实现） |
+| Auth Store SSO | ✅ 已实现 | `src/stores/auth.ts`（391 行，含 wasLoggedIn/SSO 检测/cleanup） |
+| main.ts Pinia 暴露 | ✅ 已实现 | `src/main.ts` 第 58-61 行 |
+| Playwright 配置 | ✅ 已存在 | `e2e/playwright.config.ts`（33 行，含 projects/timeout/screenshot） |
+| API Mock 工具 | ✅ 已存在 | `e2e/helpers/api-mock.ts`（219 行，模块化 mockAllApi/mockAuthApi 等） |
+| WebDriverIO 配置 | ✅ 已存在 | `e2e/wdio.tauri.conf.ts`（37 行，含 tauri:options） |
+| Web E2E 测试 | ✅ 已存在 | `e2e/web/`（6 个 spec 文件） |
+| Tauri E2E 测试 | ✅ 已存在 | `e2e/tauri/`（3 个 spec 文件，骨架代码） |
+| CI 配置 | ✅ 已存在 | `.github/workflows/test.yml`（84 行，pnpm v11 + Node 22 + concurrency） |
+| 测试技能模板 | ✅ 已存在 | `.agents/skills/testing/`（7 个文件） |
+| data-testid | ⚠️ 部分完成 | 50 处标注覆盖 12 个文件（需扩展 E2E 涉及的组件） |
 
 ---
 
@@ -15,1429 +41,747 @@
 ### 新增文件
 
 ```
-e2e/
-├── playwright.config.ts                    # Playwright Web 端配置
-├── wdio.tauri.conf.ts                      # WebDriverIO 桌面端配置
-├── fixtures/
-│   ├── user.json                           # 用户数据 fixture
-│   ├── calendars.json                      # 日历数据 fixture
-│   ├── events.json                         # 事件数据 fixture
-│   ├── todos.json                          # 待办数据 fixture
-│   └── sync-status.json                    # 同步状态 fixture
-├── helpers/
-│   ├── api-mock.ts                         # Playwright Route 拦截封装
-│   ├── tauri-mock.ts                       # Tauri API mock 封装
-│   ├── data-verify.ts                      # 数据验证辅助函数
-│   └── auth.setup.ts                       # 登录状态 setup
-├── web/
-│   ├── auth-flow.spec.ts                   # 认证流程 E2E
-│   ├── calendar-event-crud.spec.ts         # 日历事件 CRUD E2E
-│   ├── calendar-view-navigation.spec.ts    # 视图切换导航 E2E
-│   ├── todo-crud.spec.ts                   # 待办 CRUD E2E
-│   ├── sync-flow.spec.ts                   # 云同步流程 E2E
-│   ├── home-dashboard.spec.ts              # 首页仪表盘 E2E
-│   ├── schedule-search-filter.spec.ts      # 日程搜索筛选 E2E
-│   ├── settings.spec.ts                    # 设置管理 E2E
-│   ├── reminder.spec.ts                    # 提醒服务 E2E
-│   ├── calendar-manage.spec.ts             # 日历管理 E2E
-│   ├── external-calendar.spec.ts           # 外部日历集成 E2E
-│   ├── context-menu.spec.ts                # 右键菜单 E2E
-│   └── error-scenarios.spec.ts             # 错误场景 E2E
-└── tauri/
-    ├── tray-popup.spec.ts                  # 托盘弹出面板 E2E
-    ├── reminder-popup.spec.ts              # 提醒弹窗 E2E
-    ├── multi-window.spec.ts                # 多窗口 E2E
-    ├── offline-crud.spec.ts                # 离线操作 E2E
-    ├── identity-switch.spec.ts             # 身份切换 E2E
-    └── update.spec.ts                      # 软件更新 E2E
-.agents/skills/testing/
-├── SKILL.md                                # 测试技能入口
-├── templates/
-│   ├── unit-test.template.ts               # 单测模板
-│   ├── component-test.template.ts          # 组件测试模板
-│   └── e2e-test.template.ts                # E2E 测试模板
-└── guides/
-    ├── writing-unit-tests.md               # 单测编写指南
-    ├── writing-component-tests.md          # 组件测试编写指南
-    └── writing-e2e-tests.md                # E2E 测试编写指南
-.github/workflows/test.yml                  # CI 测试流水线
+src/composables/usePersistentFlag.ts           # 持久化标志 composable（替代 localStorage 直接操作）
 ```
 
 ### 修改文件
 
 ```
-src/platform/types/auth.repository.ts       # 新增 SSO 接口定义
-src/platform/errors.ts                      # 新增 SSO_SESSION_EXPIRED 错误码
-src/platform/capabilities.ts                # 新增 hasSsoLogin 能力
-src/platform/web/auth.repo.ts               # 实现 SSO 方法
-src/platform/tauri/auth.repo.ts             # 实现 SSO no-op 方法
-src/stores/auth.ts                          # SSO 集成 + wasLoggedIn + cleanup
-src/main.ts                                 # E2E 环境暴露 Pinia + SsoCoordinator 启动
-package.json                                # 新增 @playwright/test 等依赖
-vitest.config.ts                            # 无需修改（当前配置已满足）
+src/platform/types/auth.repository.ts         # detectSsoSession 增加 wasLoggedIn 参数
+src/platform/capabilities.ts                  # hasSsoLogin → hasSsoSessionDetection
+src/platform/errors.ts                        # 无修改（SSO_SESSION_EXPIRED 已存在）
+src/platform/web/auth.repo.ts                 # SSO 代码修复：参数传入/错误抛出/常量提取/dispose
+src/platform/tauri/auth.repo.ts               # detectSsoSession 签名更新
+src/stores/auth.ts                            # SSO 集成修复：composable/能力重命名/网络错误处理
+src/platform/web/index.ts                     # hasSsoLogin → hasSsoSessionDetection
+src/platform/tauri/index.ts                   # hasSsoLogin → hasSsoSessionDetection
+src/__tests__/auth-store-sso.test.ts          # 更新能力名和方法签名引用
+e2e/web/*.spec.ts                             # 选择器改用 getByTestId()
+e2e/tauri/*.spec.ts                           # 增强测试内容
+e2e/helpers/api-mock.ts                       # API_BASE 路径修正（如需要）
+.agents/skills/testing/templates/unit-test.template.ts   # 补全动态导入模式
+.github/workflows/test.yml                    # E2E 和单测并行 + 桌面端 E2E 占位
+```
+
+### 需补全 data-testid 的组件
+
+```
+src/components/reminder/ReminderPopup.vue      # 提醒弹窗
+src/components/popup/PopupCalendarGrid.vue     # 精简日历网格
+src/components/popup/PopupDateInfo.vue         # 精简日期信息
+src/views/CalendarPopupView.vue               # 精简面板视图
+src/views/ReminderPopupView.vue               # 提醒弹窗视图
+src/views/ScheduleView.vue                    # 日程视图
+src/views/AboutView.vue                       # 关于页面
+src/components/home/                          # 首页组件（按需）
 ```
 
 ---
 
-## Task 1: 补全 SSO 接口定义和错误码
+## Task 0: 补全核心组件 data-testid 标注
+
+**前置条件：** 无。本 Task 是后续 E2E 测试的必要前提。
 
 **Files:**
-- Modify: `src/platform/types/auth.repository.ts`
-- Modify: `src/platform/errors.ts`
-- Modify: `src/platform/capabilities.ts`
+- Modify: 多个组件/视图文件（见上方"需补全 data-testid 的组件"列表）
 
-- [ ] **Step 1: 在 `auth.repository.ts` 中新增 SSO 类型和接口方法**
+- [ ] **Step 1: 读取 data-testid 规范**
 
-在 `AuthResult` 接口之后新增类型定义，在 `IAuthRepository` 接口末尾新增 SSO 方法：
+读取 `.agents/skills/data-testid-guide/SKILL.md`，理解命名规范（`btn-动作`、`xxx-input`、`xxx-modal` 等）和标注清单。
 
-```typescript
-// src/platform/types/auth.repository.ts — 在 AuthResult 后新增
+- [ ] **Step 2: 扫描 E2E 测试涉及的所有组件，列出缺失的 data-testid**
 
-export interface SsoSessionResult {
-  loggedIn: boolean
-  user?: User
-}
+对比现有 E2E 测试中的选择器和组件模板，识别以下组件缺失的 data-testid：
+1. `src/views/CalendarPopupView.vue` — 精简面板主视图
+2. `src/views/ReminderPopupView.vue` — 提醒弹窗主视图
+3. `src/views/ScheduleView.vue` — 日程视图
+4. `src/views/AboutView.vue` — 关于页面
+5. `src/components/reminder/ReminderPopup.vue` — 提醒弹窗组件
+6. `src/components/popup/PopupCalendarGrid.vue` — 日历网格
+7. `src/components/popup/PopupDateInfo.vue` — 日期信息
+8. 其他 E2E 测试交互所需的组件
 
-export type SsoEvent =
-  | { type: 'logout' }
-  | { type: 'login'; userId: number }
+- [ ] **Step 3: 为缺失组件添加 data-testid 标注**
 
-// 在 IAuthRepository 接口末尾新增：
-detectSsoSession(): Promise<SsoSessionResult>
-notifySsoEvent(event: SsoEvent): Promise<void>
-subscribeSsoEvents(callback: (event: SsoEvent) => void): () => void
-```
+按 data-testid-guide 规范，为交互元素添加 `data-testid` 属性：
+- 按钮：`data-testid="btn-xxx"`
+- 输入框：`data-testid="xxx-input"`
+- 模态框：`data-testid="xxx-modal"`
+- 列表项：`data-testid="xxx-item"`
+- 视图容器：`data-testid="xxx-view"`
 
-注意：`setWasLoggedInGetter` 不加入接口，这是 Web 端实现的内部方法，不是 Repository 契约的一部分。测试通过类型断言或 `(repo as any).setWasLoggedInGetter()` 访问。
+**注意**：Fluent UI Web Components 使用 Shadow DOM，`data-testid` 必须标注在 Light DOM 的顶层元素上（如组件标签本身或 slot 容器），确保 Playwright `getByTestId()` 能穿透。
 
-- [ ] **Step 2: 在 `errors.ts` 中新增 `SSO_SESSION_EXPIRED` 错误码**
-
-```typescript
-// src/platform/errors.ts — RepoErrorCodes 对象末尾新增
-SSO_SESSION_EXPIRED: 'SSO_SESSION_EXPIRED',
-```
-
-- [ ] **Step 3: 在 `capabilities.ts` 中新增 `hasSsoLogin` 能力字段**
-
-```typescript
-// src/platform/capabilities.ts — PlatformCapabilities 接口中
-// 在 hasOAuthCallback 后新增：
-hasSsoLogin: boolean
-```
-
-- [ ] **Step 4: 在两端能力声明中设置 `hasSsoLogin` 值**
-
-```typescript
-// src/platform/web/index.ts — Web 端 capabilities 中新增：
-hasSsoLogin: true
-
-// src/platform/tauri/index.ts — Tauri 端 capabilities 中新增：
-hasSsoLogin: false
-```
-
-- [ ] **Step 5: 运行现有测试确认无回归**
+- [ ] **Step 4: 运行现有测试确认无回归**
 
 Run: `pnpm test:run`
-Expected: 失败测试数量不变（21个），无新增失败
+Expected: 744 个用例全部通过，无新增失败
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
-git add src/platform/types/auth.repository.ts src/platform/errors.ts src/platform/capabilities.ts src/platform/web/index.ts src/platform/tauri/index.ts
-git commit -m "feat: 补全 IAuthRepository SSO 接口定义、错误码和能力声明"
+git add src/components/ src/views/
+git commit -m "test: 补全核心组件 data-testid 标注（E2E 测试前置）"
 ```
 
 ---
 
-## Task 2: 实现 Web 端 Auth Repository SSO 方法
+## Task 1: ✅ 已完成 — SSO 接口定义和错误码（验证）
+
+> **状态：已实现。** 以下接口/类型/错误码已存在于代码库中，本 Task 仅做验证。
+
+**Files:**
+- `src/platform/types/auth.repository.ts`
+- `src/platform/errors.ts`
+- `src/platform/capabilities.ts`
+
+- [ ] **Step 1: 验证接口定义**
+
+确认 `auth.repository.ts` 包含：
+- `SsoSessionResult` 接口（loggedIn, user?）
+- `SsoEvent` 联合类型（logout | login）
+- `IAuthRepository.detectSsoSession()` 方法
+- `IAuthRepository.notifySsoEvent()` 方法
+- `IAuthRepository.subscribeSsoEvents()` 方法
+
+- [ ] **Step 2: 验证错误码**
+
+确认 `errors.ts` 包含 `SSO_SESSION_EXPIRED` 错误码。
+
+- [ ] **Step 3: 验证能力声明**
+
+确认 `capabilities.ts` 包含 `hasSsoLogin: boolean` 能力字段（将在 Task 2 中重命名为 `hasSsoSessionDetection`）。
+
+---
+
+## Task 2: 修复 Web Auth Repo SSO 代码
+
+> **状态：已实现，需修复 4 个问题。** `src/platform/web/auth.repo.ts` 已包含完整 SSO 实现（202 行），但存在架构问题需修正。
 
 **Files:**
 - Modify: `src/platform/web/auth.repo.ts`
+- Modify: `src/platform/types/auth.repository.ts`（接口签名变更）
 
-- [ ] **Step 1: 在 `WebAuthRepository` 类末尾新增 SSO 方法实现**
+### 修复 1: detectSsoSession 增加 wasLoggedIn 参数（替代 setter 注入）
+
+- [ ] **修改 IAuthRepository 接口签名**
 
 ```typescript
-// src/platform/web/auth.repo.ts — 类末尾新增
+// src/platform/types/auth.repository.ts
+// 原：detectSsoSession(): Promise<SsoSessionResult>
+// 改为：
+detectSsoSession(wasLoggedIn?: boolean): Promise<SsoSessionResult>
+```
 
-private wasLoggedInGetter: (() => boolean) | null = null
-private ssoChannel: BroadcastChannel | null = null
+- [ ] **修改 WebAuthRepository.detectSsoSession 实现**
 
-setWasLoggedInGetter(getter: () => boolean): void {
-  this.wasLoggedInGetter = getter
-}
+```typescript
+// src/platform/web/auth.repo.ts
 
-async detectSsoSession(): Promise<SsoSessionResult> {
+// 删除以下成员：
+// private wasLoggedInGetter: (() => boolean) | null = null
+// setWasLoggedInGetter(getter: () => boolean): void { this.wasLoggedInGetter = getter }
+
+// 修改 detectSsoSession 方法签名和实现：
+async detectSsoSession(wasLoggedIn?: boolean): Promise<SsoSessionResult> {
+  const baseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:1188/v1'
   try {
-    const response = await this.apiClient.get('/user/profile', {
+    const resp = await fetch(`${baseUrl}/user/profile`, {
       credentials: 'include',
     })
+    const data = await resp.json()
 
-    if (response.code === 0 && response.data) {
+    if (resp.ok && data.code === 0 && data.data) {
       return {
         loggedIn: true,
-        user: transformWebUser(response.data),
+        user: transformWebUser(data.data),
       }
     }
 
-    return { loggedIn: false }
-  } catch (error) {
-    if (error instanceof RepositoryError && error.code === RepoErrorCodes.AUTH_EXPIRED) {
-      const wasLoggedIn = this.wasLoggedInGetter?.() ?? false
+    if (resp.status === 401) {
+      // 使用参数替代 getter 回调
       if (wasLoggedIn) {
         throw new RepositoryError({
           code: RepoErrorCodes.SSO_SESSION_EXPIRED,
           message: 'SSO 会话已过期',
-          platform: 'web',
-          cause: error,
+          platform: this.platform,
         })
       }
       return { loggedIn: false }
     }
 
-    if (error instanceof RepositoryError && error.code === RepoErrorCodes.NETWORK_ERROR) {
-      return { loggedIn: false }
-    }
-
     return { loggedIn: false }
-  }
-}
-
-async notifySsoEvent(event: SsoEvent): Promise<void> {
-  if (!this.ssoChannel) {
-    this.ssoChannel = new BroadcastChannel('smart-river-calendar-sso')
-  }
-  this.ssoChannel.postMessage(event)
-}
-
-subscribeSsoEvents(callback: (event: SsoEvent) => void): () => void {
-  if (!this.ssoChannel) {
-    this.ssoChannel = new BroadcastChannel('smart-river-calendar-sso')
-  }
-
-  const handler = (e: MessageEvent) => {
-    callback(e.data as SsoEvent)
-  }
-  this.ssoChannel.addEventListener('message', handler)
-
-  return () => {
-    this.ssoChannel?.removeEventListener('message', handler)
+  } catch (error) {
+    if (error instanceof RepositoryError) {
+      throw error
+    }
+    // 修复：网络错误应重新抛出，让调用方决定是否忽略（而非静默吞掉）
+    throw new RepositoryError({
+      code: RepoErrorCodes.NETWORK_ERROR,
+      message: 'SSO 会话检测网络错误',
+      platform: this.platform,
+      cause: error,
+    })
   }
 }
 ```
 
-注意：需在文件顶部 import 中新增 `SsoSessionResult`、`SsoEvent` 类型。
+### 修复 2: 网络错误重新抛出（已包含在修复 1 中）
 
-- [ ] **Step 2: 运行 Web 端 auth repo 测试**
+原代码第 168-169 行静默返回 `{ loggedIn: false }`，现已改为抛出 `NETWORK_ERROR`。
 
-Run: `pnpm test:run src/platform/web/__tests__/auth.repo.test.ts`
-Expected: 10 个 SSO 相关测试由 FAIL 变为 PASS
+### 修复 3: BroadcastChannel 名称提取为类常量
 
-- [ ] **Step 3: Commit**
-
-```bash
-git add src/platform/web/auth.repo.ts
-git commit -m "feat: 实现 WebAuthRepository SSO 方法（detectSsoSession/notifySsoEvent/subscribeSsoEvents）"
-```
-
----
-
-## Task 3: 实现 Tauri 端 Auth Repository SSO no-op 方法
-
-**Files:**
-- Modify: `src/platform/tauri/auth.repo.ts`
-
-- [ ] **Step 1: 在 `TauriAuthRepository` 类末尾新增 SSO no-op 方法**
+- [ ] **提取常量并增加 dispose 方法**
 
 ```typescript
-// src/platform/tauri/auth.repo.ts — 类末尾新增
+// src/platform/web/auth.repo.ts — 类内部新增
 
-async detectSsoSession(): Promise<SsoSessionResult> {
+private static readonly SSO_CHANNEL_NAME = 'smart-river-calendar-sso'
+private ssoChannel: BroadcastChannel | null = null
+
+// 修改 notifySsoEvent 和 subscribeSsoEvents 中的硬编码：
+// new BroadcastChannel('smart-river-calendar-sso')
+// → new BroadcastChannel(WebAuthRepository.SSO_CHANNEL_NAME)
+
+// 新增 dispose 方法：
+dispose(): void {
+  this.ssoChannel?.close()
+  this.ssoChannel = null
+}
+```
+
+### 修复 4: Tauri Auth Repo 签名同步
+
+- [ ] **同步 Tauri 端签名**
+
+```typescript
+// src/platform/tauri/auth.repo.ts
+// 原：async detectSsoSession(): Promise<SsoSessionResult>
+// 改为：
+async detectSsoSession(_wasLoggedIn?: boolean): Promise<SsoSessionResult> {
   return { loggedIn: false }
 }
-
-async notifySsoEvent(_event: SsoEvent): Promise<void> {
-  // 桌面端不需要 SSO 广播
-}
-
-subscribeSsoEvents(_callback: (event: SsoEvent) => void): () => void {
-  return () => {}
-}
 ```
 
-注意：需在文件顶部 import 中新增 `SsoSessionResult`、`SsoEvent` 类型。
+- [ ] **运行现有测试确认无回归**
 
-- [ ] **Step 2: 运行 Tauri 端 auth repo 测试**
+Run: `pnpm test:run`
+Expected: 744 通过
 
-Run: `pnpm test:run src/platform/tauri/__tests__/auth.repo.test.ts`
-Expected: 4 个 SSO 相关测试由 FAIL 变为 PASS
-
-- [ ] **Step 3: Commit**
+- [ ] **Commit**
 
 ```bash
-git add src/platform/tauri/auth.repo.ts
-git commit -m "feat: 实现 TauriAuthRepository SSO no-op 方法"
+git add src/platform/types/auth.repository.ts src/platform/web/auth.repo.ts src/platform/tauri/auth.repo.ts
+git commit -m "fix: 修复 WebAuthRepository SSO 代码（参数传入替代 setter/网络错误抛出/常量提取/dispose）"
 ```
 
 ---
 
-## Task 4: Auth Store SSO 集成
+## Task 3: ✅ 已完成 — Tauri Auth Repo SSO no-op（验证）
+
+> **状态：已实现。** Task 2 中已同步签名更新，本 Task 仅做验证。
 
 **Files:**
+- `src/platform/tauri/auth.repo.ts`
+
+- [ ] **Step 1: 验证 no-op 实现**
+
+确认 Tauri 端 `detectSsoSession`、`notifySsoEvent`、`subscribeSsoEvents` 均为 no-op 实现，且签名已同步。
+
+---
+
+## Task 4: 修复 Auth Store SSO 集成代码
+
+> **状态：已实现，需修复 3 个问题。** `src/stores/auth.ts` 已包含完整 SSO 集成（391 行），但存在架构问题需修正。
+
+**Files:**
+- Create: `src/composables/usePersistentFlag.ts`
 - Modify: `src/stores/auth.ts`
+- Modify: `src/platform/capabilities.ts`
+- Modify: `src/platform/web/index.ts`
+- Modify: `src/platform/tauri/index.ts`
 
-- [ ] **Step 1: 在 Auth Store 中新增 SSO 相关状态和方法**
+### 修复 1: localStorage 封装到 composable
 
-在 `useAuthStore` 的 state 中新增：
+- [ ] **创建 usePersistentFlag composable**
 
 ```typescript
-// src/stores/auth.ts — state 新增
-wasLoggedIn: false as boolean,
+// src/composables/usePersistentFlag.ts
+
+/**
+ * 持久化标志 composable
+ * 封装 localStorage 操作，避免 Store 直接操作持久层
+ */
+export function usePersistentFlag(key: string) {
+  const get = (): boolean => localStorage.getItem(key) === 'true'
+  const set = (value: boolean): void => localStorage.setItem(key, String(value))
+  const clear = (): void => localStorage.removeItem(key)
+  return { get, set, clear }
+}
 ```
 
-在 actions 中新增 `cleanup` 方法，并修改 `initialize` 和 `logout` 方法：
+- [ ] **修改 Auth Store 使用 composable**
 
 ```typescript
-// initialize() 方法中，在 checkAuthStatus 成功后新增 SSO 检测逻辑：
-// 在现有 initialize 逻辑的适当位置（checkAuthStatus 返回后）新增
+// src/stores/auth.ts
 
-const capabilities = useCapabilities()
+// 新增 import：
+import { usePersistentFlag } from '@/composables/usePersistentFlag'
 
-// localStorage 恢复 wasLoggedIn
-const storedWasLoggedIn = localStorage.getItem('lastKnownLoggedIn')
-if (storedWasLoggedIn === 'true') {
-  this.wasLoggedIn = true
+// 在 defineStore 内部新增：
+const wasLoggedInFlag = usePersistentFlag('lastKnownLoggedIn')
+
+// 替换所有 localStorage.getItem/setItem('lastKnownLoggedIn', ...) 调用：
+// localStorage.getItem('lastKnownLoggedIn') → wasLoggedInFlag.get()
+// localStorage.setItem('lastKnownLoggedIn', 'true') → wasLoggedInFlag.set(true)
+// localStorage.setItem('lastKnownLoggedIn', 'false') → wasLoggedInFlag.set(false)
+```
+
+### 修复 2: hasSsoLogin → hasSsoSessionDetection
+
+- [ ] **修改能力声明名称**
+
+```typescript
+// src/platform/capabilities.ts
+// 原：hasSsoLogin: boolean
+// 改为：
+hasSsoSessionDetection: boolean
+// 注释也同步修改：是否支持 SSO 会话检测（Web 端 cookie 跨标签页检测）
+
+// src/platform/web/index.ts
+// 原：hasSsoLogin: true
+// 改为：hasSsoSessionDetection: true
+
+// src/platform/tauri/index.ts
+// 原：hasSsoLogin: false
+// 改为：hasSsoSessionDetection: false
+
+// src/stores/auth.ts
+// 原：capabilities.hasSsoLogin
+// 改为：capabilities.hasSsoSessionDetection
+```
+
+### 修复 3: detectSsoSession 调用参数 + 网络错误处理 + cleanup 增强
+
+- [ ] **修改 initialize() 中的 SSO 调用**
+
+```typescript
+// src/stores/auth.ts — initialize() 方法中
+
+// 原：const ssoResult = await authRepo.detectSsoSession()
+// 改为：传入 wasLoggedIn 参数
+const ssoResult = await authRepo.detectSsoSession(wasLoggedIn.value)
+```
+
+- [ ] **增加网络错误处理**
+
+```typescript
+// initialize() 中 SSO 检测的 catch 块，增加 NETWORK_ERROR 处理：
+} catch (ssoError) {
+  if (ssoError instanceof RepositoryError && ssoError.code === RepoErrorCodes.SSO_SESSION_EXPIRED) {
+    isAuthenticated.value = false
+    user.value = null
+    wasLoggedIn.value = false
+    wasLoggedInFlag.set(false)
+  } else if (ssoError instanceof RepositoryError && ssoError.code === RepoErrorCodes.NETWORK_ERROR) {
+    // 网络错误，静默忽略（SSO 检测不应阻断应用启动）
+    console.warn('[AuthStore] SSO 会话检测网络错误，跳过:', ssoError.message)
+  }
 }
+```
 
-if (capabilities.hasSsoLogin) {
-  const { authRepo } = usePlatform()
-  try {
-    const ssoResult = await authRepo.detectSsoSession()
-    if (ssoResult.loggedIn && ssoResult.user) {
-      this.isAuthenticated = true
-      this.user = ssoResult.user
-      this.wasLoggedIn = true
-      localStorage.setItem('lastKnownLoggedIn', 'true')
-    }
-  } catch (error) {
-    if (error instanceof RepositoryError && error.code === RepoErrorCodes.SSO_SESSION_EXPIRED) {
-      this.isAuthenticated = false
-      this.user = null
-      this.wasLoggedIn = false
-      localStorage.setItem('lastKnownLoggedIn', 'false')
+- [ ] **增强 cleanup() 方法**
+
+```typescript
+// src/stores/auth.ts
+function cleanup(): void {
+  // 清理 SSO 资源
+  const capabilities = useCapabilities()
+  if (capabilities.hasSsoSessionDetection) {
+    try {
+      const { authRepo } = usePlatform()
+      if ('dispose' in authRepo) {
+        ;(authRepo as { dispose: () => void }).dispose()
+      }
+    } catch {
+      // 清理失败非致命
     }
   }
 }
-
-// logout() 方法末尾新增 SSO 广播：
-if (capabilities.hasSsoLogin) {
-  const { authRepo } = usePlatform()
-  await authRepo.notifySsoEvent({ type: 'logout' })
-}
-this.wasLoggedIn = false
-localStorage.setItem('lastKnownLoggedIn', 'false')
-
-// 新增 cleanup 方法：
-cleanup() {
-  // 清理 SsoCoordinator 等资源
-},
 ```
 
-注意：需在文件顶部 import 中新增 `RepositoryError`、`RepoErrorCodes`（如果尚未引入）。
+- [ ] **更新相关测试文件**
 
-- [ ] **Step 2: 运行 auth-store-sso 测试**
+更新 `src/__tests__/auth-store-sso.test.ts` 中：
+- `hasSsoLogin` → `hasSsoSessionDetection`
+- `detectSsoSession()` → `detectSsoSession(wasLoggedIn)`
+- 删除 `setWasLoggedInGetter` 相关测试（如存在）
+- 新增网络错误处理测试
 
-Run: `pnpm test:run src/__tests__/auth-store-sso.test.ts`
-Expected: 7 个 SSO 相关测试由 FAIL 变为 PASS
+- [ ] **运行全部测试**
 
-- [ ] **Step 3: Commit**
+Run: `pnpm test:run`
+Expected: 全部通过
+
+- [ ] **Commit**
 
 ```bash
-git add src/stores/auth.ts
-git commit -m "feat: Auth Store 集成 SSO（wasLoggedIn/detectSsoSession/notifySsoEvent/cleanup）"
+git add src/composables/usePersistentFlag.ts src/stores/auth.ts src/platform/capabilities.ts src/platform/web/index.ts src/platform/tauri/index.ts src/__tests__/
+git commit -m "fix: 修复 Auth Store SSO 集成（composable 封装/能力重命名/网络错误处理/cleanup 增强）"
 ```
 
 ---
 
-## Task 5: E2E 环境基础设施（Pinia 暴露 + main.ts 适配）
+## Task 5: ✅ 已完成 — E2E 环境基础设施（验证）
 
-**Files:**
-- Modify: `src/main.ts`
+> **状态：已实现。** `src/main.ts` 第 58-61 行已包含 VITE_E2E Pinia 暴露逻辑。
 
-- [ ] **Step 1: 在 main.ts 中添加 E2E 环境下的 Pinia 暴露**
+- [ ] **验证 main.ts 中的 Pinia 暴露代码**
 
 ```typescript
-// src/main.ts — 在 app.mount('#app') 之后新增
-
+// 确认以下代码存在于 src/main.ts
 if (import.meta.env.VITE_E2E === 'true') {
   ;(window as any).__pinia__ = pinia
 }
 ```
 
-- [ ] **Step 2: Commit**
+---
 
-```bash
-git add src/main.ts
-git commit -m "feat: E2E 环境下暴露 Pinia 实例到 window"
-```
+## Task 6: 验证/增强现有 Playwright Web 端 E2E 基础设施
+
+> **状态：已存在。** `e2e/` 目录下已有 14 个文件，Playwright 配置、API Mock、fixtures、数据验证工具均已完善。本 Task 做验证和必要增强。
+
+**Files:**
+- Verify: `e2e/playwright.config.ts`
+- Verify: `e2e/helpers/api-mock.ts`
+- Verify: `e2e/helpers/data-verify.ts`
+- Verify: `e2e/fixtures/index.ts`
+
+- [ ] **Step 1: 验证 Playwright 配置**
+
+确认 `e2e/playwright.config.ts` 包含：
+- `testDir: './web'`
+- `baseURL: 'http://localhost:5173'`（与 `vite.config.ts` 的 `server.port: 5173, strictPort: true` 匹配）
+- `webServer.command: 'pnpm dev'` + `VITE_E2E: 'true'`
+- `projects` 仅 chromium
+- `timeout: 60000` + `expect: { timeout: 10000 }`
+- `screenshot: 'only-on-failure'`
+
+- [ ] **Step 2: 验证 API Mock 工具**
+
+确认 `e2e/helpers/api-mock.ts` 的模块化设计：
+- `mockAllApi()` — 一键 Mock 全部 API
+- `mockAuthApi()` / `mockCalendarApi()` / `mockEventApi()` / `mockTodoApi()` / `mockSyncApi()` — 按模块 Mock
+- `mockUnauthorized()` / `mockNetworkError()` / `mockServerError()` — 错误场景 Mock
+- API_BASE 为 `**/v1`（需验证是否与实际 API 路径匹配）
+
+- [ ] **Step 3: 检查 API_BASE 路径是否需要修正**
+
+当前 `api-mock.ts` 使用 `API_BASE = '**/v1'`，需确认：
+- 如果 Vite dev 代理路径是 `/api/v1` → 当前匹配正确，无需修改
+- 如果实际 Web API 路径不含 `/v1/` → 需修改为 `**/api`
+- 检查 `vite.config.ts` 的 `server.proxy` 配置和 `src/platform/web/api-client.ts` 的 `getApiUrl()` 确认
+
+- [ ] **Step 4: 验证数据验证工具**
+
+确认 `e2e/helpers/data-verify.ts` 可通过 `window.__pinia__` 访问 Store state。
+
+- [ ] **Step 5: 验证 fixtures**
+
+确认 `e2e/fixtures/index.ts` 导出 user/calendar/events/todos/syncStatus 固件。
 
 ---
 
-## Task 6: 安装 Playwright 并创建 Web 端配置
+## Task 7: 增强现有 Web 端认证流程 E2E 测试
+
+> **状态：已存在。** `e2e/web/auth-flow.spec.ts`（6,693 bytes）已包含认证流程测试，需将选择器改用 `getByTestId()`。
 
 **Files:**
-- Modify: `package.json`（通过 pnpm add 命令）
-- Create: `e2e/playwright.config.ts`
-- Create: `e2e/helpers/api-mock.ts`
-- Create: `e2e/helpers/data-verify.ts`
-- Create: `e2e/fixtures/user.json`
-- Create: `e2e/fixtures/calendars.json`
-- Create: `e2e/fixtures/events.json`
-- Create: `e2e/fixtures/todos.json`
-- Create: `e2e/fixtures/sync-status.json`
+- Modify: `e2e/web/auth-flow.spec.ts`
 
-- [ ] **Step 1: 安装 Playwright 依赖**
+- [ ] **Step 1: 读取现有测试，识别需替换的选择器**
 
-Run: `pnpm add -D @playwright/test`
+将以下类型的选择器替换为 `page.getByTestId()`：
+- `page.locator('text=登录')` → `page.getByTestId('btn-login')`（需确认 LoginForm 中的 data-testid）
+- `page.fill('input[type="email"]', ...)` → `page.getByTestId('email-input').fill(...)`
+- `page.fill('input[type="password"]', ...)` → `page.getByTestId('password-input').fill(...)`
+- `page.click('button:has-text("登录")')` → `page.getByTestId('btn-login').click()`
 
-- [ ] **Step 2: 安装 Chromium 浏览器**
+**选择器优先级**：`getByTestId()` > `getByRole()` > `getByText()` > **禁止纯 CSS 选择器**
 
-Run: `pnpm exec playwright install chromium`
+- [ ] **Step 2: 验证 LoginForm 组件已有对应 data-testid**
 
-- [ ] **Step 3: 创建 Playwright Web 端配置**
+确认 `src/components/profile/LoginForm.vue` 中的 data-testid 标注覆盖：登录按钮、邮箱输入框、密码输入框、注册链接等。如缺失，回到 Task 0 补全。
 
-```typescript
-// e2e/playwright.config.ts
-import { defineConfig } from '@playwright/test'
-
-export default defineConfig({
-  testDir: './web',
-  fullyParallel: true,
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 0,
-  workers: process.env.CI ? 1 : undefined,
-  reporter: 'html',
-  use: {
-    baseURL: 'http://localhost:5173',
-    trace: 'on-first-retry',
-  },
-  webServer: {
-    command: 'pnpm dev',
-    url: 'http://localhost:5173',
-    reuseExistingServer: !process.env.CI,
-    env: {
-      VITE_E2E: 'true',
-    },
-  },
-})
-```
-
-- [ ] **Step 4: 创建 API Mock 辅助工具**
-
-```typescript
-// e2e/helpers/api-mock.ts
-import { Page } from '@playwright/test'
-import userFixture from '../fixtures/user.json'
-import calendarsFixture from '../fixtures/calendars.json'
-import eventsFixture from '../fixtures/events.json'
-import todosFixture from '../fixtures/todos.json'
-import syncStatusFixture from '../fixtures/sync-status.json'
-
-export async function mockApiRoutes(page: Page) {
-  await page.route('**/api/v1/**', async (route) => {
-    const url = route.request().url()
-    const method = route.request().method()
-
-    if (url.includes('/auth/login') && method === 'POST') {
-      return route.fulfill({
-        json: { code: 0, data: { user_id: 1, access_token: 'at', refresh_token: 'rt', expires_in: 3600 } },
-        status: 200,
-      })
-    }
-
-    if (url.includes('/auth/register') && method === 'POST') {
-      return route.fulfill({
-        json: { code: 0, data: { user_id: 2, access_token: 'at', refresh_token: 'rt', expires_in: 3600 } },
-        status: 200,
-      })
-    }
-
-    if (url.includes('/auth/logout') && method === 'POST') {
-      return route.fulfill({ json: { code: 0 }, status: 200 })
-    }
-
-    if (url.includes('/auth/refresh') && method === 'POST') {
-      return route.fulfill({
-        json: { code: 0, data: { access_token: 'new-at', refresh_token: 'new-rt', expires_in: 3600 } },
-        status: 200,
-      })
-    }
-
-    if (url.includes('/auth/public-key') && method === 'GET') {
-      return route.fulfill({
-        json: { code: 0, data: { public_key: 'mock-public-key' } },
-        status: 200,
-      })
-    }
-
-    if (url.includes('/user/profile') && method === 'GET') {
-      return route.fulfill({ json: { code: 0, data: userFixture }, status: 200 })
-    }
-
-    if (url.includes('/calendars') && method === 'GET') {
-      return route.fulfill({ json: { code: 0, data: calendarsFixture }, status: 200 })
-    }
-
-    if (url.includes('/calendars') && method === 'POST') {
-      return route.fulfill({
-        json: { code: 0, data: { id: 10, name: '新日历', color: '#4A90D9', type: 'local' } },
-        status: 200,
-      })
-    }
-
-    if (url.includes('/events') && method === 'GET') {
-      return route.fulfill({ json: { code: 0, data: eventsFixture }, status: 200 })
-    }
-
-    if (url.includes('/events') && method === 'POST') {
-      return route.fulfill({
-        json: { code: 0, data: { id: 100, title: '新事件', start_time: Date.now(), end_time: Date.now() + 3600000 } },
-        status: 200,
-      })
-    }
-
-    if (url.includes('/events/') && method === 'PUT') {
-      return route.fulfill({ json: { code: 0 }, status: 200 })
-    }
-
-    if (url.includes('/events/') && method === 'DELETE') {
-      return route.fulfill({ json: { code: 0 }, status: 200 })
-    }
-
-    if (url.includes('/todos') && method === 'GET') {
-      return route.fulfill({ json: { code: 0, data: todosFixture }, status: 200 })
-    }
-
-    if (url.includes('/todos') && method === 'POST') {
-      return route.fulfill({
-        json: { code: 0, data: { id: 100, title: '新待办', completed: false, priority: 'medium' } },
-        status: 200,
-      })
-    }
-
-    if (url.includes('/todos/') && method === 'PUT') {
-      return route.fulfill({ json: { code: 0 }, status: 200 })
-    }
-
-    if (url.includes('/todos/') && method === 'DELETE') {
-      return route.fulfill({ json: { code: 0 }, status: 200 })
-    }
-
-    if (url.includes('/sync/now') && method === 'POST') {
-      return route.fulfill({ json: { code: 0 }, status: 200 })
-    }
-
-    if (url.includes('/sync/status') && method === 'GET') {
-      return route.fulfill({ json: { code: 0, data: syncStatusFixture }, status: 200 })
-    }
-
-    if (url.includes('/settings') && method === 'GET') {
-      return route.fulfill({ json: { code: 0, data: {} }, status: 200 })
-    }
-
-    if (url.includes('/settings/') && method === 'PUT') {
-      return route.fulfill({ json: { code: 0 }, status: 200 })
-    }
-
-    return route.fulfill({ json: { code: 404, message: 'Not found' }, status: 404 })
-  })
-}
-```
-
-- [ ] **Step 5: 创建数据验证辅助工具**
-
-```typescript
-// e2e/helpers/data-verify.ts
-import { Page, expect } from '@playwright/test'
-
-export async function verifyStoreState(page: Page, storeId: string, key: string, expected: unknown) {
-  const actual = await page.evaluate(({ store, k }) => {
-    const pinia = (window as any).__pinia__
-    return pinia?.state?.value?.[store]?.[k]
-  }, { store: storeId, k: key })
-  expect(actual).toEqual(expected)
-}
-
-export async function verifyDataPersistsAfterReload(page: Page, selector: string, expectedText: string) {
-  await page.reload()
-  await expect(page.locator(selector)).toContainText(expectedText)
-}
-```
-
-- [ ] **Step 6: 创建 fixture 数据文件**
-
-```json
-// e2e/fixtures/user.json
-{
-  "id": 1,
-  "email": "test@example.com",
-  "display_name": "测试用户",
-  "provider": "local"
-}
-```
-
-```json
-// e2e/fixtures/calendars.json
-{
-  "items": [
-    { "id": 1, "name": "我的日历", "color": "#4A90D9", "type": "local", "visible": true }
-  ],
-  "total": 1,
-  "page": 1,
-  "page_size": 50
-}
-```
-
-```json
-// e2e/fixtures/events.json
-{
-  "items": [],
-  "total": 0,
-  "page": 1,
-  "page_size": 50
-}
-```
-
-```json
-// e2e/fixtures/todos.json
-{
-  "items": [],
-  "total": 0,
-  "page": 1,
-  "page_size": 50
-}
-```
-
-```json
-// e2e/fixtures/sync-status.json
-{
-  "status": "idle",
-  "last_sync_at": null,
-  "pending_changes": 0
-}
-```
-
-- [ ] **Step 7: 验证 Playwright 可以启动**
-
-Run: `pnpm exec playwright test --config=e2e/playwright.config.ts --list`
-Expected: 无测试文件时不报错，列出 0 个测试
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add e2e/ package.json pnpm-lock.yaml
-git commit -m "feat: 搭建 Playwright Web 端 E2E 基础设施（配置/API Mock/fixtures/数据验证工具）"
-```
-
----
-
-## Task 7: Web 端认证流程 E2E 测试
-
-**Files:**
-- Create: `e2e/web/auth-flow.spec.ts`
-
-- [ ] **Step 1: 编写认证流程 E2E 测试**
-
-```typescript
-// e2e/web/auth-flow.spec.ts
-import { test, expect } from '@playwright/test'
-import { mockApiRoutes } from '../helpers/api-mock'
-
-test.describe('认证流程', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockApiRoutes(page)
-    await page.goto('/')
-  })
-
-  test('未登录状态显示登录入口', async ({ page }) => {
-    await page.goto('/profile')
-    await expect(page.locator('text=登录')).toBeVisible()
-  })
-
-  test('用户名密码登录成功', async ({ page }) => {
-    await page.goto('/profile')
-    await page.fill('[placeholder*="邮箱"], [placeholder*="email"], input[type="email"]', 'test@example.com')
-    await page.fill('[placeholder*="密码"], [placeholder*="password"], input[type="password"]', 'password123')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('text=测试用户')).toBeVisible()
-  })
-
-  test('登录后 Store 状态正确', async ({ page }) => {
-    await page.goto('/profile')
-    await page.fill('input[type="email"]', 'test@example.com')
-    await page.fill('input[type="password"]', 'password123')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('text=测试用户')).toBeVisible()
-    const isAuthenticated = await page.evaluate(() => {
-      return (window as any).__pinia__?.state?.value?.auth?.isAuthenticated
-    })
-    expect(isAuthenticated).toBe(true)
-  })
-
-  test('登录后登出', async ({ page }) => {
-    await page.goto('/profile')
-    await page.fill('input[type="email"]', 'test@example.com')
-    await page.fill('input[type="password"]', 'password123')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('text=测试用户')).toBeVisible()
-    await page.click('button:has-text("退出"), button:has-text("登出")')
-    await expect(page.locator('text=登录')).toBeVisible()
-  })
-
-  test('登录失败显示错误提示', async ({ page }) => {
-    await page.route('**/api/v1/auth/login', (route) =>
-      route.fulfill({ json: { code: 401, message: '密码错误' }, status: 200 })
-    )
-    await page.goto('/profile')
-    await page.fill('input[type="email"]', 'test@example.com')
-    await page.fill('input[type="password"]', 'wrong')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('text=登录')).toBeVisible()
-  })
-
-  test('页面刷新后保持登录', async ({ page }) => {
-    await page.goto('/profile')
-    await page.fill('input[type="email"]', 'test@example.com')
-    await page.fill('input[type="password"]', 'password123')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('text=测试用户')).toBeVisible()
-    await page.reload()
-    await expect(page.locator('text=测试用户')).toBeVisible()
-  })
-})
-```
-
-- [ ] **Step 2: 运行认证流程 E2E 测试**
+- [ ] **Step 3: 运行 E2E 测试验证**
 
 Run: `pnpm exec playwright test --config=e2e/playwright.config.ts e2e/web/auth-flow.spec.ts`
-Expected: 测试通过（可能需要根据实际 UI 选择器微调）
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add e2e/web/auth-flow.spec.ts
-git commit -m "test: 新增 Web 端认证流程 E2E 测试"
-```
-
----
-
-## Task 8: Web 端日历事件 CRUD E2E 测试
-
-**Files:**
-- Create: `e2e/web/calendar-event-crud.spec.ts`
-
-- [ ] **Step 1: 编写日历事件 CRUD E2E 测试**
-
-```typescript
-// e2e/web/calendar-event-crud.spec.ts
-import { test, expect } from '@playwright/test'
-import { mockApiRoutes } from '../helpers/api-mock'
-
-test.describe('日历事件 CRUD', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockApiRoutes(page)
-    await page.goto('/calendar')
-  })
-
-  test('日历页面默认加载月视图', async ({ page }) => {
-    await expect(page.locator('.calendar-view, [data-testid="calendar-view"]')).toBeVisible()
-  })
-
-  test('创建事件后出现在日历中', async ({ page }) => {
-    const createButton = page.locator('button:has-text("+"), button[aria-label="新建"], .fab-button')
-    await createButton.click()
-    await page.fill('input[placeholder*="标题"], input[placeholder*="事件"]', '测试事件')
-    await page.click('button:has-text("创建"), button:has-text("保存")')
-    await expect(page.locator('text=测试事件')).toBeVisible()
-  })
-
-  test('创建事件后 Store 包含新事件', async ({ page }) => {
-    const createButton = page.locator('button:has-text("+"), button[aria-label="新建"], .fab-button')
-    await createButton.click()
-    await page.fill('input[placeholder*="标题"], input[placeholder*="事件"]', '验证事件')
-    await page.click('button:has-text("创建"), button:has-text("保存")')
-    const eventCount = await page.evaluate(() => {
-      return (window as any).__pinia__?.state?.value?.calendar?.events?.length ?? 0
-    })
-    expect(eventCount).toBeGreaterThan(0)
-  })
-
-  test('创建事件后触发同步', async ({ page }) => {
-    const syncRequests: string[] = []
-    await page.route('**/api/v1/sync/now', async (route) => {
-      syncRequests.push(route.request().method())
-      await route.fulfill({ json: { code: 0 }, status: 200 })
-    })
-    const createButton = page.locator('button:has-text("+"), button[aria-label="新建"], .fab-button')
-    await createButton.click()
-    await page.fill('input[placeholder*="标题"], input[placeholder*="事件"]', '同步测试事件')
-    await page.click('button:has-text("创建"), button:has-text("保存")')
-    await page.waitForTimeout(500)
-    expect(syncRequests.length).toBeGreaterThan(0)
-  })
-
-  test('删除事件后从日历消失', async ({ page }) => {
-    // 先创建事件
-    const createButton = page.locator('button:has-text("+"), button[aria-label="新建"], .fab-button')
-    await createButton.click()
-    await page.fill('input[placeholder*="标题"], input[placeholder*="事件"]', '待删除事件')
-    await page.click('button:has-text("创建"), button:has-text("保存")')
-    await expect(page.locator('text=待删除事件')).toBeVisible()
-    // 点击事件 → 删除
-    await page.click('text=待删除事件')
-    await page.click('button:has-text("删除")')
-    await page.click('button:has-text("确认")')
-    await expect(page.locator('text=待删除事件')).not.toBeVisible()
-  })
-})
-```
-
-- [ ] **Step 2: 运行日历事件 CRUD E2E 测试**
-
-Run: `pnpm exec playwright test --config=e2e/playwright.config.ts e2e/web/calendar-event-crud.spec.ts`
-Expected: 测试通过（可能需要根据实际 UI 选择器微调）
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add e2e/web/calendar-event-crud.spec.ts
-git commit -m "test: 新增 Web 端日历事件 CRUD E2E 测试"
-```
-
----
-
-## Task 9: Web 端待办 CRUD E2E 测试
-
-**Files:**
-- Create: `e2e/web/todo-crud.spec.ts`
-
-- [ ] **Step 1: 编写待办 CRUD E2E 测试**
-
-```typescript
-// e2e/web/todo-crud.spec.ts
-import { test, expect } from '@playwright/test'
-import { mockApiRoutes } from '../helpers/api-mock'
-
-test.describe('待办事项 CRUD', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockApiRoutes(page)
-    await page.goto('/todos')
-  })
-
-  test('待办页面默认加载', async ({ page }) => {
-    await expect(page.locator('.todo-view, [data-testid="todo-view"]')).toBeVisible()
-  })
-
-  test('创建待办后出现在列表中', async ({ page }) => {
-    await page.click('button:has-text("新建"), button:has-text("+"), .add-todo-button')
-    await page.fill('input[placeholder*="待办"], input[placeholder*="标题"]', '测试待办')
-    await page.click('button:has-text("确认"), button:has-text("添加")')
-    await expect(page.locator('text=测试待办')).toBeVisible()
-  })
-
-  test('创建待办后 Store 包含新待办', async ({ page }) => {
-    await page.click('button:has-text("新建"), button:has-text("+"), .add-todo-button')
-    await page.fill('input[placeholder*="待办"], input[placeholder*="标题"]', '验证待办')
-    await page.click('button:has-text("确认"), button:has-text("添加")')
-    const todoCount = await page.evaluate(() => {
-      return (window as any).__pinia__?.state?.value?.todo?.todos?.length ?? 0
-    })
-    expect(todoCount).toBeGreaterThan(0)
-  })
-
-  test('标记待办完成后显示删除线', async ({ page }) => {
-    await page.click('button:has-text("新建"), button:has-text("+"), .add-todo-button')
-    await page.fill('input[placeholder*="待办"], input[placeholder*="标题"]', '完成测试待办')
-    await page.click('button:has-text("确认"), button:has-text("添加")')
-    await expect(page.locator('text=完成测试待办')).toBeVisible()
-    // 点击复选框
-    const checkbox = page.locator('text=完成测试待办').locator('..').locator('input[type="checkbox"], .checkbox')
-    await checkbox.click()
-    // 验证 Store 中 completed 状态
-    const isCompleted = await page.evaluate(() => {
-      const todos = (window as any).__pinia__?.state?.value?.todo?.todos
-      return todos?.find((t: any) => t.title === '完成测试待办')?.completed
-    })
-    expect(isCompleted).toBe(true)
-  })
-
-  test('筛选待完成待办', async ({ page }) => {
-    await page.click('button:has-text("新建"), button:has-text("+"), .add-todo-button')
-    await page.fill('input[placeholder*="待办"], input[placeholder*="标题"]', '筛选测试待办')
-    await page.click('button:has-text("确认"), button:has-text("添加")')
-    // 点击筛选标签
-    await page.click('text=待完成')
-    await expect(page.locator('text=筛选测试待办')).toBeVisible()
-  })
-
-  test('删除待办后从列表消失', async ({ page }) => {
-    await page.click('button:has-text("新建"), button:has-text("+"), .add-todo-button')
-    await page.fill('input[placeholder*="待办"], input[placeholder*="标题"]', '删除测试待办')
-    await page.click('button:has-text("确认"), button:has-text("添加")')
-    await expect(page.locator('text=删除测试待办')).toBeVisible()
-    // 右键删除
-    await page.locator('text=删除测试待办').click({ button: 'right' })
-    await page.click('text=删除')
-    await page.click('button:has-text("确认")')
-    await expect(page.locator('text=删除测试待办')).not.toBeVisible()
-  })
-})
-```
-
-- [ ] **Step 2: 运行待办 CRUD E2E 测试**
-
-Run: `pnpm exec playwright test --config=e2e/playwright.config.ts e2e/web/todo-crud.spec.ts`
-Expected: 测试通过（可能需要根据实际 UI 选择器微调）
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add e2e/web/todo-crud.spec.ts
-git commit -m "test: 新增 Web 端待办 CRUD E2E 测试"
-```
-
----
-
-## Task 10: Web 端视图切换与云同步 E2E 测试
-
-**Files:**
-- Create: `e2e/web/calendar-view-navigation.spec.ts`
-- Create: `e2e/web/sync-flow.spec.ts`
-
-- [ ] **Step 1: 编写视图切换导航 E2E 测试**
-
-```typescript
-// e2e/web/calendar-view-navigation.spec.ts
-import { test, expect } from '@playwright/test'
-import { mockApiRoutes } from '../helpers/api-mock'
-
-test.describe('视图切换与日期导航', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockApiRoutes(page)
-    await page.goto('/calendar')
-  })
-
-  test('默认加载月视图', async ({ page }) => {
-    await expect(page.locator('.month-view, [data-testid="month-view"]')).toBeVisible()
-  })
-
-  test('切换到周视图', async ({ page }) => {
-    await page.click('button:has-text("周"), [aria-label="周视图"]')
-    await expect(page.locator('.week-view, [data-testid="week-view"]')).toBeVisible()
-  })
-
-  test('切换到日视图', async ({ page }) => {
-    await page.click('button:has-text("日"), [aria-label="日视图"]')
-    await expect(page.locator('.day-view, [data-testid="day-view"]')).toBeVisible()
-  })
-
-  test('"今天"按钮回到当前日期', async ({ page }) => {
-    await page.click('button:has-text("◀"), [aria-label="上一月"]')
-    await page.click('button:has-text("今天")')
-    const currentMonth = new Date().toLocaleDateString('zh-CN', { month: 'long' })
-    await expect(page.locator(`text=${currentMonth}`)).toBeVisible()
-  })
-
-  test('视图状态刷新后保持', async ({ page }) => {
-    await page.click('button:has-text("周"), [aria-label="周视图"]')
-    await page.reload()
-    await expect(page.locator('.week-view, [data-testid="week-view"]')).toBeVisible()
-  })
-})
-```
-
-- [ ] **Step 2: 编写云同步流程 E2E 测试**
-
-```typescript
-// e2e/web/sync-flow.spec.ts
-import { test, expect } from '@playwright/test'
-import { mockApiRoutes } from '../helpers/api-mock'
-
-test.describe('云同步流程', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockApiRoutes(page)
-  })
-
-  test('登录后同步状态为 idle', async ({ page }) => {
-    await page.goto('/profile')
-    await page.fill('input[type="email"]', 'test@example.com')
-    await page.fill('input[type="password"]', 'password123')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('text=测试用户')).toBeVisible()
-    const syncStatus = await page.evaluate(() => {
-      return (window as any).__pinia__?.state?.value?.auth?.syncStatus
-    })
-    expect(syncStatus).toBe('idle')
-  })
-
-  test('创建事件后自动触发同步', async ({ page }) => {
-    let syncCalled = false
-    await page.route('**/api/v1/sync/now', async (route) => {
-      syncCalled = true
-      await route.fulfill({ json: { code: 0 }, status: 200 })
-    })
-    await page.goto('/calendar')
-    const createButton = page.locator('button:has-text("+"), button[aria-label="新建"]')
-    await createButton.click()
-    await page.fill('input[placeholder*="标题"], input[placeholder*="事件"]', '同步测试')
-    await page.click('button:has-text("创建"), button:has-text("保存")')
-    await page.waitForTimeout(1000)
-    expect(syncCalled).toBe(true)
-  })
-
-  test('同步失败后状态为 error', async ({ page }) => {
-    await page.route('**/api/v1/sync/now', async (route) => {
-      await route.fulfill({ json: { code: 500, message: '同步失败' }, status: 500 })
-    })
-    await page.goto('/profile')
-    await page.fill('input[type="email"]', 'test@example.com')
-    await page.fill('input[type="password"]', 'password123')
-    await page.click('button:has-text("登录")')
-    await expect(page.locator('text=测试用户')).toBeVisible()
-    // 手动触发同步
-    await page.click('button:has-text("同步"), button:has-text("立即同步")')
-    await page.waitForTimeout(1000)
-    const syncStatus = await page.evaluate(() => {
-      return (window as any).__pinia__?.state?.value?.auth?.syncStatus
-    })
-    expect(syncStatus).toBe('error')
-  })
-})
-```
-
-- [ ] **Step 3: 运行两个 E2E 测试**
-
-Run: `pnpm exec playwright test --config=e2e/playwright.config.ts e2e/web/calendar-view-navigation.spec.ts e2e/web/sync-flow.spec.ts`
 Expected: 测试通过
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add e2e/web/calendar-view-navigation.spec.ts e2e/web/sync-flow.spec.ts
-git commit -m "test: 新增 Web 端视图切换和云同步 E2E 测试"
+git add e2e/web/auth-flow.spec.ts
+git commit -m "test: 增强认证流程 E2E 测试（选择器改用 data-testid）"
 ```
 
 ---
 
-## Task 11: CI 测试流水线配置
+## Task 8: 增强现有 Web 端日历事件 CRUD E2E 测试
+
+> **状态：已存在。** `e2e/web/calendar-event-crud.spec.ts`（4,583 bytes），需改用 data-testid 选择器。
 
 **Files:**
-- Create: `.github/workflows/test.yml`
+- Modify: `e2e/web/calendar-event-crud.spec.ts`
 
-- [ ] **Step 1: 创建 CI 测试流水线**
+- [ ] **Step 1: 替换选择器为 getByTestId()**
 
-```yaml
-# .github/workflows/test.yml
-name: Test
+将 CSS/文本选择器替换为 `page.getByTestId()`。需确认 `CalendarView.vue`（13 个 data-testid）和事件创建组件的标注覆盖。
 
-on:
-  push:
-    branches: [main, feature/*, bugfix/*]
-  pull_request:
-    branches: [main]
+- [ ] **Step 2: 运行测试验证**
 
-jobs:
-  unit-and-component:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-      - run: pnpm install
-      - run: pnpm test:run
-      - run: pnpm test:coverage
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage
-          path: coverage/
+Run: `pnpm exec playwright test --config=e2e/playwright.config.ts e2e/web/calendar-event-crud.spec.ts`
 
-  e2e-web:
-    needs: unit-and-component
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 9
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'pnpm'
-      - run: pnpm install
-      - run: pnpm exec playwright install chromium
-      - run: pnpm exec playwright test --config=e2e/playwright.config.ts
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-report
-          path: e2e/playwright-report/
-```
-
-- [ ] **Step 2: Commit**
+- [ ] **Step 3: Commit**
 
 ```bash
-git add .github/workflows/test.yml
-git commit -m "ci: 新增 CI 测试流水线（单测 + Web E2E）"
+git add e2e/web/calendar-event-crud.spec.ts
+git commit -m "test: 增强日历事件 CRUD E2E 测试（选择器改用 data-testid）"
 ```
 
 ---
 
-## Task 12: 安装 WebDriverIO 并创建桌面端配置
+## Task 9: 增强现有 Web 端待办 CRUD E2E 测试
+
+> **状态：已存在。** `e2e/web/todo-crud.spec.ts`（4,410 bytes），需改用 data-testid 选择器。
 
 **Files:**
-- Modify: `package.json`（通过 pnpm add 命令）
-- Create: `e2e/wdio.tauri.conf.ts`
-- Create: `e2e/helpers/tauri-mock.ts`
+- Modify: `e2e/web/todo-crud.spec.ts`
 
-- [ ] **Step 1: 安装 WebDriverIO 依赖**
+- [ ] **Step 1: 替换选择器为 getByTestId()**
 
-Run: `pnpm add -D @wdio/cli @wdio/local-runner @wdio/mocha-framework wdio-tauri-driver`
+需确认 `TodosView.vue`（11 个 data-testid）的标注覆盖。
 
-- [ ] **Step 2: 创建 WebDriverIO 桌面端配置**
+- [ ] **Step 2: 运行测试验证**
 
-```typescript
-// e2e/wdio.tauri.conf.ts
-import type { Options } from '@wdio/types'
+Run: `pnpm exec playwright test --config=e2e/playwright.config.ts e2e/web/todo-crud.spec.ts`
 
-export const config: Options.Testrunner = {
-  autoCompileOpts: {
-    autoCompile: true,
-    tsNodeOpts: {
-      transpileOnly: true,
-    },
-  },
-  runner: 'local',
-  specs: ['./e2e/tauri/**/*.spec.ts'],
-  exclude: [],
-  maxInstances: 1,
-  capabilities: [
-    {
-      'tauri:options': {
-        application: '', // 由 tauri-driver 填充
-      },
-    },
-  ],
-  connectionRetryTimeout: 120000,
-  connectionRetryCount: 3,
-  framework: 'mocha',
-  mochaOpts: {
-    ui: 'bdd',
-    timeout: 60000,
-  },
-}
+- [ ] **Step 3: Commit**
+
+```bash
+git add e2e/web/todo-crud.spec.ts
+git commit -m "test: 增强待办 CRUD E2E 测试（选择器改用 data-testid）"
 ```
 
-- [ ] **Step 3: 创建 Tauri API mock 封装**
+---
 
-```typescript
-// e2e/helpers/tauri-mock.ts
-import { Page } from '@playwright/test'
+## Task 10: 增强现有视图切换与云同步 E2E 测试
 
-export async function mockTauriApi(page: Page, mocks: Record<string, unknown>) {
-  await page.addInitScript((mockData) => {
-    const listeners: Record<string, Function[]> = {}
+> **状态：已存在。** `e2e/web/calendar-view-navigation.spec.ts`（2,416 bytes）+ `e2e/web/sync-flow.spec.ts`（1,966 bytes），需改用 data-testid 选择器。
 
-    window.__TAURI__ = {
-      invoke: (cmd: string, args?: any) => {
-        if (mockData[cmd]) return Promise.resolve(typeof mockData[cmd] === 'function' ? mockData[cmd](args) : mockData[cmd])
-        return Promise.resolve(null)
-      },
-      event: {
-        listen: (event: string, handler: Function) => {
-          if (!listeners[event]) listeners[event] = []
-          listeners[event].push(handler)
-          return Promise.resolve(() => { listeners[event] = listeners[event].filter(h => h !== handler) })
-        },
-        emit: (event: string, payload?: any) => { listeners[event]?.forEach(h => h(payload)) },
-      },
-    }
-  }, mocks)
-}
+**Files:**
+- Modify: `e2e/web/calendar-view-navigation.spec.ts`
+- Modify: `e2e/web/sync-flow.spec.ts`
 
-export const defaultTauriMocks = {
-  auth_check_status: { authenticated: false },
-  auth_get_public_key: 'mock-public-key',
-  get_calendars: [],
-  get_events: [],
-  get_todos: [],
-  get_setting: null,
-}
+- [ ] **Step 1: 替换视图切换测试中的选择器**
+
+视图切换按钮应使用 `getByTestId('btn-week-view')` / `getByTestId('btn-day-view')` 等。
+
+- [ ] **Step 2: 替换同步流程测试中的选择器**
+
+- [ ] **Step 3: 运行测试验证**
+
+Run: `pnpm exec playwright test --config=e2e/playwright.config.ts e2e/web/calendar-view-navigation.spec.ts e2e/web/sync-flow.spec.ts`
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add e2e/web/calendar-view-navigation.spec.ts e2e/web/sync-flow.spec.ts
+git commit -m "test: 增强视图切换和云同步 E2E 测试（选择器改用 data-testid）"
+```
+
+---
+
+## Task 11: 验证/增强 CI 测试流水线
+
+> **状态：已存在。** `.github/workflows/test.yml`（84 行）已包含完善的单测 + Web E2E 配置。本 Task 做验证和增强。
+
+**Files:**
+- Modify: `.github/workflows/test.yml`
+
+- [ ] **Step 1: 验证现有 CI 配置**
+
+确认包含：
+- `pnpm/action-setup@v4` + `version: 11`
+- `actions/setup-node@v4` + `node-version: 22`
+- `concurrency` 控制
+- `pnpm install --frozen-lockfile`
+- 单测 job + Web E2E job
+- artifact 上传（coverage + playwright-report）
+
+- [ ] **Step 2: 增强 — E2E 和单测改为并行运行**
+
+```yaml
+# 移除 e2e-web-tests job 的 needs: unit-tests
+# 原因：E2E 反馈周期不应被单测阻塞，两者独立运行独立报告
+jobs:
+  e2e-web-tests:
+    name: Web 端 E2E (Playwright)
+    runs-on: windows-latest
+    # 删除：needs: unit-tests
+```
+
+- [ ] **Step 3: 增强 — 添加桌面端 E2E 占位 job**
+
+```yaml
+  # 桌面端 E2E 暂不可行（需要 tauri-driver + 构建桌面应用），添加占位 job
+  e2e-tauri-tests:
+    name: 桌面端 E2E (WebDriverIO) — 暂未启用
+    runs-on: windows-latest
+    if: false  # 手动启用
+    steps:
+      - run: echo "桌面端 E2E 测试需要 tauri-driver 和构建好的桌面应用，暂未配置"
 ```
 
 - [ ] **Step 4: Commit**
 
 ```bash
-git add e2e/wdio.tauri.conf.ts e2e/helpers/tauri-mock.ts package.json pnpm-lock.yaml
-git commit -m "feat: 搭建 WebDriverIO 桌面端 E2E 基础设施"
+git add .github/workflows/test.yml
+git commit -m "ci: 增强 CI 流水线（E2E 和单测并行 + 桌面端 E2E 占位）"
 ```
 
 ---
 
-## Task 13: 桌面端核心 E2E 测试（离线/身份切换/同步）
+## Task 12: 验证/增强 WebDriverIO 桌面端配置
+
+> **状态：已存在。** `e2e/wdio.tauri.conf.ts`（37 行）已配置，但缺少 `@crabnebula/tauri-driver` 依赖。
 
 **Files:**
-- Create: `e2e/tauri/offline-crud.spec.ts`
-- Create: `e2e/tauri/identity-switch.spec.ts`
+- Verify: `e2e/wdio.tauri.conf.ts`
+- Modify: `package.json`（通过 pnpm add）
 
-- [ ] **Step 1: 编写离线操作 E2E 测试**
-
-```typescript
-// e2e/tauri/offline-crud.spec.ts
-// 注意：此测试需要 tauri-driver 环境，CI 中运行
-// 本地开发时需先启动 tauri-driver + 构建的桌面应用
-
-describe('离线操作', () => {
-  it('离线创建事件后本地可见', async () => {
-    // 模拟离线状态
-    await browser.execute(() => {
-      Object.defineProperty(navigator, 'onLine', { value: false, writable: true })
-      window.dispatchEvent(new Event('offline'))
-    })
-
-    // 创建事件（应写入 SQLite，不报错）
-    // ... 根据实际 UI 操作
-
-    // 验证事件在前端可见
-    // ... 根据实际 UI 验证
-  })
-
-  it('联网后自动同步离线创建的事件', async () => {
-    // 先离线创建事件
-    // ...
-
-    // 恢复网络
-    await browser.execute(() => {
-      Object.defineProperty(navigator, 'onLine', { value: true, writable: true })
-      window.dispatchEvent(new Event('online'))
-    })
-
-    // 等待同步触发
-    await browser.pause(2000)
-
-    // 验证同步状态
-    const syncStatus = await browser.execute(() => {
-      return (window as any).__pinia__?.state?.value?.auth?.syncStatus
-    })
-    expect(syncStatus).toBe('success')
-  })
-})
-```
-
-- [ ] **Step 2: 编写身份切换 E2E 测试**
-
-```typescript
-// e2e/tauri/identity-switch.spec.ts
-
-describe('登录身份切换', () => {
-  it('登录后日历 type 从 local 变为 online', async () => {
-    // 登录前验证日历 type
-    const beforeType = await browser.execute(() => {
-      const calendars = (window as any).__pinia__?.state?.value?.calendar?.calendars
-      return calendars?.[0]?.type
-    })
-    expect(beforeType).toBe('local')
-
-    // 执行登录
-    // ...
-
-    // 登录后验证日历 type 变为 online
-    const afterType = await browser.execute(() => {
-      const calendars = (window as any).__pinia__?.state?.value?.calendar?.calendars
-      return calendars?.[0]?.type
-    })
-    expect(afterType).toBe('online')
-  })
-
-  it('登出后日历 type 从 online 变回 local', async () => {
-    // 先登录
-    // ...
-
-    // 执行登出
-    // ...
-
-    // 验证日历 type 变回 local
-    const afterType = await browser.execute(() => {
-      const calendars = (window as any).__pinia__?.state?.value?.calendar?.calendars
-      return calendars?.[0]?.type
-    })
-    expect(afterType).toBe('local')
-  })
-})
-```
-
-- [ ] **Step 3: Commit**
+- [ ] **Step 1: 安装正确的 tauri-driver 依赖**
 
 ```bash
-git add e2e/tauri/offline-crud.spec.ts e2e/tauri/identity-switch.spec.ts
-git commit -m "test: 新增桌面端离线操作和身份切换 E2E 测试"
+# 注意：原计划中的 wdio-tauri-driver 在 npm 上不存在
+# 正确的包是 @crabnebula/tauri-driver（由 CrabNebula 官方维护）
+pnpm add -D @crabnebula/tauri-driver
+```
+
+- [ ] **Step 2: 验证 wdio.tauri.conf.ts 配置**
+
+确认包含：
+- `specs: ['./tauri/**/*.spec.ts']`
+- `capabilities` 含 `tauri:options`
+- `services: ['tauri']`
+- `framework: 'mocha'`
+
+- [ ] **Step 3: 更新 package.json 的 e2e:tauri 脚本（如需要）**
+
+确保 `e2e:tauri` 脚本能正确启动 tauri-driver。
+
+- [ ] **Commit**
+
+```bash
+git add package.json pnpm-lock.yaml
+git commit -m "chore: 安装 @crabnebula/tauri-driver 替代不存在的 wdio-tauri-driver"
 ```
 
 ---
 
-## Task 14: Agent 测试生成技能和模板
+## Task 13: 增强桌面端 E2E 测试（v2 迭代）
+
+> **状态：骨架代码。** `e2e/tauri/` 下已有 3 个 spec 文件，但内容较为简略。桌面端 E2E 依赖 tauri-driver + 构建好的桌面应用，CI 中暂不可行，标记为 v2 迭代。
 
 **Files:**
-- Create: `.agents/skills/testing/SKILL.md`
-- Create: `.agents/skills/testing/templates/unit-test.template.ts`
-- Create: `.agents/skills/testing/templates/component-test.template.ts`
-- Create: `.agents/skills/testing/templates/e2e-test.template.ts`
-- Create: `.agents/skills/testing/guides/writing-unit-tests.md`
-- Create: `.agents/skills/testing/guides/writing-component-tests.md`
-- Create: `.agents/skills/testing/guides/writing-e2e-tests.md`
+- Verify: `e2e/tauri/offline-crud.spec.ts`
+- Verify: `e2e/tauri/reminder-popup.spec.ts`
+- Verify: `e2e/tauri/tray-popup.spec.ts`
 
-- [ ] **Step 1: 创建测试技能入口**
+- [ ] **Step 1: 验证现有桌面端 E2E 测试结构**
 
-```markdown
-// .agents/skills/testing/SKILL.md
-# 测试工程化技能
+读取 3 个 spec 文件，确认测试结构基本正确。
 
-## 触发条件
-- 新增 Store、Service、组件、页面
-- 修改核心业务逻辑
-- Agent 定期扫描覆盖率时
+- [ ] **Step 2: 确认本地运行前置条件**
 
-## 生成规范
+桌面端 E2E 本地运行需要：
+1. 构建桌面应用：`pnpm tauri:build`
+2. 启动 tauri-driver
+3. 运行测试：`pnpm e2e:tauri`
 
-| 新增内容 | 必须生成 | 模板 |
-|----------|---------|------|
-| Store | L1 单测（mock Repository） | unit-test.template.ts |
-| Service | L1 单测 | unit-test.template.ts |
-| 组件 | L2 组件测试（交互场景） | component-test.template.ts |
-| 业务流程 | L3 E2E 测试（Playwright spec） | e2e-test.template.ts |
+在 Task 步骤中记录此前置条件。
 
-## 数据验证要求
-- 新增数据操作 → 必须验证 Store → API/SQLite → 同步 → 刷新恢复
-- 涉及平台差异 → 必须标注 Web/桌面端差异用例
-- 同步操作 → 验证 syncRepo.triggerCloudSync() 被调用
+- [ ] **Step 3: 本 Task 标记为 v2 迭代，不阻塞主线**
 
-## 参考
-- guides/writing-unit-tests.md
-- guides/writing-component-tests.md
-- guides/writing-e2e-tests.md
-```
+如需增强测试内容（补充 `// ...` 占位的实际操作步骤），在后续迭代中完成。
 
-- [ ] **Step 2: 创建单测模板**
+---
+
+## Task 14: 验证/增强测试技能模板
+
+> **状态：已存在。** `.agents/skills/testing/` 下已有 7 个文件（SKILL.md + 3 guides + 3 templates），需验证并增强。
+
+**Files:**
+- Verify: `.agents/skills/testing/SKILL.md`
+- Verify: `.agents/skills/testing/guides/`
+- Modify: `.agents/skills/testing/templates/unit-test.template.ts`
+
+- [ ] **Step 1: 验证测试技能文档结构**
+
+确认 7 个文件存在且内容完整。
+
+- [ ] **Step 2: 增强 unit-test.template.ts — 补全动态导入模式**
+
+现有最佳实践：Store 测试需使用动态导入避免 mock 失效：
 
 ```typescript
-// .agents/skills/testing/templates/unit-test.template.ts
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { setActivePinia, createPinia } from 'pinia'
+// .agents/skills/testing/templates/unit-test.template.ts — 补充说明
 
-// Mock Repository 接口
-const mockRepo = {
-  // method: vi.fn(),
-}
+// ⚠️ 重要：Store 模块必须使用动态导入，确保 mock 在 store 加载前生效
+// 正确：
+const { useXxxStore } = await import('../stores/xxx')
+// 错误（mock 可能失效）：
+import { useXxxStore } from '../stores/xxx'
+```
 
+- [ ] **Step 3: 增强 unit-test.template.ts — 补全完整 mock 骨架**
+
+```typescript
+// 模板中的 vi.mock('@/platform/provider') 应返回完整的 repo 和 capabilities 对象：
 vi.mock('@/platform/provider', () => ({
   usePlatform: () => ({
-    repoName: mockRepo,
+    authRepo: { /* 完整 mock 方法 */ },
+    calendarRepo: { /* 完整 mock 方法 */ },
+    eventRepo: { /* 完整 mock 方法 */ },
+    todoRepo: { /* 完整 mock 方法 */ },
+    settingsRepo: { /* 完整 mock 方法 */ },
+    syncRepo: { /* 完整 mock 方法 */ },
   }),
   useCapabilities: () => ({
-    // capabilities
+    hasLocalDatabase: false,
+    hasOfflineMode: false,
+    hasSsoSessionDetection: false,
+    // ... 其他能力
   }),
 }))
-
-describe('模块名称', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    setActivePinia(createPinia())
-  })
-
-  it('应正确初始化', async () => {
-    // Arrange
-    // Act
-    // Assert
-  })
-})
 ```
 
-- [ ] **Step 3: 创建组件测试模板**
-
-```typescript
-// .agents/skills/testing/templates/component-test.template.ts
-import { describe, it, expect, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
-import ComponentName from '@/components/path/ComponentName.vue'
-
-describe('ComponentName', () => {
-  it('应正确渲染', () => {
-    const wrapper = mount(ComponentName, {
-      props: {},
-    })
-    expect(wrapper.find('.selector').exists()).toBe(true)
-  })
-
-  it('点击按钮应触发事件', async () => {
-    const wrapper = mount(ComponentName, {
-      props: {},
-    })
-    await wrapper.find('button').trigger('click')
-    expect(wrapper.emitted('event-name')).toBeTruthy()
-  })
-})
-```
-
-- [ ] **Step 4: 创建 E2E 测试模板**
-
-```typescript
-// .agents/skills/testing/templates/e2e-test.template.ts
-import { test, expect } from '@playwright/test'
-import { mockApiRoutes } from '../helpers/api-mock'
-
-test.describe('功能名称', () => {
-  test.beforeEach(async ({ page }) => {
-    await mockApiRoutes(page)
-    await page.goto('/path')
-  })
-
-  test('操作描述', async ({ page }) => {
-    // 操作
-    // 验证 UI
-    // 验证 Store 状态
-    const storeValue = await page.evaluate(() => {
-      return (window as any).__pinia__?.state?.value?.storeName?.keyName
-    })
-    expect(storeValue).toEqual(expected)
-  })
-})
-```
-
-- [ ] **Step 5: 创建编写指南（3个）**
-
-简要编写指南，包含：命名规范、Mock 模式、数据验证模式、平台差异标注格式。
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 4: Commit**
 
 ```bash
 git add .agents/skills/testing/
-git commit -m "feat: 新增 Agent 测试生成技能和模板"
+git commit -m "docs: 增强测试技能模板（动态导入模式 + 完整 mock 骨架）"
 ```
 
 ---
 
-## Task 15: 全量测试验证和最终提交
-
-**Files:**
-- None（验证性任务）
+## Task 15: 全量测试验证
 
 - [ ] **Step 1: 运行全部单元测试**
 
 Run: `pnpm test:run`
-Expected: 0 失败（原来 21 个 SSO 相关测试应全部通过）
+Expected: 全部通过
 
 - [ ] **Step 2: 运行 Web 端 E2E 测试**
 
@@ -1449,13 +793,31 @@ Expected: 全部通过
 Run: `pnpm test:coverage`
 Expected: 覆盖率 > 50%
 
-- [ ] **Step 4: 确认 CI 配置正确**
+- [ ] **Step 4: 验证 CI 配置语法**
 
-Run: 检查 `.github/workflows/test.yml` 语法正确
+确认 `.github/workflows/test.yml` 语法正确，E2E 和单测可并行运行。
 
-- [ ] **Step 5: 最终 Commit（如有遗漏修复）**
+---
 
-```bash
-git add -A
-git commit -m "chore: 测试工程化体系 v1 完成"
-```
+## 评审问题追踪表
+
+| 编号 | 严重度 | 问题 | 修复 Task | 状态 |
+|------|--------|------|-----------|------|
+| S1 | 🔴 | Task 1-5 代码已实现 | Task 1-5 改为验证 | ✅ 已修正 |
+| S2 | 🔴 | E2E 选择器不可靠 | Task 0 + Task 7-10 | ✅ 已修正 |
+| S3 | 🔴 | wdio-tauri-driver 不存在 | Task 12 | ✅ 已修正 |
+| S4 | 🔴 | 覆盖已有更完善文件 | Task 6/11/12/14 改为验证/增强 | ✅ 已修正 |
+| M1 | 🟡 | API Mock URL 路径 | Task 6 Step 3 | ✅ 已修正 |
+| M2 | 🟡 | 网络错误静默返回 false | Task 2 修复 1 | ✅ 已修正 |
+| M3 | 🟡 | localStorage 违反隔离 | Task 4 修复 1 | ✅ 已修正 |
+| M4 | 🟡 | wasLoggedInGetter 回调模式 | Task 2 修复 1 | ✅ 已修正 |
+| M5 | 🟡 | hasSsoLogin 命名不精确 | Task 4 修复 2 | ✅ 已修正 |
+| M6 | 🟡 | 桌面端 E2E 空壳 | Task 13 标记 v2 | ✅ 已修正 |
+| M7 | 🟡 | CI 配置覆盖降级 | Task 11 改为增强 | ✅ 已修正 |
+| M8 | 🟡 | 模板缺动态导入 | Task 14 Step 2 | ✅ 已修正 |
+| M9 | 🟡 | CI E2E 和单测串行 | Task 11 Step 2 | ✅ 已修正 |
+| L1 | 🟢 | BroadcastChannel 常量 | Task 2 修复 3 | ✅ 已修正 |
+| L2 | 🟢 | cleanup 未关闭 channel | Task 4 修复 3 | ✅ 已修正 |
+| L3 | 🟢 | 选择器优先级 | Task 7-10 统一 | ✅ 已修正 |
+| L4 | 🟢 | sso-coordinator 引用 | Task 4 修复 3 注释 | ✅ 已修正 |
+| L5 | 🟢 | 模板引用现有文件 | Task 14 改为验证/增强 | ✅ 已修正 |
