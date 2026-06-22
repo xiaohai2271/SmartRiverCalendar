@@ -49,7 +49,6 @@ impl ProxyApiClient {
         let config = self.config.read().unwrap_or_else(|e| e.into_inner());
         config.platform_url.clone()
     }
-    }
 
     /// 设置内部客户端的认证 Token
     ///
