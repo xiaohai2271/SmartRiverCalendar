@@ -10,6 +10,8 @@
 
 一款基于 Tauri 2.x + Vue 3 + TypeScript 构建的跨平台桌面日历应用，支持多日历管理、多种视图模式、农历/节假日显示。
 
+> 本项目全程采用 AI 辅助开发流程交付（MCP 工具 + Skills + 多 Agent 协作规范），从需求 SPEC、编码、测试到 CHANGELOG 均在结构化 AI 协作流中完成。
+
 </div>
 
 ## 功能特性
