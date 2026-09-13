@@ -370,12 +370,7 @@ watch(() => route.query.date, (dateParam) => {
   }
 }, { immediate: true })
 
-// 搜索词或日期范围变化时重新加载事件
-watch([searchQuery, startDate, endDate], () => {
-  loadScheduleEvents()
-}, { immediate: true })
-
-// 筛选后的事件（使用独立查询）
+// 筛选后的事件（独立查询，避免依赖 calendarStore 全量事件）
 const { eventRepo } = usePlatform()
 const scheduleEvents = ref<CalendarEvent[]>([])
 
@@ -409,6 +404,12 @@ async function loadScheduleEvents() {
     scheduleEvents.value = calendarStore.eventsForCurrentView
   }
 }
+
+// 搜索词或日期范围变化时重新加载事件
+// 注意：必须在 scheduleEvents / loadScheduleEvents 声明之后注册，否则 immediate 会触发 TDZ
+watch([searchQuery, startDate, endDate], () => {
+  loadScheduleEvents()
+}, { immediate: true })
 
 const filteredEvents = computed(() => {
   let events = scheduleEvents.value

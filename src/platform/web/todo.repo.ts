@@ -15,14 +15,15 @@ export class WebTodoRepository implements ITodoRepository {
 
   async getAll(): Promise<Todo[]> {
     const response = await this.apiClient.get<ApiResponse<PageResponse<WebTodo>>>('/todos')
-    if (response.code !== 0 || !response.data) {
+    const items = response.code === 0 ? response.data?.items : undefined
+    if (!Array.isArray(items)) {
       throw new RepositoryError({
         code: RepoErrorCodes.NETWORK_ERROR,
         message: response.message || '无法获取待办列表',
         platform: this.platform,
       })
     }
-    return response.data.items.map(transformWebTodo)
+    return items.map(transformWebTodo)
   }
 
   async getByCalendarId(calendarId: number): Promise<Todo[]> {

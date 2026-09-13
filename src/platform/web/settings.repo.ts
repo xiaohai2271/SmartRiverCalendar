@@ -17,7 +17,7 @@ export class WebSettingsRepository implements ISettingsRepository {
   async loadAppSettings(): Promise<AppSettings> {
     // API: GET /settings?prefix=app.
     const response = await this.apiClient.get<ApiResponse<Array<{ key: string; value: string; description?: string }>>>('/settings?prefix=app.')
-    if (response.code !== 0 || !response.data) {
+    if (response.code !== 0 || !Array.isArray(response.data)) {
       return getDefaultAppSettings()
     }
     // 将 key-value 列表转换为 AppSettings 对象
@@ -55,7 +55,7 @@ export class WebSettingsRepository implements ISettingsRepository {
   async loadPopupSettings(): Promise<PopupSettings> {
     // API: GET /settings?prefix=popup.
     const response = await this.apiClient.get<ApiResponse<Array<{ key: string; value: string; description?: string }>>>('/settings?prefix=popup.')
-    if (response.code !== 0 || !response.data) {
+    if (response.code !== 0 || !Array.isArray(response.data)) {
       return getDefaultPopupSettings()
     }
     // 将 key-value 列表转换为 PopupSettings 对象
