@@ -1,7 +1,7 @@
 {
   "name": "xiaohe-calendar",
   "private": true,
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@fluentui/web-components": "^2.6.1",
-    "@tauri-apps/api": "^2.10.1",
+    "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-autostart": "^2.5.1",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-fs": "^2.5.0",
@@ -35,7 +35,7 @@
   "devDependencies": {
     "@crabnebula/tauri-driver": "^2.0.9",
     "@playwright/test": "^1.61.0",
-    "@tauri-apps/cli": "^2.10.1",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/dompurify": "^3.2.0",
     "@types/node": "^24.12.0",
     "@vitejs/plugin-vue": "^6.0.5",
