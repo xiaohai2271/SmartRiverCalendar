@@ -207,13 +207,7 @@ impl<'a> CalendarRepository<'a> {
                 r#"
                 INSERT INTO calendars (id, name, color, type, account_id, visible, sync_enabled, read_only, user_id, timezone, created_at, updated_at)
                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
-                ON CONFLICT(id) DO UPDATE SET
-                    name=excluded.name, color=excluded.color, type=excluded.type,
-                    account_id=excluded.account_id, visible=excluded.visible,
-                    sync_enabled=excluded.sync_enabled, read_only=excluded.read_only,
-                    user_id=excluded.user_id,
-                    timezone=excluded.timezone, updated_at=excluded.updated_at,
-                    deleted_at=NULL
+                ON CONFLICT(id) DO NOTHING
                 "#,
                 params![
                     id,
@@ -494,20 +488,20 @@ impl<'a> CalendarRepository<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::schema::create_tables;
+    use crate::db::schema::init_database;
 
-    /// 创建测试用的内存数据库
+    /// 创建测试用的内存数据库（与生产一致：建表 + 迁移）
     fn setup_test_db() -> DatabaseConnection {
         let db = DatabaseConnection::in_memory().expect("创建内存数据库失败");
         db.execute(|conn| {
-            create_tables(conn).map_err(|e| {
+            init_database(conn).map_err(|e| {
                 rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     e.to_string(),
                 )))
             })
         })
-        .expect("创建表失败");
+        .expect("初始化数据库失败");
         db
     }
 
@@ -523,6 +517,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -552,6 +547,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -563,6 +559,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -592,6 +589,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: true,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -635,6 +633,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -697,6 +696,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -745,6 +745,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -818,6 +819,7 @@ mod tests {
             account_id: Some(1),
             visible: true,
             sync_enabled: true,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -829,6 +831,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -857,6 +860,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -868,6 +872,7 @@ mod tests {
             account_id: None,
             visible: false,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -895,6 +900,7 @@ mod tests {
             account_id: None,
             visible: default_visible(),
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -920,6 +926,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -953,6 +960,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: true,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -988,6 +996,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: Some(42),
             timezone: Some("America/New_York".to_string()),
         };
@@ -1009,6 +1018,7 @@ mod tests {
             account_id: None, // 不引用外部账户，避免外键约束
             visible: true,
             sync_enabled: true,
+            read_only: false,
             user_id: Some(1),
             timezone: None,
         };
@@ -1035,6 +1045,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             user_id: None,
             timezone: None,
         };
@@ -1048,6 +1059,7 @@ mod tests {
             account_id: Some(2),
             visible: true,
             sync_enabled: true,
+            read_only: false,
             user_id: Some(1),
             timezone: None,
         };

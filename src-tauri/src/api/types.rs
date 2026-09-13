@@ -773,6 +773,7 @@ mod tests {
             account_id: None,
             visible: true,
             sync_enabled: false,
+            read_only: false,
             description: Some("工作相关事件".to_string()),
             user_id: Some(1),
             is_default: true,
