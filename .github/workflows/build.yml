@@ -176,7 +176,8 @@ jobs:
 
   release:
     needs: [build-windows, build-linux, build-macos]
-    if: github.event_name == 'release'
+    # 至少一个平台成功即可挂载产物，避免单平台失败阻塞整次发版
+    if: always() && github.event_name == 'release' && !cancelled() && (needs.build-windows.result == 'success' || needs.build-linux.result == 'success' || needs.build-macos.result == 'success')
     runs-on: ubuntu-latest
     permissions:
       contents: write
