@@ -1,5 +1,11 @@
 # 更新记录 (Changelog)
 
+## [0.2.1] - 2026-09-13
+
+### 🐛 修复
+
+- 修复 Release 构建流水线：`pnpm-workspace.yaml` 补充 `packages` 字段，CI pnpm 升级到 10，解决 `pnpm store path` 因 workspace 配置报错导致无法产出安装包的问题
+
 ## [0.2.0] - 2026-09-11
 
 ### 🚀 新功能
