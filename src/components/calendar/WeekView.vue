@@ -145,7 +145,7 @@ function isToday(date: Date): boolean {
 }
 
 function getEventsForDay(day: Date): CalendarEvent[] {
-  return calendarStore.events.filter(event => {
+  return calendarStore.eventsForCurrentView.filter(event => {
     const eventDate = new Date(event.startTime)
     return isSameDay(eventDate, day)
   })

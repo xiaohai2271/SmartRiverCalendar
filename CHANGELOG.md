@@ -1,5 +1,35 @@
 # 更新记录 (Changelog)
 
+## [0.2.0] - 2026-09-11
+
+### 🚀 新功能
+
+- **远程日历数据服务** (#44)：新增「我的」页面，支持邮箱密码注册/登录、GitHub OAuth；Rust 侧 JWT + keyring 存储与自动刷新；日程/待办登录态云同步
+- **多端平台抽象**：Repository + PlatformCapabilities 完整落地（Tauri 本地优先 / Web 远程优先），Store 不感知平台
+- **API 环境配置重构**：移除 Mock 模式、API 与平台地址分离、连通性检查
+- **测试工程化**：Web Playwright E2E、CI 并行流水线、data-testid 规范与测试技能模板
+
+### 🔒 安全加固
+
+- 严格 CSP 策略，收窄 fs/shell 权限，debug 构建隔离 mcp-bridge (#54 / #61–#65)
+- CalDAV/EWS XXE 防护、密钥派生改用用户特定盐（PBKDF2）、Web Token 改 sessionStorage
+- 移除 updater 硬编码 API Key，Auth Repository 不再静默吞错
+
+### 🏗️ 架构与性能
+
+- 事件 CRUD 分支下沉 Rust 统一命令；`calendars.read_only` 列
+- 外部日历同步服务提取；Reminder 三层拆分；同步逻辑下沉 Rust SyncEngine
+- 视图驱动加载、复合索引 `idx_events_cal_start`、SQL 全量 user_id 过滤
+
+### 🐛 修复
+
+- 补全 Rust 测试库 schema `read_only` 列，`cargo test --lib` 可完整通过
+- `insert_with_id` 恢复「已存在则忽略」语义，与云同步调用方约定一致
+
+### 📦 版本
+
+- 应用版本号统一升级至 0.2.0（package.json / tauri.conf.json / Cargo.toml）
+
 ## [0.1.2] - 2026-05-05
 
 ### 🚀 新功能

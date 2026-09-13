@@ -1,8 +1,8 @@
 /**
  * 节假日持久化模块
  * 用于保存和管理用户自定义的节假日和补休日期
- * 
- * 数据流: Vue → Service → Tauri invoke() → Rust → SQLite
+ *
+ * 数据流: Vue → Service → settingsRepo → 平台实现 → 数据源
  * 当数据库不可用时，降级到 localStorage
  */
 
@@ -36,11 +36,11 @@ const STORAGE_KEY = 'user-holidays'
  * @returns 用户自定义节假日数据，如果不存在或解析失败则返回空对象
  */
 export async function loadCustomHolidays(): Promise<CustomHolidayData> {
-  const dbAvailable = await settingsService.isDatabaseAvailable()
+  const dbAvailable = settingsService.isDatabaseAvailable()
   
   if (dbAvailable) {
     try {
-      const holidays = await settingsService.getAllUserHolidays()
+      const holidays = await settingsService.getUserHolidays()
       const result: CustomHolidayData = { holidays: {}, makeupDays: {} }
       
       for (const h of holidays) {
@@ -80,12 +80,12 @@ export async function loadCustomHolidays(): Promise<CustomHolidayData> {
  * @param data 要保存的节假日数据
  */
 export async function saveCustomHolidays(data: CustomHolidayData): Promise<void> {
-  const dbAvailable = await settingsService.isDatabaseAvailable()
+  const dbAvailable = settingsService.isDatabaseAvailable()
   
   if (dbAvailable) {
     try {
       // 先清除所有现有数据
-      const existing = await settingsService.getAllUserHolidays()
+      const existing = await settingsService.getUserHolidays()
       for (const h of existing) {
         await settingsService.removeUserHoliday(h.date, h.category)
       }
@@ -122,7 +122,7 @@ export async function saveCustomHolidays(data: CustomHolidayData): Promise<void>
  * @param type 类型 'holiday' | 'makeup'
  */
 export async function addCustomHoliday(date: string, name: string, type: 'holiday' | 'makeup'): Promise<void> {
-  const dbAvailable = await settingsService.isDatabaseAvailable()
+  const dbAvailable = settingsService.isDatabaseAvailable()
   
   if (dbAvailable) {
     try {
@@ -155,7 +155,7 @@ export async function addCustomHoliday(date: string, name: string, type: 'holida
  * @param type 类型 'holiday' | 'makeup'
  */
 export async function removeCustomHoliday(date: string, type: 'holiday' | 'makeup'): Promise<void> {
-  const dbAvailable = await settingsService.isDatabaseAvailable()
+  const dbAvailable = settingsService.isDatabaseAvailable()
   
   if (dbAvailable) {
     try {

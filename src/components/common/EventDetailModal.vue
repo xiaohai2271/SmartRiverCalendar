@@ -62,38 +62,56 @@ function handleModalClick(e: MouseEvent) {
         @click="handleOverlayClick"
       >
         <div
-          class="event-detail-modal fluent-card"
+          class="event-detail-modal elegant-modal-card"
           @click="handleModalClick"
           @keydown.escape="handleClose"
         >
-          <!-- 日历颜色条 -->
-          <div
-            class="calendar-color-bar"
-            :style="{ backgroundColor: calendarColor }"
-          ></div>
-
-          <!-- 头部 -->
+          <!-- 头部 - 大字标题排版，去除生硬边线 -->
           <div class="modal-header">
-            <h3 class="detail-title">{{ event.title }}</h3>
-            <button class="close-btn" @click="handleClose">
-              <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+            <div class="title-with-color-dot">
+              <!-- 精致日历颜色呼吸小圆点，色彩克制，画龙点睛 -->
+              <span class="calendar-color-dot calendar-color-bar" :style="{ backgroundColor: calendarColor }"></span>
+              <h3 class="detail-title">{{ event.title }}</h3>
+            </div>
+            <button class="close-btn" @click="handleClose" type="button">
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
                 <path d="M5 5L15 15M5 15L15 5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
               </svg>
             </button>
           </div>
 
-          <!-- 内容 -->
+          <!-- 内容 - Notion & Todoist 风格的属性对齐网格 -->
           <div class="modal-body">
-            <!-- 时间 -->
-            <div class="detail-row">
-              <span class="detail-label">时间</span>
-              <span class="detail-time">{{ timeDisplay }}</span>
-            </div>
+            <div class="metadata-detail-grid">
+              
+              <!-- 1. 时间属性 -->
+              <div class="meta-detail-row">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                  <span>时间区间</span>
+                </span>
+                <span class="meta-row-value detail-time">{{ timeDisplay }}</span>
+              </div>
 
-            <!-- 描述 -->
-            <div v-if="hasDescription" class="detail-row">
-              <span class="detail-label">描述</span>
-              <span class="detail-description">{{ event.description }}</span>
+              <!-- 2. 描述属性 -->
+              <div v-if="hasDescription" class="meta-detail-row align-start">
+                <span class="meta-row-label">
+                  <svg class="meta-svg-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                    <polyline points="14 2 14 8 20 8"/>
+                    <line x1="16" y1="13" x2="8" y2="13"/>
+                    <line x1="16" y1="17" x2="8" y2="17"/>
+                  </svg>
+                  <span>事件描述</span>
+                </span>
+                <span class="meta-row-value detail-description">{{ event.description }}</span>
+              </div>
+
             </div>
           </div>
         </div>
@@ -121,22 +139,16 @@ function handleModalClick(e: MouseEvent) {
 /* 模态框 */
 .event-detail-modal {
   position: relative;
-  width: 480px;
+  width: 440px;
   max-width: 90vw;
   overflow: hidden;
   display: flex;
   flex-direction: column;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
-}
-
-/* 日历颜色条 */
-.calendar-color-bar {
-  height: 4px;
-  width: 100%;
-  flex-shrink: 0;
+  border-radius: var(--radius-xl);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.28);
+  animation: scaleIn var(--transition-smooth);
 }
 
 /* 头部 */
@@ -144,17 +156,31 @@ function handleModalClick(e: MouseEvent) {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 14px 18px;
-  border-bottom: 1px solid var(--border-color);
+  padding: 20px 24px 10px 24px;
+}
+
+.title-with-color-dot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.calendar-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
 .detail-title {
   margin: 0;
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--text-primary);
-  flex: 1;
-  min-width: 0;
+  letter-spacing: -0.4px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -168,7 +194,7 @@ function handleModalClick(e: MouseEvent) {
   height: 28px;
   background: transparent;
   border: none;
-  border-radius: var(--radius-sm);
+  border-radius: 50%;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--transition-fast);
@@ -182,33 +208,60 @@ function handleModalClick(e: MouseEvent) {
 
 /* 内容 */
 .modal-body {
-  padding: 16px 18px;
+  padding: 16px 24px 24px 24px;
 }
 
-.detail-row {
+/* Metadata Detail Grid (Notion & Apple style) */
+.metadata-detail-grid {
   display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: var(--bg-tertiary);
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(0, 0, 0, 0.02);
+}
+
+.meta-detail-row {
+  display: flex;
+  align-items: center;
+}
+
+.meta-detail-row.align-start {
   align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 12px;
 }
 
-.detail-row:last-child {
-  margin-bottom: 0;
-}
-
-.detail-label {
+.meta-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100px;
+  color: var(--text-secondary);
   font-size: 13px;
   font-weight: 500;
-  color: var(--text-secondary);
-  min-width: 40px;
   flex-shrink: 0;
 }
 
-.detail-time,
-.detail-description {
+.meta-svg-icon {
+  color: var(--text-tertiary);
+}
+
+.meta-row-value {
+  flex: 1;
   font-size: 13px;
   color: var(--text-primary);
+  font-weight: 500;
   word-break: break-word;
+}
+
+.detail-time {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.detail-description {
+  line-height: 1.5;
+  color: var(--text-secondary);
 }
 
 /* 过渡动画 */

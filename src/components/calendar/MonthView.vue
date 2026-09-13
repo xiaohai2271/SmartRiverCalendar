@@ -11,6 +11,8 @@
         v-for="(day, index) in monthDays"
         :key="index"
         class="day-cell"
+        data-testid="day-cell"
+        :data-date="formatDateStr(day)"
         :class="{
           'other-month': !isSameMonth(day, currentDate),
           'today': isToday(day),
@@ -134,7 +136,7 @@ const settings = computed(() => settingsStore.settings)
 
 // 事件泳道映射（用于多天事件排序）
 const eventLanes = computed(() => {
-  return computeEventLanes(calendarStore.events, currentDate.value)
+  return computeEventLanes(calendarStore.eventsForCurrentView, currentDate.value)
 })
 
 // 事件显示模式
@@ -190,6 +192,13 @@ function isSameMonth(date: Date, compareDate: Date): boolean {
   return date.getMonth() === compareDate.getMonth() && date.getFullYear() === compareDate.getFullYear()
 }
 
+function formatDateStr(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 function isToday(date: Date): boolean {
   return isTodayFn(date)
 }
@@ -211,7 +220,7 @@ function shouldShowFestival(day: Date): boolean {
 }
 
 function getEventsForDay(day: Date): CalendarEvent[] {
-  const events = calendarStore.events.filter(event => {
+  const events = calendarStore.eventsForCurrentView.filter(event => {
     return isEventOnDay(event, day)
   })
   const lanes = eventLanes.value

@@ -96,7 +96,10 @@ impl DatabaseConnection {
     /// # 注意
     /// 获取锁后应尽快释放，避免长时间持有导致阻塞
     pub fn get_connection(&self) -> std::sync::MutexGuard<'_, Connection> {
-        self.conn.lock().expect("数据库连接锁获取失败")
+        self.conn.lock().unwrap_or_else(|e| {
+            log::error!("数据库连接锁获取失败: {}", e);
+            e.into_inner()
+        })
     }
 
     /// 开始延迟事务

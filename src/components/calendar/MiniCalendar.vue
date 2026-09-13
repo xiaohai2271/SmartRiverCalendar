@@ -73,52 +73,72 @@ function selectDate(date: Date) {
 <style scoped>
 .mini-calendar {
   user-select: none;
+  width: 100%;
 }
 
 .mini-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  padding: 0 4px;
 }
 
 .nav-btn {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
+  font-weight: 600;
   border-radius: 4px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-fast);
 }
 
 .nav-btn:hover {
   background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 .month-label {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
 }
 
 .mini-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 3px 2px;
   text-align: center;
 }
 
 .weekday {
   font-size: 10px;
-  color: var(--text-secondary);
-  padding: 4px 0;
+  font-weight: 600;
+  color: var(--text-tertiary);
+  padding: 2px 0;
+  opacity: 0.8;
 }
 
 .day {
-  font-size: 12px;
-  padding: 4px;
+  font-size: clamp(10px, 1.1vw, 12px);
+  font-weight: 500;
+  padding: 4px 0;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 6px;
+  color: var(--text-primary);
+  transition: all var(--transition-fast);
 }
 
 .day:hover {
@@ -126,16 +146,26 @@ function selectDate(date: Date) {
 }
 
 .day.other-month {
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
+  opacity: 0.35; /* 大幅降低非本月日期的透明度，视觉降噪 */
 }
 
 .day.today {
   background: var(--accent-color);
   color: white;
+  font-weight: 600;
 }
 
 .day.selected {
-  outline: 2px solid var(--accent-color);
-  outline-offset: -2px;
+  outline: 1.5px solid var(--accent-color);
+  outline-offset: -1.5px;
+  background: var(--accent-light);
+  color: var(--accent-color);
+}
+
+.day.today.selected {
+  color: white;
+  background: var(--accent-color);
+  outline-color: var(--accent-active);
 }
 </style>

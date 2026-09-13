@@ -15,7 +15,7 @@
     "core:window:allow-set-size",
     "core:window:allow-inner-position",
     "core:window:allow-outer-position",
-    "shell:default",
+    "shell:allow-open",
     "notification:default",
     "updater:default",
     "autostart:allow-enable",
@@ -23,10 +23,15 @@
     "autostart:allow-is-enabled",
     "global-shortcut:default",
     "positioner:default",
-    "mcp-bridge:default",
     "dialog:default",
     "dialog:allow-save",
-    "fs:default",
-    "fs:allow-write-text-file"
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOWNLOAD/**" },
+        { "path": "$DOCUMENT/**" }
+      ]
+    }
   ]
 }

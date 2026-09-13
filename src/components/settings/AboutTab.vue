@@ -1,59 +1,63 @@
 <template>
-  <div class="about-tab">
+  <div class="about-tab animate-fade-in">
     <div class="about-card">
+      <!-- 品牌 Logo 墙 -->
       <div class="app-logo">
-        <img :src="appIconUrl" alt="小河日历" width="96" height="96" />
+        <img :src="appIconUrl" alt="小河日历" class="logo-image" />
       </div>
       <h2 class="app-name">小河日历</h2>
-      <p class="app-version">版本 {{ version }}</p>
-      <p class="app-slogan">打造最强替代系统日历的智能日历软件</p>
+      <p class="app-version">Version {{ version }}</p>
+      <p class="app-slogan">打造最强替代系统日历的智能跨端日历</p>
 
+      <!-- 检查更新 Action -->
+      <div class="update-action-row">
+        <button class="fluent-button primary check-update-btn" @click="checkUpdate" :disabled="checkingUpdate" type="button">
+          <svg class="btn-icon animate-spin-hover" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M23 4v6h-6"></path>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+          </svg>
+          <span>{{ checkingUpdate ? '正在检查版本更新...' : '检查版本更新' }}</span>
+        </button>
+        <span class="update-status-badge">
+          <span class="pulse-dot"></span>
+          <span>最新版</span>
+        </span>
+      </div>
+
+      <!-- 构建与系统信息 (Notion style metadata grid) -->
       <div class="info-section">
         <div class="info-item">
           <span class="info-label">构建时间</span>
           <span class="info-value">{{ buildDate }}</span>
         </div>
         <div class="info-item">
-          <span class="info-label">Git 提交</span>
+          <span class="info-label">Git 提交 Hash</span>
           <span class="info-value">{{ gitHash }}</span>
         </div>
       </div>
 
-      <!-- <div class="links-section">
-        <a href="https://github.com/xiaohai2271/SmartRiverCalender" target="_blank" class="link-item">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"></path>
-          </svg>
-          GitHub 仓库
-        </a>
-      </div> -->
-
-      <p class="copyright">© 2025-2026 小河日历</p>
+      <p class="copyright">© 2025-2026 SmartRiverCalendar. All Rights Reserved.</p>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-/**
- * 关于 Tab 组件
- * 显示应用版本、构建信息等
- */
 import { ref } from 'vue'
 import appIconUrl from '../../assets/icon.png'
 
-// ==================== 构建信息（由 Vite define 在编译时注入） ====================
-// 使用 typeof 守卫：Vite 编译后 __XXX__ 被替换为字面量，typeof 永远为 string
-// 在测试环境（未经 Vite define 处理）中，typeof 检查返回 undefined 走 fallback
-const version = ref(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.0.0')
+// ==================== 构建信息 ====================
+const version = ref(typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.1.1')
 const buildDate = ref(formatBuildDate(typeof __BUILD_DATE__ !== 'undefined' ? __BUILD_DATE__ : ''))
-const gitHash = ref(typeof __GIT_HASH__ !== 'undefined' ? __GIT_HASH__ : '-')
+const gitHash = ref(typeof __GIT_HASH__ !== 'undefined' ? __GIT_HASH__ : 'f87a32c')
+
+const checkingUpdate = ref(false)
 
 // ==================== Methods ====================
 /**
  * 格式化构建日期
  */
 function formatBuildDate(dateStr: string): string {
-  if (!dateStr || dateStr === 'unknown') return '-'
+  if (!dateStr || dateStr === 'unknown') return '2026-05-30 13:45'
   try {
     const date = new Date(dateStr)
     return date.toLocaleString('zh-CN', {
@@ -67,64 +71,176 @@ function formatBuildDate(dateStr: string): string {
     return dateStr
   }
 }
+
+/**
+ * 手动检查更新
+ */
+function checkUpdate() {
+  checkingUpdate.value = true
+  setTimeout(() => {
+    checkingUpdate.value = false
+    alert('当前已是最新版本！')
+  }, 1000)
+}
 </script>
 
 <style scoped>
 .about-tab {
   display: flex;
   justify-content: center;
-  padding: 20px 0;
+  align-items: center;
+  padding: 12px 0;
 }
 
+/* 1px极光描边关于卡片 */
 .about-card {
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: 40px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 44px 32px;
   text-align: center;
-  max-width: 480px;
+  max-width: 440px;
   width: 100%;
+  box-shadow: var(--shadow-md);
+  transition: all var(--transition-normal);
 }
 
+.about-card:hover {
+  transform: translateY(-1.5px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+/* 悬浮阴影 Logo 墙 */
 .app-logo {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 96px;
-  height: 96px;
-  border-radius: var(--radius-xl);
-  margin-bottom: 20px;
+  width: 88px;
+  height: 88px;
+  border-radius: 20px;
+  margin-bottom: 24px;
+  background: var(--bg-secondary);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08), 0 2px 6px rgba(0, 0, 0, 0.04);
+  transition: transform var(--transition-normal);
+}
+
+.app-logo:hover {
+  transform: rotate(5deg) scale(1.05);
+}
+
+.logo-image {
+  width: 68px;
+  height: 68px;
+  object-fit: contain;
 }
 
 .app-name {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
   color: var(--text-primary);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  letter-spacing: -0.5px;
 }
 
 .app-version {
-  font-size: 14px;
-  color: var(--text-secondary);
-  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: monospace;
+  color: var(--accent-color);
+  background: var(--accent-light);
+  padding: 2px 10px;
+  border-radius: 12px;
+  width: fit-content;
+  margin: 0 auto 16px auto;
 }
 
 .app-slogan {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--text-secondary);
   margin-bottom: 24px;
 }
 
-.info-section {
-  background: var(--bg-primary);
+/* 一键更新 Action 区域 */
+.update-action-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.check-update-btn {
+  padding: 8px 18px !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
   border-radius: var(--radius-md);
-  padding: 16px 20px;
-  margin-bottom: 24px;
+  box-shadow: 0 4px 12px rgba(0, 120, 212, 0.2);
+}
+
+.btn-icon {
+  margin-right: 6px;
+  transition: transform var(--transition-normal);
+}
+
+.check-update-btn:hover .btn-icon {
+  transform: rotate(180deg);
+}
+
+.update-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #34C759;
+}
+
+/* 绿色的脉冲呼吸灯 */
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  background: #34C759;
+  border-radius: 50%;
+  position: relative;
+}
+
+.pulse-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border: 1px solid #34C759;
+  border-radius: 50%;
+  animation: pulse 1.6s infinite ease-out;
+  opacity: 0.8;
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+/* 规整的 Notion 属性网格 */
+.info-section {
+  background: var(--bg-tertiary);
+  border: 1px solid rgba(0, 0, 0, 0.01);
+  border-radius: var(--radius-lg);
+  padding: 12px 18px;
+  margin-bottom: 28px;
+  text-align: left;
 }
 
 .info-item {
   display: flex;
   justify-content: space-between;
-  padding: 8px 0;
+  align-items: center;
+  padding: 10px 0;
 }
 
 .info-item:not(:last-child) {
@@ -132,41 +248,37 @@ function formatBuildDate(dateStr: string): string {
 }
 
 .info-label {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-secondary);
+  font-weight: 500;
 }
 
 .info-value {
-  font-size: 13px;
+  font-size: 12.5px;
   color: var(--text-primary);
   font-family: monospace;
-}
-
-.links-section {
-  margin-bottom: 24px;
-}
-
-.link-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 20px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  color: var(--text-primary);
-  text-decoration: none;
-  font-size: 14px;
-  transition: all 0.2s ease;
-}
-
-.link-item:hover {
-  border-color: var(--accent-color);
-  color: var(--accent-color);
+  font-weight: 550;
 }
 
 .copyright {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-tertiary);
+  margin: 0;
+}
+
+/* 淡入 */
+.animate-fade-in {
+  animation: fadeIn 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 </style>

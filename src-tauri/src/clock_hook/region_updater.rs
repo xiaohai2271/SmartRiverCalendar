@@ -228,7 +228,10 @@ impl RegionUpdater {
 
                 log::info!("[RegionUpdater] 线程退出");
             })
-            .expect("坐标更新器线程创建失败")
+            .unwrap_or_else(|e| {
+                log::error!("坐标更新器线程创建失败: {}", e);
+                panic!("坐标更新器线程创建失败: {}", e)
+            })
     }
 
     /// 扫描所有屏幕的时钟区域（无锁，耗时操作在此完成）

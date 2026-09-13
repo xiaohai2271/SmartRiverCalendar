@@ -1,85 +1,159 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import type { Calendar, CalendarEvent, CalendarView, DateRange } from '../types'
-import {
-  invokeGetAllAccounts,
-  invokeGetExternalCalendars,
-  safeInvoke,
-  invokeGetCalendars,
-  invokeCreateCalendar,
-  invokeUpdateCalendar,
-  invokeDeleteCalendar,
-  invokeGetEvents,
-  invokeCreateEvent,
-  invokeUpdateEvent,
-  invokeDeleteEvent
-} from '../utils/tauri'
+import { usePlatform, useCapabilities } from '@/platform/provider'
+import { cloudSyncService } from '../services/cloudSync'
+import { startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth } from '@/utils/date'
+import { debounce } from '@/utils/helpers'
+import { getValidCalendarId } from '@/utils/calendar-helpers'
 
-// 默认日历 ID（前端生成的临时 ID，用于数据库为空时的默认日历）
-const DEFAULT_CALENDAR_ID = 'default'
+const DAY_MS = 86400000
 
 export const useCalendarStore = defineStore('calendar', () => {
-  // State
-  const calendars = ref<Calendar[]>([
-    {
-      id: DEFAULT_CALENDAR_ID,
-      name: '我的日历',
-      color: '#4A90D9',
-      type: 'local',
-      visible: true,
-      syncEnabled: false
-    }
-  ])
-
+  const calendars = ref<Calendar[]>([])
   const events = ref<CalendarEvent[]>([])
-  const currentView = ref<CalendarView>('month') // 默认值，将在 initialize 中从设置读取
+  const currentView = ref<CalendarView>('month')
   const currentDate = ref(new Date())
   const selectedDate = ref<Date | null>(null)
   const isInitialized = ref(false)
+  const loadedRange = ref<{ start: number; end: number } | null>(null)
+  const totalEventCount = ref<number>(0)
 
-  // 初始化数据库并加载数据
+  function computeLoadRange(view: CalendarView, date: Date): { start: number; end: number } {
+    const d = new Date(date)
+    switch (view) {
+      case 'day': {
+        const start = startOfDay(d)
+        const end = endOfDay(d)
+        return {
+          start: new Date(start.getTime() - DAY_MS).getTime(),
+          end: new Date(end.getTime() + DAY_MS).getTime(),
+        }
+      }
+      case 'week': {
+        const weekStart = startOfWeek(d)
+        const weekEnd = endOfWeek(d)
+        return {
+          start: new Date(weekStart.getTime() - 3 * DAY_MS).getTime(),
+          end: new Date(weekEnd.getTime() + 3 * DAY_MS).getTime(),
+        }
+      }
+      case 'month': {
+        const monthStart = startOfMonth(d)
+        const monthEnd = endOfMonth(d)
+        return {
+          start: new Date(monthStart.getTime() - 7 * DAY_MS).getTime(),
+          end: new Date(monthEnd.getTime() + 7 * DAY_MS).getTime(),
+        }
+      }
+      case 'year': {
+        const firstMonth = startOfMonth(new Date(d.getFullYear(), 0, 1))
+        const firstMonthEnd = endOfMonth(firstMonth)
+        return {
+          start: new Date(firstMonth.getTime() - 7 * DAY_MS).getTime(),
+          end: new Date(firstMonthEnd.getTime() + 7 * DAY_MS).getTime(),
+        }
+      }
+    }
+  }
+
+  async function loadYearView(date: Date): Promise<void> {
+    const { eventRepo } = usePlatform()
+    const visibleCalendarIds = visibleCalendars.value.map(c => c.id)
+    if (visibleCalendarIds.length === 0) {
+      events.value = []
+      return
+    }
+    const year = date.getFullYear()
+    const monthlyRanges = Array.from({ length: 12 }, (_, i) => {
+      const monthStart = startOfMonth(new Date(year, i, 1))
+      const monthEnd = endOfMonth(monthStart)
+      return {
+        start: new Date(monthStart.getTime() - 7 * DAY_MS).getTime(),
+        end: new Date(monthEnd.getTime() + 7 * DAY_MS).getTime(),
+      }
+    })
+    const results = await Promise.all(
+      monthlyRanges.map(range =>
+        eventRepo.getByTimeRangeAndCalendars(range.start, range.end, visibleCalendarIds)
+          .catch(() => [] as CalendarEvent[])
+      )
+    )
+    // 去重合并（相邻月份缓冲区有重叠）
+    const eventMap = new Map<string, CalendarEvent>()
+    for (const monthEvents of results) {
+      for (const event of monthEvents) {
+        eventMap.set(event.id, event)
+      }
+    }
+    events.value = Array.from(eventMap.values())
+    loadedRange.value = {
+      start: monthlyRanges[0].start,
+      end: monthlyRanges[11].end,
+    }
+  }
+
+  function isEventInRange(event: CalendarEvent, range: { start: number; end: number }): boolean {
+    return event.startTime < range.end && event.endTime > range.start
+  }
+
   async function initialize() {
     if (isInitialized.value) return
 
     try {
-      // 从 localStorage 加载默认视图设置
+      const { calendarRepo, eventRepo } = usePlatform()
+
+
+      // 通过 settingsStore 获取默认视图设置
       try {
-        const storedSettings = localStorage.getItem('app-settings')
-        if (storedSettings) {
-          const settings = JSON.parse(storedSettings)
-          if (settings.defaultView) {
-            currentView.value = settings.defaultView
-          }
+        const { useSettingsStore } = await import('./settings')
+        const settingsStore = useSettingsStore()
+        const defaultView = settingsStore.settings?.defaultView
+        if (defaultView) {
+          currentView.value = defaultView
         }
       } catch (e) {
-        console.error('Failed to load default view setting:', e)
+        console.warn('[CalendarStore] 无法加载默认视图设置:', e)
       }
 
-      // 1. 优先加载本地日历（快速操作）
-      const loadedCalendars = await invokeGetCalendars()
+      const loadedCalendars = await calendarRepo.getAll()
       if (loadedCalendars.length > 0) {
         calendars.value = loadedCalendars
       } else {
-        // 数据库为空，保存默认日历到数据库
-        const defaultCal = calendars.value[0]
-        const created = await invokeCreateCalendar({
-          name: defaultCal.name,
-          color: defaultCal.color,
-          type: defaultCal.type,
-          visible: defaultCal.visible,
-          syncEnabled: defaultCal.syncEnabled
-        })
-        if (created) {
+        const capabilities = useCapabilities()
+        if (capabilities.dataPriority === 'local-first') {
+          const created = await calendarRepo.create({
+            name: '我的日历',
+            color: '#4A90D9',
+            type: 'local',
+            visible: true,
+            syncEnabled: false
+          })
           calendars.value = [created]
           console.log('Default calendar saved to database:', created.id)
         }
       }
 
-      // 2. 加载本地事件（快速操作）
-      const loadedEvents = await invokeGetEvents()
-      events.value = loadedEvents
+      // 按时间范围加载事件
+      const visibleCalendarIds = visibleCalendars.value.map(c => c.id)
+      if (visibleCalendarIds.length === 0) {
+        events.value = []
+      } else if (currentView.value === 'year') {
+        await loadYearView(currentDate.value)
+      } else {
+        const { start, end } = computeLoadRange(currentView.value, currentDate.value)
+        const loadedEvents = await eventRepo.getByTimeRangeAndCalendars(start, end, visibleCalendarIds)
+        events.value = loadedEvents
+        loadedRange.value = { start, end }
+      }
 
-      // 3. 先标记初始化完成，让界面先渲染
+      // 获取事件总数
+      try {
+        totalEventCount.value = await eventRepo.getCount()
+      } catch {
+        totalEventCount.value = events.value.length
+      }
+
       isInitialized.value = true
       console.log('Calendar store initialized (local data):', {
         calendars: calendars.value.length,
@@ -87,53 +161,73 @@ export const useCalendarStore = defineStore('calendar', () => {
         defaultView: currentView.value
       })
 
-      // 4. 延迟加载外部数据（网络请求，不阻塞界面）
-      // 使用 setTimeout 确保界面先渲染完成
-      setTimeout(async () => {
+      // 初始化完成后，触发 Rust 后端同步外部日历
+      // 后端同步完成时通过 `external-sync-complete` 事件通知前端刷新
+      const capabilities = useCapabilities()
+      if (capabilities.hasExternalSync) {
         try {
-          // 加载外部账号和日历
-          await loadExternalCalendars()
-
-          // 加载外部事件：根据当前视图范围初始化加载
-          const { start, end } = currentDateRange.value
-          await loadExternalEvents(start.getTime(), end.getTime())
-
-          console.log('External data loaded successfully')
+          const { syncRepo } = usePlatform()
+          // 监听后端同步完成事件，自动刷新数据
+          syncRepo.onExternalSyncComplete(() => {
+            reloadFromDatabase()
+          })
+          // 触发首次同步
+          await syncRepo.triggerExternalSync()
         } catch (error) {
-          console.error('Failed to load external data:', error)
+          console.error('[CalendarStore] 触发外部日历同步失败:', error)
         }
-      }, 200) // 延迟 200ms，让界面先渲染
+      }
 
     } catch (error) {
       console.error('Failed to initialize calendar store:', error)
-      // 即使失败也标记初始化完成，避免界面卡死
       isInitialized.value = true
     }
   }
 
+
   // 加载外部日历
   async function loadExternalCalendars() {
     try {
-      const accounts = await invokeGetAllAccounts()
+      const { syncRepo, calendarRepo } = usePlatform()
+      const accounts = await syncRepo.getAllAccounts()
       if (!accounts || accounts.length === 0) return
 
       for (const account of accounts) {
         try {
-          const externalCalendars = await invokeGetExternalCalendars(account)
-          if (!externalCalendars) {
+          await syncRepo.getExternalEvents({
+            accountId: account.id,
+            accountType: account.type,
+            serverUrl: account.serverUrl,
+            username: account.username,
+            encryptedPassword: account.encryptedPassword || '',
+            calendarUrl: '',
+            calendarId: '',
+            startTime: 0,
+            endTime: Date.now() * 2,
+          })
+
+          const calList = await syncRepo.getExternalCalendars({
+            accountId: account.id,
+            accountType: account.type,
+            serverUrl: account.serverUrl,
+            username: account.username,
+            encryptedPassword: account.encryptedPassword || '',
+            calendarUrl: '',
+          })
+
+          if (!calList || calList.length === 0) {
             console.warn(`[CalendarStore] No calendars found for account: ${account.username} (${account.id})`)
             continue
           }
 
-          console.log(`[CalendarStore] Loaded ${externalCalendars.length} calendars for account: ${account.username}`)
-
-          for (const cal of externalCalendars) {
-            // 外部日历的 ID 格式: ext_{accountId}_{externalCalId}
+          for (const cal of calList) {
             const calendarId = `ext_${account.id}_${cal.id}`
-            const existingIndex = calendars.value.findIndex(c => c.id === calendarId)
+            const existingIndex = calendars.value.findIndex(c => 
+              c.id === calendarId ||
+              (c.accountId === String(account.id) && c.type === account.type)
+            )
 
             if (existingIndex === -1) {
-              // 添加新的外部日历
               const newCal: Calendar = {
                 id: calendarId,
                 name: cal.name,
@@ -145,28 +239,30 @@ export const useCalendarStore = defineStore('calendar', () => {
                 username: account.username,
                 encryptedPassword: account.encryptedPassword,
                 calendarUrl: cal.url,
-                readOnly: cal.readOnly ?? false,
+                readOnly: cal.readOnly,
                 visible: true,
                 syncEnabled: true
               }
               calendars.value.push(newCal)
-              
-              // 持久化到数据库
-              try {
-                await invokeCreateCalendar({
-                  name: newCal.name,
-                  color: newCal.color,
-                  type: newCal.type,
-                  accountId: parseInt(account.id),
-                  visible: newCal.visible,
-                  syncEnabled: newCal.syncEnabled
-                })
-                console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库`)
-              } catch (dbError) {
-                console.error(`保存外部日历 ${cal.name} 失败:`, dbError)
+
+              const capabilities = useCapabilities()
+              if (capabilities.dataPriority === 'local-first') {
+                try {
+                  const created = await calendarRepo.create({
+                    name: newCal.name,
+                    color: newCal.color,
+                    type: newCal.type,
+                    accountId: parseInt(account.id),
+                    visible: newCal.visible,
+                    syncEnabled: newCal.syncEnabled
+                  })
+                  newCal.id = String(created.id)
+                  console.log(`[CalendarStore] 已将外部日历 ${cal.name} 保存到数据库，回填 ID: ${created.id}`)
+                } catch (dbError) {
+                  console.error(`保存外部日历 ${cal.name} 失败:`, dbError)
+                }
               }
             } else {
-              // 更新已存在的外部日历凭证和权限
               calendars.value[existingIndex] = {
                 ...calendars.value[existingIndex],
                 accountType: account.type,
@@ -174,25 +270,26 @@ export const useCalendarStore = defineStore('calendar', () => {
                 username: account.username,
                 encryptedPassword: account.encryptedPassword,
                 calendarUrl: cal.url,
-                readOnly: cal.readOnly ?? false,
+                readOnly: cal.readOnly,
               }
-              
-              // 同步更新数据库中的信息
-              const calId = parseInt(calendars.value[existingIndex].id)
-              if (!isNaN(calId)) {
-                try {
-                  await invokeUpdateCalendar({
-                    id: calId,
-                    visible: calendars.value[existingIndex].visible,
-                    syncEnabled: calendars.value[existingIndex].syncEnabled
-                  })
-                } catch (dbError) {
-                  console.error(`更新外部日历 ${cal.name} 到数据库失败:`, dbError)
+
+              const capabilities = useCapabilities()
+              if (capabilities.dataPriority === 'local-first') {
+                const calId = parseInt(calendars.value[existingIndex].id)
+                if (!isNaN(calId)) {
+                  try {
+                    await calendarRepo.update({
+                      id: calId,
+                      visible: calendars.value[existingIndex].visible,
+                      syncEnabled: calendars.value[existingIndex].syncEnabled
+                    })
+                  } catch (dbError) {
+                    console.error(`更新外部日历 ${cal.name} 到数据库失败:`, dbError)
+                  }
                 }
               }
             }
           }
-          console.log(`[CalendarStore] 账号 ${account.username} 处理完成，当前总日历数: ${calendars.value.length}`)
         } catch (error) {
           console.error(`加载账号 ${account.username} 的外部日历失败:`, error)
         }
@@ -205,103 +302,49 @@ export const useCalendarStore = defineStore('calendar', () => {
   // 加载外部事件并与本地数据库进行协调同步
   async function loadExternalEvents(startTime: number, endTime: number) {
     try {
-      console.log('[loadExternalEvents] 开始加载外部事件', {
-        startTime: new Date(startTime).toISOString(),
-        endTime: new Date(endTime).toISOString(),
-        totalCalendars: calendars.value.length
-      })
+      const { syncRepo, eventRepo } = usePlatform()
 
-      const externalCalendars = calendars.value.filter(c => c.type !== 'local')
-      console.log('[loadExternalEvents] 外部日历数量:', externalCalendars.length)
+      const externalCalendars = calendars.value.filter(c => c.type === 'exchange' || c.type === 'caldav')
 
       for (const calendar of externalCalendars) {
-        if (!calendar.accountId) {
-          console.log('[loadExternalEvents] 跳过日历（无 accountId）:', calendar.name)
-          continue
-        }
+        if (!calendar.accountId) continue
 
-        console.log('[loadExternalEvents] 日历对象:', {
-          id: calendar.id,
-          name: calendar.name,
-          type: calendar.type,
+        const fetchedEvents = await syncRepo.getExternalEvents({
           accountId: calendar.accountId,
-          accountType: calendar.accountType,
-          serverUrl: calendar.serverUrl,
-          username: calendar.username,
-          encryptedPassword: calendar.encryptedPassword ? '***已设置***' : '未设置',
-          calendarUrl: calendar.calendarUrl
-        })
-
-        const invokeArgs = {
-          accountId: calendar.accountId || '',
-          accountType: calendar.accountType || calendar.type || '',
+          accountType: calendar.accountType || calendar.type,
           serverUrl: calendar.serverUrl || '',
           username: calendar.username || '',
           encryptedPassword: calendar.encryptedPassword || '',
           calendarUrl: calendar.calendarUrl || '',
-          calendarId: calendar.id || '',
-          startTime: startTime,
-          endTime: endTime
-        }
-        console.log('[loadExternalEvents] safeInvoke 调用前 - 参数:', JSON.stringify(invokeArgs))
+          calendarId: calendar.id,
+          startTime,
+          endTime,
+        })
 
-        // 调用 safeInvoke 获取事件
-        const fetchedEvents = await safeInvoke<CalendarEvent[]>('get_external_events', invokeArgs)
-
-        console.log('[loadExternalEvents] safeInvoke 调用后 - 返回值:', fetchedEvents === null ? 'null' : `获取到 ${fetchedEvents.length} 个事件`)
-
-        if (fetchedEvents) {
-          console.log('[loadExternalEvents] fetchedEvents 详情:', {
-            count: fetchedEvents.length,
-            sample: fetchedEvents.slice(0, 2).map(e => ({
-              id: e.id,
-              title: e.title,
-              startTime: e.startTime,
-              endTime: e.endTime,
-              calendarId: e.calendarId,
-              externalId: e.externalId
-            }))
-          })
-
-          console.log(`[loadExternalEvents] 从日历 ${calendar.name} 获取到 ${fetchedEvents.length} 个事件`)
-
-          console.log('[loadExternalEvents] calendarId 匹配检查:', {
-            calendarId: calendar.id,
-            matchedEvents: fetchedEvents.filter(e => e.calendarId === calendar.id).length,
-            mismatchedEvents: fetchedEvents.filter(e => e.calendarId !== calendar.id).length
-          })
-
-          // 查出本地 store 里，当前日历下且在本次查询时间段内的旧事件
+        if (fetchedEvents && fetchedEvents.length > 0) {
           const oldEvents = events.value.filter(e =>
             e.calendarId === calendar.id &&
             e.startTime >= startTime &&
             e.startTime <= endTime
           )
-          console.log('[loadExternalEvents] 本地旧事件数量:', oldEvents.length)
 
           const fetchedIds = new Set(fetchedEvents.map(e => e.id))
 
-          // 找出当前范围内，本地有但服务器没有的事件（可能在其他端被删除），清理掉
           for (const old of oldEvents) {
             if (!fetchedIds.has(old.id)) {
               const oldId = parseInt(old.id)
               if (!isNaN(oldId)) {
-                await invokeDeleteEvent(oldId)
+                await eventRepo.delete(oldId)
               }
             }
           }
 
-          console.log('[loadExternalEvents] 开始保存事件到数据库, 数量:', fetchedEvents.length)
-
-          // 将服务器传来的最新事件全都覆盖保存到数据库，确保断网可用
           for (const newEv of fetchedEvents) {
-            // 检查事件是否存在，决定是创建还是更新
             const existingEvent = events.value.find(e => e.id === newEv.id)
             const eventId = parseInt(newEv.id)
-            
+
             if (existingEvent && !isNaN(eventId)) {
-              // 更新现有事件
-              await invokeUpdateEvent({
+              await eventRepo.update({
                 id: eventId,
                 title: newEv.title,
                 description: newEv.description,
@@ -316,8 +359,7 @@ export const useCalendarStore = defineStore('calendar', () => {
                 externalId: newEv.externalId
               })
             } else if (!isNaN(eventId)) {
-              // 创建新事件
-              await invokeCreateEvent({
+              await eventRepo.create({
                 title: newEv.title,
                 description: newEv.description,
                 startTime: newEv.startTime,
@@ -333,22 +375,10 @@ export const useCalendarStore = defineStore('calendar', () => {
             }
           }
 
-          console.log('[loadExternalEvents] 事件保存到数据库完成')
-
-          // 更新前端状态库：剔除原来区间内的事件，将得到的新事件注入
           events.value = events.value.filter(e => !(e.calendarId === calendar.id && e.startTime >= startTime && e.startTime <= endTime))
           events.value.push(...fetchedEvents)
-
-          console.log('[loadExternalEvents] 保存后事件状态:', {
-            totalEvents: events.value.length,
-            calendarEvents: events.value.filter(e => e.calendarId === calendar.id).length
-          })
-        } else {
-          console.log('[loadExternalEvents] fetchedEvents 为 null 或 undefined')
         }
       }
-
-      console.log('[loadExternalEvents] 加载外部事件完成')
     } catch (error) {
       console.error('[loadExternalEvents] 加载外部事件失败:', error)
     }
@@ -387,315 +417,157 @@ export const useCalendarStore = defineStore('calendar', () => {
   const eventsForCurrentView = computed(() => {
     const { start, end } = currentDateRange.value
     return visibleEvents.value.filter(e => {
-      return e.startTime >= start.getTime() && e.startTime <= end.getTime()
+      return e.startTime < end.getTime() && e.endTime > start.getTime()
     })
   })
 
   // Actions
-  /**
-   * 获取有效的日历 ID（数字格式）
-   * 如果传入的 calendarId 无效，返回第一个本地日历的 ID
-   */
-  function getValidCalendarId(calendarId: string | undefined): number {
-    if (calendarId) {
-      const parsed = parseInt(calendarId)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-    
-    // 获取第一个本地日历
-    const localCalendar = calendars.value.find(c => c.type === 'local')
-    if (localCalendar) {
-      const parsed = parseInt(localCalendar.id)
-      if (!isNaN(parsed) && parsed > 0) {
-        return parsed
-      }
-    }
-    
-    // 如果仍然无法获取，返回 1
-    console.warn('[CalendarStore] 无法获取有效的日历 ID，使用默认值 1')
-    return 1
+
+  /** 获取有效的日历 ID（封装共享函数，自动传入当前日历列表） */
+  function getValidCalendarIdWrapper(calendarId: string | undefined): number {
+    return getValidCalendarId(calendarId, calendars.value)
   }
 
   async function addCalendar(calendar: Omit<Calendar, 'id'>) {
-    const created = await invokeCreateCalendar({
+    const { calendarRepo } = usePlatform()
+    const created = await calendarRepo.create({
       name: calendar.name,
       color: calendar.color,
       type: calendar.type || 'local',
       accountId: calendar.accountId ? parseInt(calendar.accountId) : undefined,
       visible: calendar.visible ?? true,
-      syncEnabled: calendar.syncEnabled ?? false
+      syncEnabled: calendar.syncEnabled ?? false,
+      readOnly: calendar.readOnly,
     })
-    
-    if (created) {
-      calendars.value.push(created)
-      console.log('Calendar created:', created.id)
-    } else {
-      console.error('Failed to create calendar')
-    }
+    calendars.value.push(created)
+    console.log('Calendar created:', created.id)
   }
 
   async function updateCalendar(id: string, updates: Partial<Calendar>) {
+    const { calendarRepo } = usePlatform()
     const index = calendars.value.findIndex(c => c.id === id)
     if (index !== -1) {
       const calId = parseInt(id)
       if (!isNaN(calId)) {
-        const updated = await invokeUpdateCalendar({
+        await calendarRepo.update({
           id: calId,
           name: updates.name,
           color: updates.color,
           visible: updates.visible,
           syncEnabled: updates.syncEnabled
         })
-        
-        if (updated) {
-          calendars.value[index] = { ...calendars.value[index], ...updates }
-          console.log('Calendar updated:', id)
-        }
+        calendars.value[index] = { ...calendars.value[index], ...updates }
+        console.log('Calendar updated:', id)
       } else {
-        // 外部日历或临时 ID，仅更新本地状态
         calendars.value[index] = { ...calendars.value[index], ...updates }
       }
     }
   }
 
   async function deleteCalendar(id: string) {
+    const { calendarRepo } = usePlatform()
     const calId = parseInt(id)
     if (!isNaN(calId)) {
-      await invokeDeleteCalendar(calId)
+      await calendarRepo.delete(calId)
     }
-    
     calendars.value = calendars.value.filter(c => c.id !== id)
     events.value = events.value.filter(e => e.calendarId !== id)
     console.log('Calendar deleted:', id)
   }
 
   async function addEvent(event: Omit<CalendarEvent, 'id' | 'createdAt' | 'updatedAt'>) {
-    // 检测目标日历类型
     const targetCalendar = calendars.value.find(c => c.id === event.calendarId)
-    
-    if (targetCalendar && targetCalendar.type !== 'local') {
-      // 只读日历检查
-      if (targetCalendar.readOnly) {
-        console.error('创建事件失败：该日历为只读模式，不支持写入事件')
-        return
-      }
-      // 外部日历：调用 Rust 命令
-      try {
-        const result = await safeInvoke<any>('create_external_event', {
-          accountId: targetCalendar.accountId || '',
-          accountType: targetCalendar.accountType || targetCalendar.type || '',
-          serverUrl: targetCalendar.serverUrl || '',
-          username: targetCalendar.username || '',
-          encryptedPassword: targetCalendar.encryptedPassword || '',
-          calendarUrl: targetCalendar.calendarUrl || '',
-          event: {
-            id: '',
-            title: event.title,
-            description: event.description,
-            startTime: event.startTime,
-            endTime: event.endTime,
-            allDay: event.allDay,
-            location: event.location
-          }
-        })
-        if (result && result.success) {
-          // 创建成功后保存到本地数据库
-          const newEvent: CalendarEvent = {
-            ...event,
-            id: result.external_id || `ext_${Date.now()}`,
-            externalId: result.external_id,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-          }
-          events.value.push(newEvent)
+    if (!targetCalendar) return
+    if (targetCalendar.readOnly) return
 
-          // 保存到本地数据库以便离线查看
-          const eventId = parseInt(newEvent.id)
-          if (!isNaN(eventId)) {
-            try {
-              await invokeCreateEvent({
-                title: newEvent.title,
-                description: newEvent.description,
-                startTime: newEvent.startTime,
-                endTime: newEvent.endTime,
-                allDay: newEvent.allDay,
-                calendarId: parseInt(newEvent.calendarId) || 1,
-                color: newEvent.color,
-                reminder: newEvent.reminder,
-                repeatRule: newEvent.repeatRule ? JSON.stringify(newEvent.repeatRule) : undefined,
-                location: newEvent.location,
-                externalId: newEvent.externalId
-              })
-            } catch (dbError) {
-              console.error('保存外部事件到本地失败:', dbError)
-            }
-          }
-        } else {
-          console.error('创建外部事件失败：', result?.error || '无法获取结果')
-        }
-      } catch (error) {
-        console.error('创建外部事件失败:', error)
-      }
-    } else {
-      // 本地日历：保存到数据库
-      const created = await invokeCreateEvent({
-        title: event.title,
-        description: event.description,
-        startTime: event.startTime,
-        endTime: event.endTime,
-        allDay: event.allDay,
-        calendarId: getValidCalendarId(event.calendarId),
-        color: event.color,
-        reminder: event.reminder,
-        repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
-        location: event.location,
-        externalId: event.externalId
-      })
-      
-      if (created) {
-        events.value.push(created)
-        console.log('Event created:', created.id)
-      } else {
-        console.error('Failed to create event')
-      }
+    const { eventRepo } = usePlatform()
+    const capabilities = useCapabilities()
+
+    const created = await eventRepo.createWithSync({
+      title: event.title,
+      description: event.description,
+      startTime: event.startTime,
+      endTime: event.endTime,
+      allDay: event.allDay,
+      calendarId: getValidCalendarIdWrapper(event.calendarId),
+      color: event.color,
+      reminder: event.reminder,
+      repeatRule: event.repeatRule ? JSON.stringify(event.repeatRule) : undefined,
+      location: event.location,
+      externalId: event.externalId,
+    })
+
+    // 仅当事件在 loadedRange 内且属于可见日历时才加入内存
+    const isVisible = visibleCalendars.value.some(c => c.id === event.calendarId)
+    if (loadedRange.value && isEventInRange(created, loadedRange.value) && isVisible) {
+      events.value.push(created)
     }
+    totalEventCount.value++
+
+    if (targetCalendar.type === 'online' && capabilities.dataPriority === 'local-first') {
+      await cloudSyncService.triggerSync()
+    }
+
+    console.log('Event created:', created.id)
   }
 
   async function updateEvent(id: string, updates: Partial<CalendarEvent>) {
+    const { eventRepo } = usePlatform()
+    const capabilities = useCapabilities()
     const index = events.value.findIndex(e => e.id === id)
-    if (index !== -1) {
-      const event = events.value[index]
-      const calendar = calendars.value.find(c => c.id === event.calendarId)
+    if (index === -1) return
 
-      if (calendar && calendar.type !== 'local') {
-        // 外部日历事件：调用 Rust 命令
-        try {
-          const result = await safeInvoke<any>('update_external_event', {
-            accountId: calendar.accountId || '',
-            accountType: calendar.accountType || calendar.type || '',
-            serverUrl: calendar.serverUrl || '',
-            username: calendar.username || '',
-            encryptedPassword: calendar.encryptedPassword || '',
-            calendarUrl: calendar.calendarUrl || '',
-            event: {
-              id: event.externalId || event.id,
-              title: updates.title ?? event.title,
-              description: updates.description ?? event.description,
-              startTime: updates.startTime ?? event.startTime,
-              endTime: updates.endTime ?? event.endTime,
-              allDay: updates.allDay ?? event.allDay,
-              location: updates.location ?? event.location
-            }
-          })
-          if (result && result.success) {
-            const updatedEvent = {
-              ...event,
-              ...updates,
-              updatedAt: Date.now()
-            }
-            events.value[index] = updatedEvent
+    const event = events.value[index]
 
-            // 更新本地数据库
-            const eventId = parseInt(updatedEvent.id)
-            if (!isNaN(eventId)) {
-              try {
-                await invokeUpdateEvent({
-                  id: eventId,
-                  title: updatedEvent.title,
-                  description: updatedEvent.description,
-                  startTime: updatedEvent.startTime,
-                  endTime: updatedEvent.endTime,
-                  allDay: updatedEvent.allDay,
-                  calendarId: parseInt(updatedEvent.calendarId) || 1,
-                  color: updatedEvent.color,
-                  reminder: updatedEvent.reminder,
-                  repeatRule: updatedEvent.repeatRule ? JSON.stringify(updatedEvent.repeatRule) : undefined,
-                  location: updatedEvent.location,
-                  externalId: updatedEvent.externalId
-                })
-              } catch (dbError) {
-                console.error('更新外部事件到本地库失败:', dbError)
-              }
-            }
-          } else {
-            console.error('更新外部事件失败：', result?.error)
-          }
-        } catch (error) {
-          console.error('调用更新外部事件失败:', error)
-        }
-      } else {
-        // 本地日历事件：更新数据库
-        const eventId = parseInt(id)
-        if (!isNaN(eventId)) {
-          const updated = await invokeUpdateEvent({
-            id: eventId,
-            title: updates.title ?? event.title,
-            description: updates.description ?? event.description,
-            startTime: updates.startTime ?? event.startTime,
-            endTime: updates.endTime ?? event.endTime,
-            allDay: updates.allDay ?? event.allDay,
-            calendarId: parseInt(updates.calendarId ?? event.calendarId) || 1,
-            color: updates.color ?? event.color,
-            reminder: updates.reminder ?? event.reminder,
-            repeatRule: updates.repeatRule ? JSON.stringify(updates.repeatRule) : (event.repeatRule ? JSON.stringify(event.repeatRule) : undefined),
-            location: updates.location ?? event.location,
-            externalId: updates.externalId ?? event.externalId
-          })
-          
-          if (updated) {
-            events.value[index] = updated
-            console.log('Event updated:', id)
-          }
-        }
-      }
+    const updated = await eventRepo.updateWithSync({
+      id: parseInt(id),
+      title: updates.title ?? event.title,
+      description: updates.description ?? event.description,
+      startTime: updates.startTime ?? event.startTime,
+      endTime: updates.endTime ?? event.endTime,
+      allDay: updates.allDay ?? event.allDay,
+      calendarId: parseInt(updates.calendarId ?? event.calendarId) || 1,
+      color: updates.color ?? event.color,
+      reminder: updates.reminder ?? event.reminder,
+      repeatRule: updates.repeatRule ? JSON.stringify(updates.repeatRule) : (event.repeatRule ? JSON.stringify(event.repeatRule) : undefined),
+      location: updates.location ?? event.location,
+      externalId: updates.externalId ?? event.externalId,
+    })
+
+    const isVisible = visibleCalendars.value.some(c => c.id === updated.calendarId)
+    const isInRange = loadedRange.value && isEventInRange(updated, loadedRange.value)
+    if (!isInRange || !isVisible) {
+      // 事件移出范围或不可见，从内存移除
+      events.value.splice(index, 1)
+    } else {
+      events.value[index] = updated
     }
+
+    const calendar = calendars.value.find(c => c.id === event.calendarId)
+    if (calendar?.type === 'online' && capabilities.dataPriority === 'local-first') {
+      await cloudSyncService.triggerSync()
+    }
+
+    console.log('Event updated:', id)
   }
 
   async function deleteEvent(id: string) {
+    const { eventRepo } = usePlatform()
+    const capabilities = useCapabilities()
     const event = events.value.find(e => e.id === id)
     if (!event) return
 
-    const calendar = calendars.value.find(c => c.id === event.calendarId)
+    await eventRepo.deleteWithSync(parseInt(id))
 
-    if (calendar && calendar.type !== 'local') {
-      // 外部日历事件：调用 Rust 命令
-      try {
-        const result = await safeInvoke<any>('delete_external_event', {
-          accountId: calendar.accountId || '',
-          accountType: calendar.accountType || calendar.type || '',
-          serverUrl: calendar.serverUrl || '',
-          username: calendar.username || '',
-          encryptedPassword: calendar.encryptedPassword || '',
-          calendarUrl: calendar.calendarUrl || '',
-          eventId: event.externalId || event.id
-        })
-        if (result && result.success) {
-          events.value = events.value.filter(e => e.id !== id)
-          const eventId = parseInt(id)
-          if (!isNaN(eventId)) {
-            try {
-              await invokeDeleteEvent(eventId)
-            } catch (dbError) {
-              console.error('从本地库删除外部事件失败:', dbError)
-            }
-          }
-        } else {
-          console.error('删除外部事件失败：', result?.error)
-        }
-      } catch (error) {
-        console.error('调用删除外部事件失败:', error)
-      }
-    } else {
-      // 本地日历事件：从数据库删除
-      const eventId = parseInt(id)
-      if (!isNaN(eventId)) {
-        await invokeDeleteEvent(eventId)
-      }
-      events.value = events.value.filter(e => e.id !== id)
-      console.log('Event deleted:', id)
+    events.value = events.value.filter(e => e.id !== id)
+    totalEventCount.value--
+
+    const calendar = calendars.value.find(c => c.id === event.calendarId)
+    if (calendar?.type === 'online' && capabilities.dataPriority === 'local-first') {
+      await cloudSyncService.triggerSync()
     }
+
+    console.log('Event deleted:', id)
   }
 
   function setView(view: CalendarView) {
@@ -753,41 +625,176 @@ export const useCalendarStore = defineStore('calendar', () => {
     selectedDate.value = date
   }
 
-  // 监听 currentDateRange 变化，触发按需网络查询
-  watch(() => currentDateRange.value, (newRange) => {
-    if (isInitialized.value) {
-      loadExternalEvents(newRange.start.getTime(), newRange.end.getTime())
+  watch([currentView, currentDate], async () => {
+    if (!isInitialized.value || !loadedRange.value) return
+    const newRange = computeLoadRange(currentView.value, currentDate.value)
+
+    // 如果新窗口在已加载范围内，不重新加载
+    if (newRange.start >= loadedRange.value.start &&
+        newRange.end <= loadedRange.value.end) {
+      return
     }
-  }, { deep: true })
+
+    // 超出已加载范围，重新加载
+    const { eventRepo } = usePlatform()
+    const visibleCalendarIds = visibleCalendars.value.map(c => c.id)
+    if (visibleCalendarIds.length === 0) {
+      events.value = []
+      return
+    }
+    if (currentView.value === 'year') {
+      await loadYearView(currentDate.value)
+    } else {
+      const loadedEvents = await eventRepo.getByTimeRangeAndCalendars(
+        newRange.start, newRange.end, visibleCalendarIds
+      )
+      events.value = loadedEvents
+      loadedRange.value = newRange
+    }
+  })
+
+  // watch visibleCalendars 变化，300ms 防抖后重新加载
+  watch(visibleCalendars, debounce(async () => {
+    if (!isInitialized.value || !loadedRange.value) return
+    const visibleCalendarIds = visibleCalendars.value.map(c => c.id)
+    if (visibleCalendarIds.length === 0) {
+      events.value = []
+      return
+    }
+    const { eventRepo } = usePlatform()
+    if (currentView.value === 'year') {
+      await loadYearView(currentDate.value)
+    } else {
+      events.value = await eventRepo.getByTimeRangeAndCalendars(
+        loadedRange.value.start, loadedRange.value.end, visibleCalendarIds
+      )
+    }
+  }, 300), { deep: true })
+
+  async function reloadFromDatabase(): Promise<void> {
+    try {
+      const { calendarRepo, eventRepo } = usePlatform()
+
+      const loadedCalendars = await calendarRepo.getAll()
+      if (loadedCalendars.length > 0) {
+        calendars.value = loadedCalendars
+      }
+
+      if (loadedRange.value) {
+        const visibleCalendarIds = visibleCalendars.value.map(c => c.id)
+        if (visibleCalendarIds.length === 0) {
+          events.value = []
+        } else if (currentView.value === 'year') {
+          await loadYearView(currentDate.value)
+        } else {
+          events.value = await eventRepo.getByTimeRangeAndCalendars(
+            loadedRange.value.start, loadedRange.value.end, visibleCalendarIds
+          )
+        }
+      } else {
+        // loadedRange 为 null（异常场景），加载默认范围
+        const defaultRange = computeLoadRange(currentView.value, currentDate.value)
+        const visibleCalendarIds = visibleCalendars.value.map(c => c.id)
+        if (visibleCalendarIds.length === 0) {
+          events.value = []
+        } else {
+          events.value = await eventRepo.getByTimeRangeAndCalendars(
+            defaultRange.start, defaultRange.end, visibleCalendarIds
+          )
+        }
+        loadedRange.value = defaultRange
+      }
+
+      try {
+        totalEventCount.value = await eventRepo.getCount()
+      } catch {
+        totalEventCount.value = events.value.length
+      }
+
+      console.log('[CalendarStore] 数据已从数据库重新加载:', {
+        calendars: calendars.value.length,
+        events: events.value.length,
+      })
+    } catch (error) {
+      console.error('[CalendarStore] 重新加载数据失败:', error)
+    }
+  }
+
+  async function loginTransition(): Promise<void> {
+    const { calendarRepo, syncRepo } = usePlatform()
+    const capabilities = useCapabilities()
+
+    if (capabilities.dataPriority !== 'local-first') return
+
+    await syncRepo.triggerCloudSync()
+
+    const mainCalendar = calendars.value.find(c => c.type === 'local')
+    if (mainCalendar) {
+      await calendarRepo.updateType({
+        id: parseInt(mainCalendar.id),
+        type: 'online',
+        syncEnabled: true,
+      })
+    }
+
+    await reloadFromDatabase()
+  }
+
+  async function logoutTransition(): Promise<void> {
+    const { calendarRepo, syncRepo } = usePlatform()
+    const capabilities = useCapabilities()
+
+    if (capabilities.dataPriority !== 'local-first') return
+
+    try {
+      await syncRepo.triggerCloudSync()
+    } catch (error) {
+      console.warn('[CalendarStore] 退出前同步失败，本地数据可能不是最新:', error)
+    }
+
+    const mainCalendar = calendars.value.find(c => c.type === 'online')
+    if (mainCalendar) {
+      await calendarRepo.updateType({
+        id: parseInt(mainCalendar.id),
+        type: 'local',
+        syncEnabled: false,
+      })
+    }
+
+    await reloadFromDatabase()
+  }
 
   return {
-    // State
     calendars,
     events,
     currentView,
     currentDate,
     selectedDate,
     isInitialized,
-    // Actions
+    loadedRange,
+    totalEventCount,
     initialize,
+    reloadFromDatabase,
+    loadExternalCalendars,
+    loadExternalEvents,
     addCalendar,
     updateCalendar,
     deleteCalendar,
     addEvent,
     updateEvent,
     deleteEvent,
+    loginTransition,
+    logoutTransition,
     setView,
     navigateToDate,
     goToToday,
     next,
     prev,
     selectDate,
-    loadExternalCalendars,
-    loadExternalEvents,
-    // Getters
     visibleCalendars,
     visibleEvents,
     currentDateRange,
-    eventsForCurrentView
+    eventsForCurrentView,
+    getValidCalendarId: getValidCalendarIdWrapper
   }
 })

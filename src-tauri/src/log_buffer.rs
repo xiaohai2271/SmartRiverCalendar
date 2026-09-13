@@ -49,6 +49,33 @@ impl LogBuffer {
     }
 }
 
+/// 当前日志级别（全局可变状态）
+static CURRENT_LOG_LEVEL: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(3); // Info = 3
+
+/// 将 LevelFilter 转换为 u8（用于原子存储）
+fn level_filter_to_u8(level: LevelFilter) -> u8 {
+    match level {
+        LevelFilter::Off => 0,
+        LevelFilter::Error => 1,
+        LevelFilter::Warn => 2,
+        LevelFilter::Info => 3,
+        LevelFilter::Debug => 4,
+        LevelFilter::Trace => 5,
+    }
+}
+
+/// 将 u8 转换为 LevelFilter
+fn u8_to_level_filter(val: u8) -> LevelFilter {
+    match val {
+        0 => LevelFilter::Off,
+        1 => LevelFilter::Error,
+        2 => LevelFilter::Warn,
+        3 => LevelFilter::Info,
+        4 => LevelFilter::Debug,
+        _ => LevelFilter::Trace,
+    }
+}
+
 /// 复合 Logger：同时写入控制台和缓冲区
 pub struct CombinedLogger {
     buffer: &'static LogBuffer,
@@ -62,7 +89,8 @@ impl CombinedLogger {
 
 impl Log for CombinedLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= LevelFilter::Info
+        let current = u8_to_level_filter(CURRENT_LOG_LEVEL.load(std::sync::atomic::Ordering::Relaxed));
+        metadata.level() <= current
     }
 
     fn log(&self, record: &Record) {
@@ -111,7 +139,21 @@ pub fn init_logger() {
         once_cell::sync::Lazy::new(|| CombinedLogger::new(&LOG_BUFFER));
 
     log::set_logger(&*COMBINED_LOGGER).unwrap();
+    // 默认 Info 级别
+    CURRENT_LOG_LEVEL.store(level_filter_to_u8(LevelFilter::Info), std::sync::atomic::Ordering::Relaxed);
     log::set_max_level(LevelFilter::Info);
+}
+
+/// 获取当前日志级别
+pub fn get_log_level() -> LevelFilter {
+    u8_to_level_filter(CURRENT_LOG_LEVEL.load(std::sync::atomic::Ordering::Relaxed))
+}
+
+/// 设置日志级别
+pub fn set_log_level(level: LevelFilter) {
+    CURRENT_LOG_LEVEL.store(level_filter_to_u8(level), std::sync::atomic::Ordering::Relaxed);
+    // 同步更新 log crate 的全局过滤，确保 debug! 等宏能通过
+    log::set_max_level(level);
 }
 
 /// 获取所有日志
@@ -121,5 +163,5 @@ pub fn get_logs() -> Vec<LogEntry> {
 
 /// 清空日志
 pub fn clear_logs() {
-    get_log_buffer().clear();
+    get_log_buffer().clear()
 }

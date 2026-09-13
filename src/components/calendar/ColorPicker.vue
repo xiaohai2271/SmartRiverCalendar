@@ -182,6 +182,7 @@ function onCustomColorChange(event: Event) {
   display: flex;
   flex-direction: row;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-sm);
 }
 
@@ -200,8 +201,8 @@ function onCustomColorChange(event: Event) {
 
 /* 颜色选项按钮 */
 .color-option {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: 2px solid transparent;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -238,8 +239,8 @@ function onCustomColorChange(event: Event) {
 }
 
 .check-mark svg {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
 }
 
 /* 自定义颜色区域 */
@@ -254,8 +255,8 @@ function onCustomColorChange(event: Event) {
 
 /* 自定义颜色标签 (按钮样式) */
 .custom-color-label {
-  width: 24px;
-  height: 24px;
+  width: 20px;
+  height: 20px;
   border: 2px dashed var(--border-strong);
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -304,8 +305,8 @@ function onCustomColorChange(event: Event) {
 }
 
 .plus-icon svg {
-  width: 14px;
-  height: 14px;
+  width: 11px;
+  height: 11px;
 }
 
 .custom-color-label:hover .plus-icon {

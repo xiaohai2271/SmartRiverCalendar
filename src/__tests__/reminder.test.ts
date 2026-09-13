@@ -7,6 +7,116 @@ vi.mock('@tauri-apps/plugin-notification', () => ({
   sendNotification: mockSendNotification
 }))
 
+// Mock useCapabilities — 桌面端能力
+const mockReminderRepo = {
+  async loadQueue() {
+    try {
+      const data = localStorage.getItem('reminder_queue')
+      if (data) {
+        const queue = JSON.parse(data) as { items?: any[] }
+        return queue.items || []
+      }
+    } catch {}
+    return []
+  },
+  async saveQueue(items: any[]) {
+    localStorage.setItem('reminder_queue', JSON.stringify({ items }))
+  },
+  async isReminderSent(key: string) {
+    return localStorage.getItem(key) !== null
+  },
+  async markReminderSent(key: string) {
+    localStorage.setItem(key, '1')
+  },
+  async getSnoozeTime(id: string) {
+    const value = localStorage.getItem(`reminder_snooze_${id}`)
+    return value ? parseInt(value, 10) : null
+  },
+  async setSnoozeTime(id: string, timestamp: number) {
+    localStorage.setItem(`reminder_snooze_${id}`, timestamp.toString())
+  },
+  async clearSnoozeTime(id: string) {
+    localStorage.removeItem(`reminder_snooze_${id}`)
+  },
+  async isReminderViewed(id: string, validDurationMs: number) {
+    const value = localStorage.getItem(`reminder_viewed_${id}`)
+    if (value) {
+      const viewedTime = parseInt(value, 10)
+      if (!isNaN(viewedTime)) {
+        return Date.now() - viewedTime < validDurationMs
+      }
+    }
+    return false
+  },
+  async markReminderAsViewed(id: string) {
+    localStorage.setItem(`reminder_viewed_${id}`, Date.now().toString())
+  },
+  async cleanupExpiredRecords(now: number) {
+    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('reminder_sent_')) {
+        const parts = key.split('_')
+        const timestamp = parseInt(parts[parts.length - 1], 10)
+        if (!isNaN(timestamp) && timestamp < sevenDaysAgo) {
+          keysToRemove.push(key)
+        }
+      }
+    }
+    keysToRemove.forEach((key: string) => localStorage.removeItem(key))
+    localStorage.setItem('reminder_last_cleanup_time', now.toString())
+  },
+}
+
+vi.mock('@/platform/provider', () => ({
+  useCapabilities: () => ({
+    hasLocalDatabase: true,
+    hasOfflineMode: true,
+    dataPriority: 'local-first',
+    hasReminderPopup: true,
+    hasSystemNotification: true,
+    hasSnoozeReminder: true,
+    hasSystemTray: true,
+    hasAutoStart: true,
+    hasClockHook: true,
+    hasMultiWindow: true,
+    hasAutoUpdate: true,
+    hasMinimizeToTray: true,
+    hasProxySettings: true,
+  }),
+  usePlatform: () => ({
+    capabilities: {
+      hasLocalDatabase: true,
+      hasOfflineMode: true,
+      dataPriority: 'local-first',
+      hasReminderPopup: true,
+      hasSystemNotification: true,
+      hasSnoozeReminder: true,
+      hasSystemTray: true,
+      hasAutoStart: true,
+      hasClockHook: true,
+      hasMultiWindow: true,
+      hasAutoUpdate: true,
+      hasMinimizeToTray: true,
+      hasProxySettings: true,
+    },
+    authRepo: {},
+    calendarRepo: {},
+    eventRepo: {
+      getAll: vi.fn().mockResolvedValue([]),
+      getByTimeRangeAndCalendars: vi.fn().mockResolvedValue([]),
+      getCount: vi.fn().mockResolvedValue(0),
+      getUpcoming: vi.fn().mockResolvedValue([]),
+      search: vi.fn().mockResolvedValue([]),
+    },
+    todoRepo: {},
+    settingsRepo: {},
+    syncRepo: {},
+    reminderRepo: mockReminderRepo,
+  }),
+}))
+
 // Mock Pinia stores
 const mockCalendarStore = {
   isInitialized: true,

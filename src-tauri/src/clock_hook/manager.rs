@@ -92,7 +92,7 @@ impl ClockHookManager {
 
         // 3. 清空缓存
         {
-            let mut cache = super::region_updater::CLOCK_REGIONS.write().unwrap();
+            let mut cache = super::region_updater::CLOCK_REGIONS.write().unwrap_or_else(|e| e.into_inner());
             *cache = super::region_updater::ClockRegionCache::default();
         }
 
@@ -109,7 +109,7 @@ impl ClockHookManager {
 
     /// 获取当前检测方式名称
     pub fn get_detection_method(&self) -> String {
-        let cache = super::region_updater::CLOCK_REGIONS.read().unwrap();
+        let cache = super::region_updater::CLOCK_REGIONS.read().unwrap_or_else(|e| e.into_inner());
         cache.detection_method.clone()
     }
 

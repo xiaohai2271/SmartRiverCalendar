@@ -13,7 +13,7 @@ import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow'
 import { useCalendarStore } from '@/stores/calendar'
 import { usePopupSettingsStore } from '@/stores/popupSettings'
 import { useSettingsStore } from '@/stores/settings'
-import * as settingsService from '@/services/settings'
+import { usePlatform } from '@/platform/provider'
 import { emit as tauriEmit } from '@tauri-apps/api/event'
 import { setPopupWindowSize } from '@/composables/useCalendarPopup'
 import { onSettingsChange } from '@/utils/broadcast'
@@ -58,11 +58,30 @@ const currentSize = ref(popupSettings.settings.popupWindowSize)
 // 今天日期（固定显示今天的信息，不受月份导航影响）
 const today = computed(() => new Date())
 
-// 当前日期是否有事件
+// 当前日期是否有事件（使用独立查询，不依赖 Store loadedRange）
+const popupEvents = ref<CalendarEvent[]>([])
+
+async function loadPopupEvents() {
+  const { eventRepo } = usePlatform()
+  const visibleCalendarIds = calendarStore.visibleCalendars.map(c => c.id)
+  if (visibleCalendarIds.length === 0) {
+    popupEvents.value = []
+    return
+  }
+  const d = currentDate.value
+  const monthStart = new Date(d.getFullYear(), d.getMonth(), 1).getTime()
+  const monthEnd = new Date(d.getFullYear(), d.getMonth() + 1, 0, 23, 59, 59, 999).getTime()
+  try {
+    popupEvents.value = await eventRepo.getByTimeRangeAndCalendars(monthStart, monthEnd, visibleCalendarIds)
+  } catch {
+    popupEvents.value = []
+  }
+}
+
 const hasEventsOnSelectedDate = computed(() => {
   if (!contextMenuDate.value) return false
   const dateStr = contextMenuDate.value
-  return calendarStore.events.some(event => {
+  return popupEvents.value.some(event => {
     const eventDate = new Date(event.startTime)
     return formatDateToString(eventDate) === dateStr
   })
@@ -117,6 +136,11 @@ watch(
   }
 )
 
+// 监听当前月份变化，重新加载弹窗事件
+watch(currentDate, () => {
+  loadPopupEvents()
+}, { immediate: true })
+
 // ==================== 主题同步 ====================
 
 // 应用主题到弹窗根元素
@@ -124,12 +148,11 @@ watch(
 async function applyPopupTheme(theme?: 'light' | 'dark' | 'auto') {
   let targetTheme: 'light' | 'dark' | 'auto' | undefined = theme
   if (!targetTheme) {
-    // 从数据库读取最新的主题设置（不依赖 settingsStore 内存状态）
     try {
-      const dbValue = await settingsService.getSetting('app.theme')
-      targetTheme = dbValue ? (JSON.parse(dbValue) as 'light' | 'dark' | 'auto') : 'light'
+      const { settingsRepo } = usePlatform()
+      const appSettings = await settingsRepo.loadAppSettings()
+      targetTheme = appSettings.theme
     } catch {
-      // 数据库读取失败，使用 settingsStore 作为降级
       targetTheme = settingsStore.settings.theme
     }
   }
@@ -488,6 +511,12 @@ onUnmounted(() => {
   background: var(--bg-primary);
   overflow: hidden;
   position: relative;
+  /* 极细极光高光描边与 30px 深亚克力效果，彻底脱离低端扁平味 */
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  backdrop-filter: blur(30px) saturate(190%);
+  -webkit-backdrop-filter: blur(30px) saturate(190%);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
 }
 
 .loading-overlay {

@@ -1,11 +1,12 @@
 /**
  * 设置服务 - 前端 Service 层封装
- * 
- * 提供设置和用户自定义节假日的数据库操作接口。
- * 数据流: Vue → Service → Tauri invoke() → Rust → SQLite
+ *
+ * 通过 Repository 接口访问设置数据，不再直接调用 Tauri API。
+ * 数据流: Vue → Service → settingsRepo → 平台实现 → 数据源
  */
 
-import { invoke } from '@tauri-apps/api/core'
+import { usePlatform, useCapabilities } from '@/platform/provider'
+import type { AppSettings, PopupSettings, UserHolidayEntry } from '@/types'
 
 /**
  * 应用设置条目（含描述字段）
@@ -34,61 +35,43 @@ export interface UserHoliday {
 }
 
 /**
- * 检测是否在 Tauri 环境中
+ * 加载应用设置
  */
-function isTauriAvailable(): boolean {
-  return typeof window !== 'undefined' && '__TAURI__' in window
+export async function loadAppSettings(): Promise<AppSettings> {
+  const { settingsRepo } = usePlatform()
+  return settingsRepo.loadAppSettings()
 }
 
 /**
- * 获取单个设置项
- * @param key 设置键名
- * @returns 设置值，不存在时返回 null
+ * 保存应用设置
  */
-export async function getSetting(key: string): Promise<string | null> {
-  if (!isTauriAvailable()) return null
-  return await invoke<string | null>('get_setting', { key })
+export async function saveAppSettings(settings: AppSettings): Promise<void> {
+  const { settingsRepo } = usePlatform()
+  return settingsRepo.saveAppSettings(settings)
 }
 
 /**
- * 设置单个设置项
- * @param key 设置键名
- * @param value 设置值
- * @param description 设置描述（可选）
+ * 加载弹出面板设置
  */
-export async function setSetting(key: string, value: string, description?: string): Promise<void> {
-  if (!isTauriAvailable()) return
-  await invoke('set_setting', { key, value, description })
+export async function loadPopupSettings(): Promise<PopupSettings> {
+  const { settingsRepo } = usePlatform()
+  return settingsRepo.loadPopupSettings()
 }
 
 /**
- * 获取完整设置条目（含描述）
- * @param key 设置键名
- * @returns 完整设置条目，不存在时返回 null
+ * 保存弹出面板设置
  */
-export async function getSettingEntry(key: string): Promise<SettingEntry | null> {
-  if (!isTauriAvailable()) return null
-  return await invoke<SettingEntry | null>('get_setting_entry', { key })
+export async function savePopupSettings(settings: PopupSettings): Promise<void> {
+  const { settingsRepo } = usePlatform()
+  return settingsRepo.savePopupSettings(settings)
 }
 
 /**
- * 获取所有设置条目（含描述，按前缀过滤）
- * @param prefix 设置键名前缀
- * @returns 完整设置条目数组
+ * 获取用户自定义节假日
  */
-export async function getAllSettingEntries(prefix: string): Promise<SettingEntry[]> {
-  if (!isTauriAvailable()) return []
-  return await invoke<SettingEntry[]>('get_all_setting_entries', { prefix })
-}
-
-/**
- * 获取指定前缀的所有设置项
- * @param prefix 设置键名前缀
- * @returns 键值对数组
- */
-export async function getAllSettings(prefix: string): Promise<[string, string][]> {
-  if (!isTauriAvailable()) return []
-  return await invoke<[string, string][]>('get_all_settings', { prefix })
+export async function getUserHolidays(): Promise<UserHolidayEntry[]> {
+  const { settingsRepo } = usePlatform()
+  return settingsRepo.getUserHolidays()
 }
 
 /**
@@ -104,8 +87,8 @@ export async function addUserHoliday(
   category: 'holiday' | 'makeup',
   source?: 'custom' | 'api'
 ): Promise<void> {
-  if (!isTauriAvailable()) return
-  await invoke('add_user_holiday', { date, name, category, source })
+  const { settingsRepo } = usePlatform()
+  return settingsRepo.addUserHoliday(date, name, category, source)
 }
 
 /**
@@ -118,47 +101,16 @@ export async function removeUserHoliday(
   date: string,
   category: 'holiday' | 'makeup'
 ): Promise<boolean> {
-  if (!isTauriAvailable()) return false
-  return await invoke<boolean>('remove_user_holiday', { date, category })
+  const { settingsRepo } = usePlatform()
+  return settingsRepo.removeUserHoliday(date, category)
 }
-
-/**
- * 获取所有用户自定义节假日
- * @returns 节假日数组
- */
-export async function getAllUserHolidays(): Promise<UserHoliday[]> {
-  if (!isTauriAvailable()) return []
-  return await invoke<UserHoliday[]>('get_all_user_holidays')
-}
-
-/**
- * 数据库可用性缓存
- */
-let dbAvailableCache: boolean | null = null
 
 /**
  * 检测数据库是否可用
- * 首次调用会尝试执行一次数据库操作来验证可用性，结果会被缓存
- * @returns 数据库是否可用
+ * 通过平台能力判断，而非尝试执行数据库操作
  */
-export async function isDatabaseAvailable(): Promise<boolean> {
-  if (dbAvailableCache !== null) return dbAvailableCache
-  try {
-    await getSetting('__db_test__')
-    dbAvailableCache = true
-    return true
-  } catch {
-    dbAvailableCache = false
-    console.warn('[settings] 数据库不可用，降级到 localStorage')
-    return false
-  }
-}
-
-/**
- * 重置数据库可用性缓存（用于测试）
- */
-export function _resetDbCache(): void {
-  dbAvailableCache = null
+export function isDatabaseAvailable(): boolean {
+  return useCapabilities().hasLocalDatabase
 }
 
 /**
@@ -176,73 +128,11 @@ export function loadFromLocalStorage(key: string): string | null {
 
 /**
  * 从 localStorage 迁移数据到数据库
- * - 首次启动时执行
- * - 幂等：已有数据时跳过
- * - 迁移成功后不清除 localStorage（保留作为降级方案）
+ * 委托给 settingsRepo.migrateFromLocalStorage（仅桌面端有实现）
  */
 export async function migrateLocalStorageToDb(): Promise<void> {
-  // 1. 检查数据库是否可用
-  const dbAvailable = await isDatabaseAvailable()
-  if (!dbAvailable) return
-
-  // 2. 检查是否已有数据（幂等）
-  const existing = await getAllSettings('app.')
-  if (existing.length > 0) return // 已有数据，跳过迁移
-
-  // 3. 从 localStorage 读取数据
-  const appSettings = loadFromLocalStorage('app-settings')
-  const popupSettings = loadFromLocalStorage('popup-settings')
-  const userHolidays = loadFromLocalStorage('user-holidays')
-
-  // 4. 迁移 app-settings
-  if (appSettings) {
-    try {
-      const data = JSON.parse(appSettings) as Record<string, unknown>
-      for (const [key, value] of Object.entries(data)) {
-        await setSetting(`app.${key}`, JSON.stringify(value))
-      }
-      console.info('[migration] 迁移 app-settings 完成')
-    } catch (e) {
-      console.error('[migration] 迁移 app-settings 失败:', e)
-    }
+  const { settingsRepo } = usePlatform()
+  if (settingsRepo.migrateFromLocalStorage) {
+    return settingsRepo.migrateFromLocalStorage()
   }
-
-  // 5. 迁移 popup-settings
-  if (popupSettings) {
-    try {
-      const data = JSON.parse(popupSettings) as Record<string, unknown>
-      for (const [key, value] of Object.entries(data)) {
-        await setSetting(`popup.${key}`, JSON.stringify(value))
-      }
-      console.info('[migration] 迁移 popup-settings 完成')
-    } catch (e) {
-      console.error('[migration] 迁移 popup-settings 失败:', e)
-    }
-  }
-
-  // 6. 迁移 user-holidays
-  if (userHolidays) {
-    try {
-      const data = JSON.parse(userHolidays) as {
-        holidays?: Record<string, string>
-        makeupDays?: Record<string, string>
-      }
-      // 格式: { holidays: {...}, makeupDays: {...} }
-      if (data.holidays) {
-        for (const [date, name] of Object.entries(data.holidays)) {
-          await addUserHoliday(date, name, 'holiday', 'custom')
-        }
-      }
-      if (data.makeupDays) {
-        for (const [date, name] of Object.entries(data.makeupDays)) {
-          await addUserHoliday(date, name, 'makeup', 'custom')
-        }
-      }
-      console.info('[migration] 迁移 user-holidays 完成')
-    } catch (e) {
-      console.error('[migration] 迁移 user-holidays 失败:', e)
-    }
-  }
-
-  // 7. 不清除 localStorage（保留作为降级方案）
 }

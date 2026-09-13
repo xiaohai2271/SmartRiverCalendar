@@ -1,18 +1,27 @@
 <template>
-  <div class="holiday-tab">
-    <!-- 节假日列表 -->
+  <div class="holiday-tab animate-fade-in">
+    <!-- 卡片 1：节假日列表 -->
     <div class="settings-section">
       <div class="section-header">
-        <h3>节假日列表</h3>
+        <h3 class="section-title">
+          <svg class="section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+            <line x1="16" y1="2" x2="16" y2="6"/>
+            <line x1="8" y1="2" x2="8" y2="6"/>
+            <line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          <span>节假日调休列表</span>
+        </h3>
         <select
           v-model="currentYear"
-          class="year-select"
+          class="year-select fluent-select"
           data-testid="year-select"
           aria-label="选择年份"
         >
           <option v-for="year in availableYears" :key="year" :value="year">{{ year }}年</option>
         </select>
       </div>
+
       <div class="holiday-list">
         <table class="holiday-table">
           <thead>
@@ -31,28 +40,29 @@
               :class="{ 'holiday': item.type === 'holiday', 'makeup': item.type === 'makeup' }"
               :data-year="currentYear"
             >
-              <td>{{ item.date }}</td>
-              <td>{{ item.name }}</td>
+              <td class="date-cell">{{ item.date }}</td>
+              <td class="name-cell">{{ item.name }}</td>
               <td>
                 <span class="type-badge" :class="item.type">
-                  {{ item.type === 'holiday' ? '节假日' : '调休补班' }}
+                  {{ item.type === 'holiday' ? '放假' : '补班' }}
                 </span>
               </td>
-              <td>
+              <td class="action-cell">
                 <button
                   v-if="item.isCustom"
                   class="delete-btn"
                   @click="removeHoliday(item.date, item.type)"
                   aria-label="删除"
+                  type="button"
                 >
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
                     <polyline points="3 6 5 6 21 6"></polyline>
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                     <line x1="10" y1="11" x2="10" y2="17"></line>
                     <line x1="14" y1="11" x2="14" y2="17"></line>
                   </svg>
                 </button>
-                <span v-else class="system-tag">系统</span>
+                <span v-else class="system-tag">系统默认</span>
               </td>
             </tr>
             <tr v-if="sortedHolidays.length === 0">
@@ -63,30 +73,40 @@
       </div>
     </div>
 
-    <!-- 新增表单 -->
+    <!-- 卡片 2：新增自定义节假日表单 -->
     <div class="settings-section">
-      <h3>新增节假日</h3>
+      <h3 class="section-title">
+        <svg class="section-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 5V19M5 12H19" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span>新增自定义放假与补班</span>
+      </h3>
       <div class="add-holiday-form">
         <div class="form-row">
           <div class="form-group">
-            <label>日期</label>
-            <input type="date" v-model="newHoliday.date" class="form-input" />
+            <span class="form-label">日期</span>
+            <div class="zero-border-input-wrapper date-wrapper">
+              <input type="date" v-model="newHoliday.date" class="zero-border-text-input" />
+              <span class="focus-underline"></span>
+            </div>
           </div>
-          <div class="form-group">
-            <label>名称</label>
-            <input type="text" v-model="newHoliday.name" placeholder="请输入节假日名称" class="form-input" />
+          <div class="form-group flex-fill">
+            <span class="form-label">节假日名称</span>
+            <div class="zero-border-input-wrapper">
+              <input type="text" v-model="newHoliday.name" placeholder="请输入例如“端午节”" class="zero-border-text-input" />
+              <span class="focus-underline"></span>
+            </div>
           </div>
-          <div class="form-group">
-            <label>类型</label>
-            <select v-model="newHoliday.type" class="form-input">
-              <option value="holiday">节假日</option>
+          <div class="form-group select-group">
+            <span class="form-label">类别</span>
+            <select v-model="newHoliday.type" class="fluent-select">
+              <option value="holiday">法定放假</option>
               <option value="makeup">调休补班</option>
             </select>
           </div>
           <div class="form-group form-actions">
-            <label>&nbsp;</label>
-            <button class="add-btn" @click="addHoliday" :disabled="!canAdd">
-              添加
+            <button class="fluent-button primary action-btn" @click="addHoliday" :disabled="!canAdd" type="button">
+              添加数据
             </button>
           </div>
         </div>
@@ -96,10 +116,6 @@
 </template>
 
 <script setup lang="ts">
-/**
- * 节假日管理 Tab 组件
- * 用于管理节假日和调休补班日期
- */
 import { ref, computed, onMounted, watch } from 'vue'
 import {
   getAvailableYears,
@@ -113,19 +129,10 @@ import {
 import { refreshHolidayCache } from '../../utils/lunar'
 
 // ==================== State ====================
-// 当前选中的年份
 const currentYear = ref<number>(new Date().getFullYear())
-
-// 可用年份列表
 const availableYears = ref<number[]>([])
-
-// 当前年份的节假日数据
 const holidays = ref<Record<string, MergedHolidayInfo>>({})
-
-// 用户自定义节假日数据（用于判断 isCustom）
 const customHolidayData = ref<CustomHolidayData>({ holidays: {}, makeupDays: {} })
-
-// 新增节假日表单
 const newHoliday = ref({
   date: '',
   name: '',
@@ -133,14 +140,9 @@ const newHoliday = ref({
 })
 
 // ==================== Computed ====================
-/**
- * 排序后的节假日列表
- */
 const sortedHolidays = computed(() => {
   const list = Object.entries(holidays.value).map(([date, info]) => {
-    // 判断是否为自定义节假日（用户添加的）
     const isCustom = date in customHolidayData.value.holidays || date in customHolidayData.value.makeupDays
-
     return {
       date,
       name: info.name,
@@ -148,13 +150,9 @@ const sortedHolidays = computed(() => {
       isCustom
     }
   })
-  // 按日期排序
   return list.sort((a, b) => a.date.localeCompare(b.date))
 })
 
-/**
- * 是否可以添加节假日
- */
 const canAdd = computed(() => {
   return newHoliday.value.date && newHoliday.value.name.trim()
 })
@@ -171,50 +169,34 @@ watch(currentYear, async () => {
 })
 
 // ==================== Methods ====================
-/**
- * 加载可用年份列表
- */
 async function loadAvailableYears(): Promise<void> {
   availableYears.value = await getAvailableYears()
-  // 如果当前年份不在列表中，默认选择最近的一年
   if (!availableYears.value.includes(currentYear.value) && availableYears.value.length > 0) {
     currentYear.value = availableYears.value[0]
   }
 }
 
-/**
- * 加载指定年份的节假日数据
- */
 async function loadHolidays(): Promise<void> {
   holidays.value = await filterHolidaysByYear(currentYear.value)
-  // 同时加载自定义数据用于判断 isCustom
   customHolidayData.value = await loadCustomHolidays()
 }
 
-/**
- * 添加自定义节假日
- */
 async function addHoliday(): Promise<void> {
   if (!canAdd.value) return
 
   const { date, name, type } = newHoliday.value
 
-  // 检查日期是否已存在
   if (holidays.value[date]) {
     if (!confirm(`该日期已存在"${holidays.value[date].name}"，是否覆盖？`)) {
       return
     }
   }
 
-  // 添加节假日
   await addCustomHoliday(date, name.trim(), type)
-
-  // 刷新缓存并重新加载数据
   await refreshHolidayCache()
   await loadAvailableYears()
   await loadHolidays()
 
-  // 重置表单
   newHoliday.value = {
     date: '',
     name: '',
@@ -222,17 +204,12 @@ async function addHoliday(): Promise<void> {
   }
 }
 
-/**
- * 删除自定义节假日
- */
 async function removeHoliday(date: string, type: 'holiday' | 'makeup'): Promise<void> {
-  if (!confirm('确定要删除这个节假日吗？')) {
+  if (!confirm('确定要删除这个自定义节假日吗？')) {
     return
   }
 
   await removeCustomHoliday(date, type)
-
-  // 刷新缓存并重新加载数据
   await refreshHolidayCache()
   await loadAvailableYears()
   await loadHolidays()
@@ -243,160 +220,169 @@ async function removeHoliday(date: string, type: 'holiday' | 'makeup'): Promise<
 .holiday-tab {
   display: flex;
   flex-direction: column;
-  gap: var(--space-lg);
+  gap: 24px;
 }
 
-/* 设置区块 */
+/* 极精细亚克力极光卡片 */
 .settings-section {
   background: var(--bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: 20px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-xl);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
 }
 
+.settings-section:hover {
+  transform: translateY(-1px);
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+}
+
+/* 卡片标题 */
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 0;
+  margin-bottom: 20px;
+}
+
+.section-icon {
+  color: var(--accent-color);
+}
+
+/* 头部分类行 */
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--border-color);
+  margin-bottom: 20px;
 }
 
 .section-header h3 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-primary);
   margin: 0;
 }
 
 .year-select {
-  padding: 6px 12px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font-size: 14px;
-  min-width: 90px;
-  cursor: pointer;
-  transition: border-color 0.2s ease;
+  min-width: 100px;
 }
 
-.year-select:focus {
-  outline: none;
-  border-color: var(--accent-color);
-}
-
-/* 节假日列表表格 */
+/* 节假日表格高规格美化 */
 .holiday-list {
-  overflow-x: auto;
+  max-height: 280px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
 }
 
 .holiday-table {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  font-size: 14px;
+  font-size: 13px;
 }
 
 .holiday-table th {
   text-align: left;
-  padding: 12px 16px;
-  font-weight: 500;
+  padding: 10px 16px;
+  font-weight: 600;
   color: var(--text-secondary);
+  background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
-  background: var(--bg-primary);
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 
 .holiday-table td {
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-/* 列宽设置 */
-.col-date {
-  width: 120px;
-}
-
-.col-name {
-  width: auto;
-}
-
-.col-type {
-  width: 100px;
-}
-
-.col-action {
-  width: 80px;
-  text-align: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.02);
+  color: var(--text-primary);
+  vertical-align: middle;
 }
 
 .holiday-row {
-  transition: background 0.2s ease;
+  transition: background var(--transition-fast);
 }
 
 .holiday-row:hover {
-  background: var(--bg-hover);
+  background: var(--bg-hover) !important;
 }
 
+/* 绿色与橙色淡雅低饱和配色 */
 .holiday-row.holiday {
-  border-left: 3px solid #22c55e;
+  border-left: 3px solid rgba(52, 199, 89, 0.6);
 }
 
 .holiday-row.makeup {
-  border-left: 3px solid #f97316;
+  border-left: 3px solid rgba(255, 149, 0, 0.6);
 }
 
 .holiday-row.holiday td {
-  background: rgba(34, 197, 94, 0.05);
+  background: rgba(52, 199, 89, 0.02);
 }
 
 .holiday-row.makeup td {
-  background: rgba(249, 115, 22, 0.05);
+  background: rgba(255, 149, 0, 0.02);
 }
 
-/* 类型标签 */
-.type-badge {
-  display: inline-block;
-  padding: 4px 10px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
+.date-cell {
+  font-weight: 500;
+  font-family: monospace;
+}
+
+.name-cell {
   font-weight: 500;
 }
 
+/* 类型 Badge 调优 */
+.type-badge {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+}
+
 .type-badge.holiday {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
+  background: rgba(52, 199, 89, 0.1);
+  color: #34C759;
 }
 
 .type-badge.makeup {
-  background: rgba(249, 115, 22, 0.15);
-  color: #f97316;
+  background: rgba(255, 149, 0, 0.1);
+  color: #FF9500;
 }
 
-/* 系统标签 */
+/* 系统默认标签 */
 .system-tag {
   display: inline-block;
-  padding: 4px 10px;
-  border-radius: var(--radius-md);
-  font-size: 12px;
+  padding: 3px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
   color: var(--text-tertiary);
-  background: var(--bg-primary);
+  background: var(--bg-tertiary);
 }
 
 /* 删除按钮 */
 .delete-btn {
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   background: transparent;
   color: var(--text-secondary);
   border: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  margin: 0 auto;
 }
 
 .delete-btn:hover {
@@ -404,21 +390,24 @@ async function removeHoliday(date: string, type: 'holiday' | 'makeup'): Promise<
   color: #dc2626;
 }
 
-/* 空数据提示 */
+.action-cell {
+  text-align: center;
+}
+
 .empty-cell {
   text-align: center;
   color: var(--text-tertiary);
-  padding: 32px 16px;
+  padding: 40px 16px;
 }
 
-/* 新增表单 */
+/* 新增表单排版 */
 .add-holiday-form {
-  padding-top: 8px;
+  padding-top: 4px;
 }
 
 .form-row {
   display: flex;
-  gap: 12px;
+  gap: 16px;
   align-items: flex-end;
   flex-wrap: wrap;
 }
@@ -426,100 +415,166 @@ async function removeHoliday(date: string, type: 'holiday' | 'makeup'): Promise<
 .form-group {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
 }
 
-.form-group label {
-  font-size: 13px;
+.form-group.flex-fill {
+  flex: 1;
+  min-width: 160px;
+}
+
+.form-label {
+  font-size: 12px;
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: 550;
 }
 
-.form-input {
-  padding: 8px 12px;
+/* Zero-border Text Input 与 Focused 底部亮线 */
+.zero-border-input-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.zero-border-text-input {
+  width: 100%;
+  border: none;
+  background: transparent;
+  font-size: 13.5px;
+  color: var(--text-primary);
+  padding: 6px 0;
+  outline: none;
+}
+
+.zero-border-text-input::placeholder {
+  color: var(--text-tertiary);
+  opacity: 0.8;
+}
+
+.focus-underline {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 1px;
+  background: var(--border-color);
+  transition: background var(--transition-normal);
+}
+
+.zero-border-text-input:focus ~ .focus-underline {
+  background: var(--accent-color);
+  height: 1.5px;
+}
+
+.date-wrapper {
+  width: 120px;
+}
+
+.select-group {
+  width: 120px;
+}
+
+/* 扁平 select */
+.fluent-select {
+  padding: 6px 12px;
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-size: 14px;
-  min-width: 140px;
-  transition: border-color 0.2s ease;
-}
-
-.form-input:focus {
+  font-size: 13px;
   outline: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  height: 31px;
+}
+
+.fluent-select:focus {
   border-color: var(--accent-color);
-}
-
-.form-group:has(input[type="date"]) .form-input {
-  min-width: 130px;
-}
-
-.form-group:has(input[type="text"]) .form-input {
-  min-width: 180px;
-}
-
-.form-group:has(select) .form-input {
-  min-width: 110px;
+  box-shadow: 0 0 0 2px var(--accent-light);
 }
 
 .form-actions {
   margin-left: auto;
 }
 
-.add-btn {
-  padding: 8px 20px;
-  background: var(--accent-color);
-  color: white;
-  border: none;
+.fluent-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 18px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
+  color: var(--text-primary);
+  font-weight: 550;
+  font-size: 13px;
   cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  transition: all var(--transition-fast);
+  height: 31px;
 }
 
-.add-btn:hover:not(:disabled) {
-  opacity: 0.9;
+.fluent-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
 }
 
-.add-btn:disabled {
+.fluent-button.primary {
+  background: var(--accent-color);
+  border-color: var(--accent-color);
+  color: white;
+}
+
+.fluent-button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.fluent-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-/* 响应式 */
+/* 淡入 */
+.animate-fade-in {
+  animation: fadeIn 0.3s cubic-bezier(0.1, 0.9, 0.2, 1);
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 @media (max-width: 768px) {
   .form-row {
     flex-direction: column;
     align-items: stretch;
   }
-
+  
   .form-group {
     width: 100%;
   }
-
-  .form-input {
+  
+  .date-wrapper,
+  .select-group {
     width: 100%;
-    min-width: auto;
   }
-
+  
+  .fluent-select {
+    width: 100%;
+  }
+  
   .form-actions {
     margin-left: 0;
-    margin-top: 8px;
+    margin-top: 12px;
   }
-
-  .add-btn {
+  
+  .fluent-button {
     width: 100%;
-  }
-
-  .holiday-table {
-    font-size: 13px;
-  }
-
-  .holiday-table th,
-  .holiday-table td {
-    padding: 10px 12px;
   }
 }
 </style>

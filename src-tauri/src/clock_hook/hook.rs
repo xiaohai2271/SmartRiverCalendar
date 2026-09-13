@@ -60,7 +60,7 @@ pub fn install_hook(app_handle: AppHandle) -> Result<(), String> {
     APP_HANDLE
         .get_or_init(|| Mutex::new(None))
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .replace(app_handle);
 
     // 安装低级鼠标钩子
