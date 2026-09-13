@@ -32,6 +32,7 @@ pub fn create_tables(conn: &Connection) -> Result<(), DatabaseError> {
             account_id INTEGER,
             visible INTEGER NOT NULL DEFAULT 1,
             sync_enabled INTEGER NOT NULL DEFAULT 0,
+            read_only INTEGER NOT NULL DEFAULT 0,
             user_id INTEGER,
             deleted_at INTEGER,
             timezone TEXT NOT NULL DEFAULT 'Asia/Shanghai',
